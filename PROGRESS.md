@@ -69,6 +69,7 @@ src/花笺/
   - Markdown 语法高亮（.xshd 定义：标题/粗体/斜体/代码/链接/引用/列表）✅
   - 编辑/预览模式切换：从 IE WebBrowser 迁移至 WebView2（Edge Chromium），修复首次预览空白/未导航问题 ✅
   - 修复空笔记初次输入时 AvalonEdit 未同步到 ViewModel，导致预览一直显示“空内容”的问题 ✅
+  - 修复普通换行在预览中被浏览器折叠，导致连续文本显示在同一行的问题 ✅
   - Markdown 工具栏（标题/粗体/斜体/代码/列表/引用/分割线，支持选中文本包裹）✅
 
 ## 踩坑记录
@@ -81,3 +82,4 @@ src/花笺/
 - 空笔记场景暴露了 AvalonEdit 双向绑定问题：`BoundText` 附加属性默认值原本是 `string.Empty`，而空笔记初始内容也是 `string.Empty`，WPF 不触发属性变更回调，导致 `TextChanged` 事件没有挂上，用户输入无法同步到 `EditorContent`，预览始终拿到空字符串。
 - 修复 AvalonEdit 绑定时，将 `BoundText` 默认值改为 `null`，并在 getter 中兜底为空字符串，确保空笔记第一次绑定也会完成初始化。
 - 验证用例不能只覆盖“文件已有内容后切预览”；必须覆盖“新建空笔记 → 在编辑器输入 → 切到预览”的真实用户路径。前者会绕过 AvalonEdit 输入同步问题，容易误判修复完成。
+- Markdig 默认遵循标准 Markdown 软换行语义：段落内普通换行不会生成 `<br>`，浏览器会把换行空白折叠成同一行。对笔记软件来说，用户在编辑器里按回车通常期待预览也换行，因此在 Markdown 管线中启用 `UseSoftlineBreakAsHardlineBreak()`，把软换行渲染为可见换行。
