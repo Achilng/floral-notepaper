@@ -6,6 +6,7 @@
         xmlns:avalonEdit="http://icsharpcode.net/sharpdevelop/avalonedit"
         xmlns:helpers="clr-namespace:花笺.Helpers"
         xmlns:vm="clr-namespace:花笺.ViewModels"
+        xmlns:wv2="clr-namespace:Microsoft.Web.WebView2.Wpf;assembly=Microsoft.Web.WebView2.Wpf"
         mc:Ignorable="d"
         Title="花笺" Height="780" Width="1200"
         Background="{StaticResource BgBrush}"
@@ -80,7 +81,7 @@
                              ItemContainerStyle="{StaticResource NoteListItem}">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
-                                <StackPanel Margin="0,0,0,0">
+                                <StackPanel>
                                     <TextBlock Text="{Binding Converter={StaticResource NoteTitleConverter}}"
                                                FontSize="12" FontWeight="Medium"
                                                Foreground="{StaticResource TextBrush}"
@@ -121,13 +122,122 @@
                     <Border Grid.Row="0" Padding="16,0"
                             BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,0,0,1">
                         <DockPanel>
+                            <!-- Title Input -->
                             <TextBox Style="{StaticResource TitleInput}"
                                      Text="{Binding NoteTitle, UpdateSourceTrigger=PropertyChanged}"
                                      VerticalAlignment="Center" />
 
+                            <!-- Right side actions -->
                             <StackPanel DockPanel.Dock="Right" Orientation="Horizontal"
                                         HorizontalAlignment="Right" VerticalAlignment="Center">
-                                <Border Width="1" Height="16" Background="{StaticResource BorderBrush}" Margin="8,0" />
+
+                                <!-- Markdown Toolbar -->
+                                <StackPanel Orientation="Horizontal" Margin="0,0,4,0"
+                                            Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}">
+                                    <Button Style="{StaticResource FlatButton}" ToolTip="标题 (Ctrl+1)"
+                                            Command="{Binding InsertMarkdownCommand}" CommandParameter="heading"
+                                            Padding="4,4">
+                                        <TextBlock Text="H" FontSize="12" FontWeight="Bold" Foreground="{StaticResource Text2Brush}" />
+                                    </Button>
+                                    <Button Style="{StaticResource FlatButton}" ToolTip="粗体 (Ctrl+B)"
+                                            Command="{Binding InsertMarkdownCommand}" CommandParameter="bold"
+                                            Padding="4,4">
+                                        <TextBlock Text="B" FontSize="12" FontWeight="Bold" Foreground="{StaticResource Text2Brush}" />
+                                    </Button>
+                                    <Button Style="{StaticResource FlatButton}" ToolTip="斜体 (Ctrl+I)"
+                                            Command="{Binding InsertMarkdownCommand}" CommandParameter="italic"
+                                            Padding="4,4">
+                                        <TextBlock Text="I" FontSize="12" FontStyle="Italic" Foreground="{StaticResource Text2Brush}" />
+                                    </Button>
+                                    <Button Style="{StaticResource FlatButton}" ToolTip="代码"
+                                            Command="{Binding InsertMarkdownCommand}" CommandParameter="code"
+                                            Padding="4,4">
+                                        <TextBlock Text="{}{&lt;/&gt;}" FontSize="10" FontFamily="Consolas" Foreground="{StaticResource Text2Brush}" />
+                                    </Button>
+                                    <Button Style="{StaticResource FlatButton}" ToolTip="列表"
+                                            Command="{Binding InsertMarkdownCommand}" CommandParameter="list"
+                                            Padding="4,4">
+                                        <TextBlock Text="&#xE8FD;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource Text2Brush}" />
+                                    </Button>
+                                    <Button Style="{StaticResource FlatButton}" ToolTip="引用"
+                                            Command="{Binding InsertMarkdownCommand}" CommandParameter="quote"
+                                            Padding="4,4">
+                                        <TextBlock Text="&#xE9B1;" FontFamily="Segoe MDL2 Assets" FontSize="12" Foreground="{StaticResource Text2Brush}" />
+                                    </Button>
+                                    <Button Style="{StaticResource FlatButton}" ToolTip="分割线"
+                                            Command="{Binding InsertMarkdownCommand}" CommandParameter="hr"
+                                            Padding="4,4">
+                                        <TextBlock Text="—" FontSize="12" Foreground="{StaticResource Text2Brush}" />
+                                    </Button>
+                                </StackPanel>
+
+                                <Border Width="1" Height="16" Background="{StaticResource BorderBrush}" Margin="4,0" />
+
+                                <!-- Mode Toggle -->
+                                <Border Background="{StaticResource BgSidebarBrush}"
+                                        CornerRadius="5" BorderThickness="1" BorderBrush="{StaticResource BorderBrush}"
+                                        Padding="2" Margin="0,0,8,0">
+                                    <StackPanel Orientation="Horizontal">
+                                        <Button x:Name="EditModeBtn" Command="{Binding SwitchToEditCommand}"
+                                                Padding="8,2" Cursor="Hand" FontSize="11" FontFamily="Noto Sans SC, sans-serif">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="BorderThickness" Value="0" />
+                                                    <Setter Property="Foreground" Value="{StaticResource Text2Brush}" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsEditMode}" Value="True">
+                                                            <Setter Property="Background" Value="{StaticResource BgBrush}" />
+                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                            <TextBlock Text="编辑" />
+                                        </Button>
+                                        <Button x:Name="PreviewModeBtn" Command="{Binding SwitchToPreviewCommand}"
+                                                Padding="8,2" Cursor="Hand" FontSize="11" FontFamily="Noto Sans SC, sans-serif">
+                                            <Button.Style>
+                                                <Style TargetType="Button">
+                                                    <Setter Property="BorderThickness" Value="0" />
+                                                    <Setter Property="Foreground" Value="{StaticResource Text2Brush}" />
+                                                    <Setter Property="Background" Value="Transparent" />
+                                                    <Setter Property="Template">
+                                                        <Setter.Value>
+                                                            <ControlTemplate TargetType="Button">
+                                                                <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                                                                        CornerRadius="3" Padding="{TemplateBinding Padding}">
+                                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                                </Border>
+                                                            </ControlTemplate>
+                                                        </Setter.Value>
+                                                    </Setter>
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding IsEditMode}" Value="False">
+                                                            <Setter Property="Background" Value="{StaticResource BgBrush}" />
+                                                            <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Button.Style>
+                                            <TextBlock Text="预览" />
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+
+                                <Border Width="1" Height="16" Background="{StaticResource BorderBrush}" Margin="0,0,8,0" />
+
+                                <!-- Delete Button -->
                                 <Button Style="{StaticResource DangerButton}"
                                         Command="{Binding RequestDeleteCommand}"
                                         ToolTip="删除此笔记" Foreground="{StaticResource Text3Brush}">
@@ -137,10 +247,12 @@
                         </DockPanel>
                     </Border>
 
-                    <!-- Editor Body -->
+                    <!-- Editor / Preview Body -->
                     <Grid Grid.Row="1">
+                        <!-- AvalonEdit Editor -->
                         <avalonEdit:TextEditor
                             x:Name="Editor"
+                            Visibility="{Binding IsEditMode, Converter={StaticResource BoolToVis}}"
                             helpers:AvalonEditBehavior.BoundText="{Binding EditorContent, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                             FontFamily="Noto Serif SC, SimSun, Consolas"
                             FontSize="13"
@@ -152,6 +264,11 @@
                             HorizontalScrollBarVisibility="Disabled"
                             VerticalScrollBarVisibility="Auto"
                             BorderThickness="0" />
+
+                        <!-- Markdown Preview -->
+                        <wv2:WebView2 x:Name="PreviewBrowser"
+                                      Visibility="{Binding IsEditMode, Converter={StaticResource InvBoolToVis}}"
+                                      DefaultBackgroundColor="Transparent" />
 
                         <!-- Delete Confirm Overlay -->
                         <Border Visibility="{Binding ShowDeleteConfirm, Converter={StaticResource BoolToVis}}"

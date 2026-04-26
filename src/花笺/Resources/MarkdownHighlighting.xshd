@@ -1,0 +1,64 @@
+<?xml version="1.0"?>
+<SyntaxDefinition name="Markdown" xmlns="http://icsharpcode.net/sharpdevelop/syntaxdefinition/2008">
+  <Color name="Heading1" foreground="#2B6A3F" fontWeight="bold" />
+  <Color name="Heading2" foreground="#2B6A3F" fontWeight="bold" />
+  <Color name="Heading3" foreground="#3A8A5C" fontWeight="bold" />
+  <Color name="Bold" fontWeight="bold" foreground="#1E2D23" />
+  <Color name="Italic" fontStyle="italic" foreground="#586B5E" />
+  <Color name="InlineCode" foreground="#4A8A95" />
+  <Color name="CodeBlock" foreground="#4A8A95" />
+  <Color name="Link" foreground="#3A8A5C" />
+  <Color name="Blockquote" foreground="#586B5E" fontStyle="italic" />
+  <Color name="ListMarker" foreground="#3A8A5C" fontWeight="bold" />
+  <Color name="HorizontalRule" foreground="#939F96" />
+  <Color name="Strikethrough" foreground="#939F96" />
+
+  <RuleSet>
+    <!-- Code blocks with ``` -->
+    <Span color="CodeBlock" multiline="true">
+      <Begin>^```</Begin>
+      <End>^```</End>
+    </Span>
+
+    <!-- Headings (line-level rules) -->
+    <Rule color="Heading1">^\#[^#].*</Rule>
+    <Rule color="Heading2">^\#\#[^#].*</Rule>
+    <Rule color="Heading3">^\#\#\#.*</Rule>
+
+    <!-- Blockquote -->
+    <Rule color="Blockquote">^&gt;.*</Rule>
+
+    <!-- Horizontal rule -->
+    <Rule color="HorizontalRule">^[-*_]{3,}\s*$</Rule>
+
+    <!-- Unordered list marker -->
+    <Rule color="ListMarker">^\s*[-*+]\s</Rule>
+
+    <!-- Ordered list marker -->
+    <Rule color="ListMarker">^\s*\d+\.\s</Rule>
+
+    <!-- Bold **text** -->
+    <Span color="Bold">
+      <Begin>\*\*</Begin>
+      <End>\*\*</End>
+    </Span>
+
+    <!-- Strikethrough ~~text~~ -->
+    <Span color="Strikethrough">
+      <Begin>~~</Begin>
+      <End>~~</End>
+    </Span>
+
+    <!-- Inline code `text` -->
+    <Span color="InlineCode">
+      <Begin>`</Begin>
+      <End>`</End>
+    </Span>
+
+    <!-- Image ![alt](url) -->
+    <Rule color="Link">!\[.*?\]\(.*?\)</Rule>
+
+    <!-- Link [text](url) -->
+    <Rule color="Link">\[.*?\]\(.*?\)</Rule>
+  </RuleSet>
+</SyntaxDefinition>

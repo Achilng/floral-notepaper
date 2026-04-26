@@ -17,10 +17,10 @@ public static class AvalonEditBehavior
             "BoundText",
             typeof(string),
             typeof(AvalonEditBehavior),
-            new FrameworkPropertyMetadata(string.Empty, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnBoundTextChanged));
+            new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.BindsTwoWayByDefault, OnBoundTextChanged));
 
     public static string GetBoundText(DependencyObject obj) =>
-        (string)obj.GetValue(BoundTextProperty);
+        (string?)obj.GetValue(BoundTextProperty) ?? string.Empty;
 
     public static void SetBoundText(DependencyObject obj, string value) =>
         obj.SetValue(BoundTextProperty, value);

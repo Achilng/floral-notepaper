@@ -39,6 +39,12 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private bool _showDeleteConfirm;
 
+    [ObservableProperty]
+    private bool _isEditMode = true;
+
+    [ObservableProperty]
+    private string _previewHtml = string.Empty;
+
     public MainViewModel(NoteService noteService)
     {
         _noteService = noteService;
@@ -62,6 +68,7 @@ public partial class MainViewModel : ObservableObject
     partial void OnSelectedNoteChanged(Note? value)
     {
         ShowDeleteConfirm = false;
+        IsEditMode = true;
 
         if (value == null)
         {
@@ -70,6 +77,7 @@ public partial class MainViewModel : ObservableObject
             HasSelectedNote = false;
             StatusTime = string.Empty;
             WordCount = 0;
+            PreviewHtml = string.Empty;
             return;
         }
 
@@ -95,6 +103,12 @@ public partial class MainViewModel : ObservableObject
         IsSaved = false;
         _saveTimer.Stop();
         _saveTimer.Start();
+    }
+
+    partial void OnIsEditModeChanged(bool value)
+    {
+        if (!value)
+            PreviewHtml = MarkdownService.ToHtml(EditorContent);
     }
 
     private void PerformSave()
@@ -151,6 +165,27 @@ public partial class MainViewModel : ObservableObject
     {
         ShowDeleteConfirm = false;
     }
+
+    [RelayCommand]
+    private void SwitchToEdit()
+    {
+        IsEditMode = true;
+    }
+
+    [RelayCommand]
+    private void SwitchToPreview()
+    {
+        IsEditMode = false;
+    }
+
+    [RelayCommand]
+    private void InsertMarkdown(string tag)
+    {
+        if (!IsEditMode) return;
+        OnInsertMarkdownRequested?.Invoke(tag);
+    }
+
+    public event Action<string>? OnInsertMarkdownRequested;
 
     private void UpdateWordCount()
     {
