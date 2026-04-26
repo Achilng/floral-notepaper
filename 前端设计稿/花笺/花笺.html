@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>花笺</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@300;400;500&family=Noto+Serif+SC:wght@300;400;500&display=swap" rel="stylesheet" />
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body, #root { width: 100%; height: 100%; overflow: hidden; background: #1a1a18; display: flex; align-items: center; justify-content: center; }
+  body { font-family: 'Noto Sans SC', system-ui, sans-serif; }
+
+  :root {
+    --bg: oklch(98.5% 0.006 155);
+    --bg-sidebar: oklch(96.5% 0.009 155);
+    --bg-hover: oklch(94% 0.012 155);
+    --bg-selected: oklch(93% 0.016 155);
+    --border: oklch(90% 0.01 155);
+    --accent: oklch(48% 0.13 155);
+    --accent2: oklch(58% 0.11 195);
+    --text: oklch(18% 0.012 155);
+    --text-2: oklch(45% 0.012 155);
+    --text-3: oklch(65% 0.01 155);
+    --titlebar: oklch(95% 0.01 155);
+  }
+
+  /* Window shell */
+  .app-window {
+    width: min(1200px, 98vw);
+    height: min(780px, 96vh);
+    background: var(--bg);
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 32px 80px rgba(0,0,0,0.45), 0 0 0 1px rgba(0,0,0,0.15);
+  }
+
+  /* Titlebar */
+  .titlebar {
+    height: 38px;
+    background: var(--titlebar);
+    display: flex;
+    align-items: center;
+    padding: 0 14px;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    -webkit-app-region: drag;
+    user-select: none;
+  }
+  .win-controls { display: flex; gap: 6px; }
+  .win-btn {
+    width: 12px; height: 12px; border-radius: 50%; border: none; cursor: default;
+  }
+  .win-btn.close { background: #ff5f57; }
+  .win-btn.min   { background: #febc2e; }
+  .win-btn.max   { background: #28c840; }
+  .titlebar-title {
+    flex: 1; text-align: center; font-size: 12px; color: var(--text-2);
+    font-family: 'Noto Serif SC', serif; letter-spacing: 0.08em;
+  }
+  .titlebar-actions { display: flex; gap: 6px; }
+  .titlebar-btn {
+    width: 26px; height: 22px; border-radius: 4px; border: none;
+    background: transparent; cursor: pointer; display: flex; align-items: center;
+    justify-content: center; color: var(--text-2);
+    transition: background 0.15s;
+  }
+  .titlebar-btn:hover { background: var(--bg-hover); }
+
+  /* Main layout */
+  .main-layout {
+    display: flex;
+    flex: 1;
+    overflow: hidden;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-header {
+    padding: 10px 12px 8px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .sidebar-title {
+    font-family: 'Noto Serif SC', serif;
+    font-size: 15px;
+    font-weight: 500;
+    color: var(--accent);
+    letter-spacing: 0.05em;
+  }
+  .new-note-btn {
+    width: 24px; height: 24px; border-radius: 5px;
+    border: 1px solid var(--border); background: var(--bg);
+    cursor: pointer; display: flex; align-items: center; justify-content: center;
+    color: var(--text-2); font-size: 14px; line-height: 1;
+    transition: all 0.15s;
+  }
+  .new-note-btn:hover { background: var(--bg-hover); border-color: var(--accent); color: var(--accent); }
+
+  .note-list { flex: 1; overflow-y: auto; }
+  .note-list::-webkit-scrollbar { width: 4px; }
+  .note-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  .note-item {
+    padding: 8px 12px;
+    cursor: pointer;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.12s;
+    position: relative;
+  }
+  .note-item:hover { background: var(--bg-hover); }
+  .note-item.active {
+    background: var(--bg-selected);
+  }
+  .note-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 0; bottom: 0;
+    width: 2.5px;
+    background: var(--accent);
+    border-radius: 0 2px 2px 0;
+  }
+  .note-title {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 2px;
+  }
+  .note-preview {
+    font-size: 11px;
+    color: var(--text-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+    line-height: 1.4;
+  }
+  .note-date {
+    font-size: 10px;
+    color: var(--text-3);
+    letter-spacing: 0.02em;
+  }
+
+  .sidebar-footer {
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .note-count { font-size: 10px; color: var(--text-3); flex: 1; }
+
+  /* Editor area */
+  .editor-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg);
+  }
+
+  .editor-toolbar {
+    height: 38px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg);
+  }
+  .note-title-input {
+    flex: 1;
+    border: none;
+    background: transparent;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    outline: none;
+    letter-spacing: 0.02em;
+  }
+  .note-title-input::placeholder { color: var(--text-3); }
+
+  .toolbar-sep { width: 1px; height: 16px; background: var(--border); }
+
+  .mode-toggle {
+    display: flex;
+    background: var(--bg-sidebar);
+    border-radius: 5px;
+    border: 1px solid var(--border);
+    padding: 2px;
+    gap: 2px;
+  }
+  .mode-btn {
+    padding: 2px 8px;
+    border: none;
+    background: transparent;
+    border-radius: 3px;
+    font-size: 11px;
+    color: var(--text-2);
+    cursor: pointer;
+    transition: all 0.15s;
+    font-family: 'Noto Sans SC', sans-serif;
+    white-space: nowrap;
+  }
+  .mode-btn.active {
+    background: var(--bg);
+    color: var(--accent);
+    box-shadow: 0 1px 3px rgba(0,0,0,0.08);
+  }
+
+  .toolbar-action {
+    width: 26px; height: 24px;
+    border: none; background: transparent;
+    border-radius: 4px; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-3); font-size: 13px;
+    transition: all 0.15s;
+  }
+  .toolbar-action:hover { background: var(--bg-hover); color: var(--text-2); }
+  .toolbar-action.danger:hover { color: #e05c5c; background: #fff0f0; }
+
+  /* Editor body */
+  .editor-body {
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+  }
+
+  .editor-textarea {
+    width: 100%;
+    height: 100%;
+    border: none;
+    background: transparent;
+    padding: 20px 24px;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 13px;
+    line-height: 1.9;
+    color: var(--text);
+    resize: none;
+    outline: none;
+    letter-spacing: 0.02em;
+  }
+  .editor-textarea::placeholder { color: var(--text-3); }
+  .editor-textarea::-webkit-scrollbar { width: 4px; }
+  .editor-textarea::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+
+  /* Preview */
+  .preview-body {
+    width: 100%;
+    height: 100%;
+    overflow-y: auto;
+    padding: 20px 24px;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 13px;
+    line-height: 1.9;
+    color: var(--text);
+    letter-spacing: 0.02em;
+  }
+  .preview-body::-webkit-scrollbar { width: 4px; }
+  .preview-body::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
+  .preview-body h1 { font-size: 18px; font-weight: 500; margin: 0 0 12px; color: var(--text); border-bottom: 1px solid var(--border); padding-bottom: 6px; }
+  .preview-body h2 { font-size: 15px; font-weight: 500; margin: 16px 0 8px; color: var(--text); }
+  .preview-body h3 { font-size: 13px; font-weight: 500; margin: 12px 0 6px; color: var(--text); }
+  .preview-body p { margin: 0 0 10px; }
+  .preview-body ul, .preview-body ol { padding-left: 20px; margin: 0 0 10px; }
+  .preview-body li { margin: 2px 0; }
+  .preview-body code { font-family: 'Menlo', monospace; font-size: 11px; background: var(--bg-sidebar); padding: 1px 4px; border-radius: 3px; color: var(--accent2); }
+  .preview-body pre { background: var(--bg-sidebar); border: 1px solid var(--border); border-radius: 6px; padding: 12px 14px; margin: 0 0 12px; overflow-x: auto; }
+  .preview-body pre code { background: none; padding: 0; color: var(--text); }
+  .preview-body blockquote { border-left: 2.5px solid var(--accent); padding-left: 12px; margin: 0 0 10px; color: var(--text-2); font-style: italic; }
+  .preview-body strong { font-weight: 500; color: var(--text); }
+  .preview-body em { color: var(--text-2); }
+  .preview-body hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+  .preview-body a { color: var(--accent); text-decoration: none; }
+  .preview-body a:hover { text-decoration: underline; }
+  .preview-body table { width: 100%; border-collapse: collapse; margin: 0 0 12px; font-size: 12px; }
+  .preview-body th, .preview-body td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; }
+  .preview-body th { background: var(--bg-sidebar); font-weight: 500; }
+
+  /* Status bar */
+  .status-bar {
+    height: 24px;
+    padding: 0 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-top: 1px solid var(--border);
+    flex-shrink: 0;
+    background: var(--bg-sidebar);
+  }
+  .status-item { font-size: 10px; color: var(--text-3); letter-spacing: 0.02em; }
+  .status-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--accent); }
+
+  /* Empty state */
+  .empty-state {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    color: var(--text-3);
+  }
+  .empty-icon { font-family: 'Noto Serif SC', serif; font-size: 32px; opacity: 0.3; }
+  .empty-text { font-size: 12px; letter-spacing: 0.05em; }
+
+  /* ── Floating Note / Tile ─────────────────────────── */
+  .float-layer {
+    position: fixed; inset: 0;
+    pointer-events: none; z-index: 200;
+  }
+  .fn-win {
+    position: absolute;
+    pointer-events: all;
+    display: flex; flex-direction: column;
+    border-radius: 10px;
+    overflow: visible;
+    transition: box-shadow 0.18s;
+  }
+  .fn-win-inner {
+    border-radius: 10px;
+    overflow: hidden;
+    display: flex; flex-direction: column;
+    width: 100%; height: 100%;
+  }
+  /* Style A — shared base */
+  .fn-win .fn-win-inner {
+    background: oklch(99% 0.004 155);
+    border: 1px solid oklch(91% 0.008 155);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.10), 0 2px 8px rgba(0,0,0,0.06);
+  }
+  .fn-win.focused .fn-win-inner {
+    box-shadow: 0 20px 56px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.07);
+  }
+  /* Tile — glass only */
+  .fn-win.tile-glass .fn-win-inner {
+    background: rgba(244,250,247,0.78);
+    backdrop-filter: blur(20px) saturate(1.5);
+    -webkit-backdrop-filter: blur(20px) saturate(1.5);
+    border: 1px solid rgba(255,255,255,0.6);
+    box-shadow: 0 8px 28px rgba(0,0,0,0.11), 0 0 0 0.5px rgba(0,0,0,0.05);
+  }
+  /* Tile read-only preview */
+  .fn-preview {
+    flex: 1; overflow-y: auto;
+    padding: 8px 12px 12px;
+    font-family: 'Noto Serif SC', serif; font-size: 12px;
+    line-height: 1.88; color: oklch(24% 0.012 155);
+    letter-spacing: 0.02em;
+    cursor: default; user-select: text;
+  }
+  .fn-preview::-webkit-scrollbar { width: 3px; }
+  .fn-preview::-webkit-scrollbar-thumb { background: rgba(0,0,0,0.1); border-radius: 2px; }
+  .fn-preview p { margin: 0 0 6px; }
+  .fn-preview h1,.fn-preview h2,.fn-preview h3 { font-weight: 500; margin: 8px 0 4px; }
+  .fn-preview h1 { font-size: 14px; }
+  .fn-preview h2 { font-size: 13px; }
+  .fn-preview h3 { font-size: 12px; }
+  .fn-preview ul,.fn-preview ol { padding-left: 16px; margin: 0 0 6px; }
+  .fn-preview li { margin: 1px 0; }
+  .fn-preview blockquote { border-left: 2px solid oklch(68% 0.10 155); padding-left: 8px; color: oklch(45% 0.01 155); margin: 0 0 6px; font-style: italic; }
+  .fn-preview strong { font-weight: 500; }
+  .fn-preview code { font-family: Menlo, monospace; font-size: 10px; background: rgba(0,0,0,0.05); padding: 1px 3px; border-radius: 2px; }
+  .fn-preview hr { border: none; border-top: 1px solid rgba(0,0,0,0.08); margin: 8px 0; }
+  .fn-preview-empty { color: oklch(72% 0.008 155); font-style: italic; }
+
+  /* Head area (drag handle) */
+  .fn-head {
+    padding: 8px 12px 0;
+    cursor: grab; flex-shrink: 0;
+    position: relative;
+  }
+  .fn-head:active { cursor: grabbing; }
+
+  /* Title row — hidden when empty & not hovered */
+  .fn-title-row {
+    overflow: hidden;
+    max-height: 0;
+    opacity: 0;
+    transition: max-height 0.18s ease, opacity 0.15s ease, padding 0.18s ease;
+    padding-bottom: 0;
+  }
+  .fn-win:hover .fn-title-row,
+  .fn-title-row.has-title,
+  .fn-title-row:focus-within {
+    max-height: 32px;
+    opacity: 1;
+    padding-bottom: 6px;
+  }
+
+  .fn-title-input {
+    width: 100%; border: none; outline: none;
+    background: transparent;
+    font-family: 'Noto Serif SC', serif;
+    font-size: 12.5px; font-weight: 500;
+    color: oklch(22% 0.012 155);
+    letter-spacing: 0.025em;
+    cursor: text; display: block;
+  }
+  .fn-title-input::placeholder { color: oklch(75% 0.008 155); }
+
+  .fn-divider {
+    height: 1px; background: oklch(92% 0.008 155);
+    margin: 0 0 0;
+    max-height: 0; overflow: hidden;
+    transition: max-height 0.18s ease;
+  }
+  .fn-title-row.has-title + .fn-divider,
+  .fn-title-row:focus-within + .fn-divider {
+    max-height: 1px;
+  }
+  .fn-win.tile-paper .fn-divider { background: oklch(88% 0.02 85); }
+
+  /* Close button — appears on hover */
+  .fn-close {
+    position: absolute; top: 7px; right: 8px;
+    width: 18px; height: 18px; border-radius: 4px;
+    border: none; background: transparent; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    color: oklch(68% 0.01 155); opacity: 0;
+    transition: opacity 0.15s, background 0.12s;
+  }
+  .fn-win:hover .fn-close { opacity: 1; }
+  .fn-close:hover { background: oklch(93% 0.01 155); color: oklch(40% 0.01 155); }
+
+  /* Textarea */
+  .fn-textarea {
+    flex: 1; border: none; background: transparent;
+    padding: 10px 12px 10px; resize: none; outline: none;
+    font-family: 'Noto Serif SC', serif; font-size: 12px;
+    line-height: 1.88; color: oklch(28% 0.01 155);
+    letter-spacing: 0.02em; overflow-y: auto;
+    cursor: text;
+  }
+  .fn-textarea::-webkit-scrollbar { width: 3px; }
+  .fn-textarea::-webkit-scrollbar-thumb { background: oklch(88% 0.01 155); border-radius: 2px; }
+  .fn-textarea::placeholder { color: oklch(72% 0.008 155); }
+
+  .fn-status { display: none; }
+
+  /* Resize handle */
+  .fn-resize {
+    position: absolute; bottom: -1px; right: -1px;
+    width: 16px; height: 16px; cursor: se-resize; z-index: 1;
+  }
+
+  /* ── Context Menu ── */
+  .ctx-menu {
+    position: fixed; z-index: 9999;
+    background: oklch(99% 0.004 155);
+    border: 1px solid oklch(88% 0.01 155);
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.14), 0 2px 8px rgba(0,0,0,0.07);
+    padding: 4px;
+    min-width: 160px;
+    font-family: 'Noto Sans SC', sans-serif;
+    font-size: 12px;
+    animation: ctx-in 0.1s ease;
+    pointer-events: all;
+    cursor: default;
+  }
+  @keyframes ctx-in {
+    from { opacity: 0; transform: scale(0.95); }
+    to   { opacity: 1; transform: scale(1); }
+  }
+  .ctx-item {
+    padding: 6px 10px; border-radius: 5px; cursor: pointer;
+    color: oklch(25% 0.012 155); display: flex; align-items: center; gap: 8px;
+    transition: background 0.1s;
+    user-select: none;
+  }
+  .ctx-item:hover { background: oklch(94% 0.012 155); }
+  .ctx-item.accent { color: oklch(42% 0.13 155); }
+  .ctx-item.danger { color: #d04040; }
+  .ctx-item.danger:hover { background: #fff0f0; }
+  .ctx-sep { height: 1px; background: oklch(91% 0.008 155); margin: 3px 4px; }
+  .ctx-icon { width: 14px; text-align: center; opacity: 0.7; font-size: 11px; }
+
+  /* Summon button in titlebar */
+  .summon-btn {
+    padding: 3px 10px; border-radius: 4px;
+    border: 1px solid var(--border); background: var(--bg);
+    font-size: 11px; color: var(--text-2); cursor: pointer;
+    font-family: 'Noto Sans SC', sans-serif;
+    transition: all 0.13s; display: flex; align-items: center; gap: 4px;
+  }
+  .summon-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .summon-key {
+    font-size: 9px; background: var(--bg-sidebar); border: 1px solid var(--border);
+    border-radius: 2px; padding: 0 3px; color: var(--text-3);
+  }
+
+  /* Delete confirm */
+  .del-confirm {
+    position: absolute; inset: 0;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: blur(4px);
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 12px; z-index: 10;
+  }
+  .del-confirm p { font-size: 13px; color: var(--text); }
+  .del-confirm-actions { display: flex; gap: 8px; }
+  .del-btn {
+    padding: 5px 16px; border-radius: 5px; border: 1px solid var(--border);
+    font-size: 12px; cursor: pointer; background: var(--bg);
+    color: var(--text-2); transition: all 0.15s;
+    font-family: 'Noto Sans SC', sans-serif;
+  }
+  .del-btn.confirm { background: #e05c5c; border-color: #e05c5c; color: #fff; }
+  .del-btn.confirm:hover { background: #c94a4a; }
+  .del-btn:hover { background: var(--bg-hover); }
+</style>
+<template id="__bundler_thumbnail">
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <rect width="100" height="100" fill="oklch(96% 0.012 155)"/>
+  <g transform="translate(30,28)">
+    <rect width="40" height="44" rx="3" fill="oklch(99% 0.004 155)" stroke="oklch(48% 0.13 155)" stroke-width="1"/>
+    <line x1="6" y1="11" x2="34" y2="11" stroke="oklch(48% 0.13 155)" stroke-width="0.8"/>
+    <line x1="6" y1="20" x2="30" y2="20" stroke="oklch(70% 0.04 155)" stroke-width="0.6"/>
+    <line x1="6" y1="26" x2="32" y2="26" stroke="oklch(70% 0.04 155)" stroke-width="0.6"/>
+    <line x1="6" y1="32" x2="26" y2="32" stroke="oklch(70% 0.04 155)" stroke-width="0.6"/>
+  </g>
+  <text x="50" y="86" font-family="serif" font-size="9" fill="oklch(48% 0.13 155)" text-anchor="middle" letter-spacing="2">花笺</text>
+</svg>
+</template>
+</head>
+<body>
+<div id="root"></div>
+
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel">
+
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "sidebarWidth": 196,
+  "fontSize": 13,
+  "lineHeight": 1.9,
+  "accentHue": 155
+}/*EDITMODE-END*/;
+
+const SAMPLE_NOTES = [
+  {
+    id: 1,
+    title: "会议记录 · 产品评审",
+    content: `# 会议记录 · 产品评审
+
+**时间**：2026年4月24日  
+**参与者**：产品、设计、前端、后端
+
+---
+
+## 议题一：花笺 v1.0 功能范围确认
+
+- 主窗口基本完成，待联调
+- 快捷记录窗口热键冲突问题需排查
+- 磁贴功能推迟到 v1.1
+
+## 议题二：设计走查
+
+> 整体风格已通过，但编辑器字体需要再确认一遍。
+
+**遗留问题**
+
+1. 暗色模式适配
+2. 多语言支持（日文优先）
+3. 导出为 PDF 功能
+
+---
+
+下次会议定于 **5月8日**，届时提供可测试版本。`,
+    date: "今天",
+    updated: "14:32"
+  },
+  {
+    id: 2,
+    title: "读书笔记 · 置身事内",
+    content: `# 置身事内
+
+作者：兰小欢
+
+---
+
+## 核心观点
+
+地方政府的行为逻辑，在于围绕"招商引资"和"土地财政"构建的激励体系。
+
+> 理解中国经济，需要先理解地方政府的行为。
+
+## 摘录
+
+- 政府主导投资，效率高但风险集中
+- 土地出让金构成地方财政重要来源
+- 城投债与隐性债务问题值得关注
+
+## 疑问
+
+1. 这套模式是否可持续？
+2. 财政转移支付如何影响地区差距？`,
+    date: "昨天",
+    updated: "22:11"
+  },
+  {
+    id: 3,
+    title: "TODO · 本周计划",
+    content: `# 本周计划
+
+## 工作
+
+- [x] 完成花笺原型设计稿
+- [ ] 评审后整理修改意见
+- [ ] 后端接口文档对齐
+- [ ] 写周报
+
+## 生活
+
+- [ ] 买书：《万历十五年》
+- [x] 跑步 3 次
+- [ ] 整理书桌
+
+---
+
+*优先级：工作 > 生活，但别忘了喝水。*`,
+    date: "周一",
+    updated: "09:05"
+  },
+  {
+    id: 4,
+    title: "碎念",
+    content: `# 碎念
+
+想到哪写到哪。
+
+---
+
+下午的光很好，透过窗帘打进来，落在桌上的茶杯边缘。
+
+有时候觉得，写笔记这件事本身比记录的内容更重要——它是一种节律，一种与自己对话的仪式。
+
+花笺这个名字挺好的。花，是意象；笺，是载体。轻巧，有点旧，又不沉重。
+
+---
+
+今天想起一首诗：
+
+> 咬定青山不放松，立根原在破岩中。
+> 千磨万击还坚劲，任尔东西南北风。
+
+郑板桥的竹，倔强得很。`,
+    date: "上周五",
+    updated: "21:48"
+  },
+  {
+    id: 5,
+    title: "Markdown 语法备忘",
+    content: `# Markdown 语法备忘
+
+## 标题
+
+\`# H1\`  \`## H2\`  \`### H3\`
+
+## 强调
+
+**粗体** \`**text**\`  
+*斜体* \`*text*\`  
+~~删除线~~ \`~~text~~\`
+
+## 列表
+
+- 无序列表
+  - 嵌套项目
+- 另一项
+
+1. 有序列表
+2. 第二项
+
+## 其他
+
+> 引用块
+
+\`行内代码\`
+
+\`\`\`js
+// 代码块
+const hello = 'world';
+\`\`\`
+
+| 列 A | 列 B |
+|------|------|
+| 单元格 | 单元格 |
+
+---
+
+[链接](https://example.com) \`[文字](url)\``,
+    date: "上周三",
+    updated: "16:20"
+  }
+];
+
+// ── ContextMenu ──────────────────────────────────────────────────────────────
+function ContextMenu({ x, y, items, onClose }) {
+  const ref = React.useRef(null);
+  React.useEffect(() => {
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) onClose(); };
+    setTimeout(() => document.addEventListener('mousedown', handler), 0);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [onClose]);
+
+  // Clamp to viewport
+  const [pos, setPos] = React.useState({ x, y });
+  React.useEffect(() => {
+    if (!ref.current) return;
+    const { offsetWidth: w, offsetHeight: h } = ref.current;
+    setPos({ x: Math.min(x, window.innerWidth - w - 8), y: Math.min(y, window.innerHeight - h - 8) });
+  }, [x, y]);
+
+  return (
+    <div ref={ref} className="ctx-menu" style={{ left: pos.x, top: pos.y }}>
+      {items.map((item, i) =>
+        item === '---'
+          ? <div key={i} className="ctx-sep" />
+          : <div key={i} className={`ctx-item ${item.cls || ''}`} onClick={() => { item.action(); onClose(); }}>
+              <span className="ctx-icon">{item.icon}</span>
+              {item.label}
+            </div>
+      )}
+    </div>
+  );
+}
+
+// ── FloatingNote ─────────────────────────────────────────────────────────────
+function FloatingNote({ note, onUpdate, onClose, onPin, onOpenInMain, onBringToFront }) {
+  const [ctx, setCtx] = React.useState(null);
+  const [focused, setFocused] = React.useState(false);
+  const isTile = note.isTile;
+  const tileClass = isTile ? 'tile-glass' : '';
+
+  // Drag from head area
+  const startDrag = (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON') return;
+    e.preventDefault();
+    onBringToFront();
+    const ox = e.clientX - note.x, oy = e.clientY - note.y;
+    let raf = null;
+    const move = (ev) => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        onUpdate({ x: ev.clientX - ox, y: ev.clientY - oy });
+        raf = null;
+      });
+    };
+    const up = () => {
+      if (raf) cancelAnimationFrame(raf);
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
+
+  // Resize
+  const startResize = (e) => {
+    e.preventDefault(); e.stopPropagation();
+    const sx = e.clientX, sy = e.clientY, sw = note.w, sh = note.h;
+    let raf = null;
+    const move = (ev) => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => {
+        onUpdate({ w: Math.max(240, sw + ev.clientX - sx), h: Math.max(150, sh + ev.clientY - sy) });
+        raf = null;
+      });
+    };
+    const up = () => {
+      if (raf) cancelAnimationFrame(raf);
+      document.removeEventListener('mousemove', move);
+      document.removeEventListener('mouseup', up);
+    };
+    document.addEventListener('mousemove', move);
+    document.addEventListener('mouseup', up);
+  };
+
+  // Right-click menu
+  const handleContextMenu = (e) => {
+    e.preventDefault();
+    const quickItems = [
+      { icon: '📌', label: '贴在一旁', cls: 'accent', action: onPin },
+      { icon: '↗', label: '存入笔记', action: () => { onOpenInMain(); onClose(); } },
+      '---',
+      { icon: '✕', label: '关闭', cls: 'danger', action: onClose },
+    ];
+    const tileItems = [
+      { icon: '✏️', label: '继续编辑', cls: 'accent', action: () => onUpdate({ isTile: false }) },
+      { icon: '↗', label: '在主窗口打开', action: onOpenInMain },
+      '---',
+      { icon: '✕', label: '关闭', cls: 'danger', action: onClose },
+    ];
+    setCtx({ x: e.clientX, y: e.clientY, items: isTile ? tileItems : quickItems });
+  };
+
+  const previewHtml = React.useMemo(() => {
+    if (!note.content) return '';
+    try { return marked.parse(note.content); } catch(e) { return note.content; }
+  }, [note.content]);
+
+  return (
+    <>
+      <div
+        className={`fn-win ${tileClass} ${focused ? 'focused' : ''}`}
+        style={{ left: note.x, top: note.y, width: note.w, height: note.h, zIndex: note.z }}
+        onMouseDown={onBringToFront}
+        onContextMenu={handleContextMenu}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+      >
+        <div className="fn-win-inner">
+          {/* Head — drag handle */}
+          <div className="fn-head" onMouseDown={startDrag}>
+            <div className={`fn-title-row ${note.title ? 'has-title' : ''}`}>
+              <input
+                className="fn-title-input"
+                value={note.title}
+                onChange={e => onUpdate({ title: e.target.value })}
+                placeholder="标题"
+                onMouseDown={e => e.stopPropagation()}
+              />
+            </div>
+            <div className="fn-divider" />
+            <button className="fn-close" onClick={onClose} onMouseDown={e => e.stopPropagation()} title="关闭">
+              <svg width="8" height="8" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round"/></svg>
+            </button>
+          </div>
+
+          {/* Content — editable when quick, read-only preview when tile */}
+          {isTile ? (
+            <div
+              className="fn-preview"
+              dangerouslySetInnerHTML={{ __html: previewHtml || '<span class="fn-preview-empty">空</span>' }}
+            />
+          ) : (
+            <textarea
+              className="fn-textarea"
+              value={note.content}
+              onChange={e => onUpdate({ content: e.target.value })}
+              placeholder="随手写点什么……"
+              spellCheck={false}
+            />
+          )}
+
+        </div>
+
+        {/* Resize handle */}
+        <div className="fn-resize" onMouseDown={startResize} />
+      </div>
+
+      {ctx && <ContextMenu x={ctx.x} y={ctx.y} items={ctx.items} onClose={() => setCtx(null)} />}
+    </>
+  );
+}
+
+function wordCount(text) {
+  const chinese = (text.match(/[\u4e00-\u9fa5]/g) || []).length;
+  const english = (text.match(/\b[a-zA-Z]+\b/g) || []).length;
+  return chinese + english;
+}
+
+function formatDate(note) {
+  return note.date + " " + note.updated;
+}
+
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+
+  const [notes, setNotes] = React.useState(SAMPLE_NOTES);
+  const [activeId, setActiveId] = React.useState(1);
+  const [mode, setMode] = React.useState('edit');
+  const [showDelete, setShowDelete] = React.useState(false);
+  const [saved, setSaved] = React.useState(true);
+  const [floats, setFloats] = React.useState([]);
+  const zTop = React.useRef(300);
+
+  const nextZ = () => { zTop.current += 1; return zTop.current; };
+
+  const active = notes.find(n => n.id === activeId);
+
+  const updateNote = (field, value) => {
+    setSaved(false);
+    setNotes(ns => ns.map(n => n.id === activeId ? { ...n, [field]: value } : n));
+    setTimeout(() => setSaved(true), 800);
+  };
+
+  const summonQuickNote = () => {
+    const id = Date.now();
+    requestAnimationFrame(() => {
+      setFloats(fs => [...fs, {
+        id, title: '', content: '', isTile: false,
+        x: Math.round(Math.random() * 120 + 180),
+        y: Math.round(Math.random() * 80 + 120),
+        w: 340, h: 240, z: nextZ()
+      }]);
+    });
+  };
+
+  const updateFloat = (id, patch) => setFloats(fs => fs.map(f => f.id === id ? { ...f, ...patch } : f));
+  const closeFloat = (id) => setFloats(fs => fs.filter(f => f.id !== id));
+  const pinFloat = (id) => setFloats(fs => fs.map(f => f.id === id ? { ...f, isTile: true } : f));
+  const bringToFront = (id) => setFloats(fs => fs.map(f => f.id === id ? { ...f, z: nextZ() } : f));
+
+  const openFloatInMain = (floatNote) => {
+    const id = Date.now();
+    const newNote = { id, title: floatNote.title || '快速记录', content: floatNote.content, date: '今天', updated: new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}) };
+    setNotes(ns => [newNote, ...ns]);
+    setActiveId(id);
+    setMode('edit');
+  };
+
+  // Keyboard shortcut: Ctrl+Space
+  React.useEffect(() => {
+    const handler = (e) => { if (e.ctrlKey && e.code === 'Space') { e.preventDefault(); summonQuickNote(); } };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
+  const newNote = () => {
+    const id = Date.now();
+    const note = { id, title: "新建笔记", content: "", date: "今天", updated: new Date().toLocaleTimeString('zh-CN', {hour:'2-digit',minute:'2-digit'}) };
+    setNotes(ns => [note, ...ns]);
+    setActiveId(id);
+    setMode('edit');
+  };
+
+  const deleteNote = () => {
+    const remaining = notes.filter(n => n.id !== activeId);
+    setNotes(remaining);
+    setActiveId(remaining[0]?.id || null);
+    setShowDelete(false);
+  };
+
+  const wc = active ? wordCount(active.content) : 0;
+
+  // Apply tweaks via CSS vars
+  React.useEffect(() => {
+    document.documentElement.style.setProperty('--font-size-editor', tweaks.fontSize + 'px');
+    document.documentElement.style.setProperty('--line-height-editor', tweaks.lineHeight);
+    const hue = tweaks.accentHue;
+    document.documentElement.style.setProperty('--accent', `oklch(48% 0.13 ${hue})`);
+    document.documentElement.style.setProperty('--accent2', `oklch(58% 0.11 ${hue + 40})`);
+    document.documentElement.style.setProperty('--bg-selected', `oklch(93% 0.016 ${hue})`);
+    document.documentElement.style.setProperty('--bg-hover', `oklch(94% 0.012 ${hue})`);
+  }, [tweaks]);
+
+  const previewHtml = React.useMemo(() => {
+    if (!active) return '';
+    try { return marked.parse(active.content); } catch(e) { return active.content; }
+  }, [active?.content]);
+
+  return (
+    <div className="app-window">
+      {/* Titlebar */}
+      <div className="titlebar">
+        <div className="win-controls">
+          <div className="win-btn close"></div>
+          <div className="win-btn min"></div>
+          <div className="win-btn max"></div>
+        </div>
+        <div className="titlebar-title">花笺</div>
+        <button className="summon-btn" onClick={summonQuickNote} title="Ctrl+Space 呼出小窗">
+          快速记录 <span className="summon-key">⌃Space</span>
+        </button>
+      </div>
+
+      {/* Main */}
+      <div className="main-layout">
+        {/* Sidebar */}
+        <div className="sidebar" style={{width: tweaks.sidebarWidth}}>
+          <div className="sidebar-header">
+            <span className="sidebar-title">笔记</span>
+            <button className="new-note-btn" onClick={newNote} title="新建笔记">＋</button>
+          </div>
+          <div className="note-list">
+            {notes.map(note => (
+              <div
+                key={note.id}
+                className={`note-item ${note.id === activeId ? 'active' : ''}`}
+                onClick={() => setActiveId(note.id)}
+              >
+                <div className="note-title">{note.title || "（无标题）"}</div>
+                <div className="note-preview">{note.content.replace(/[#*`>\[\]\-\|]/g, '').slice(0, 60)}</div>
+                <div className="note-date">{formatDate(note)}</div>
+              </div>
+            ))}
+          </div>
+          <div className="sidebar-footer">
+            <span className="note-count">{notes.length} 篇笔记</span>
+          </div>
+        </div>
+
+        {/* Editor */}
+        <div className="editor-area">
+          {active ? (
+            <>
+              <div className="editor-toolbar">
+                <input
+                  className="note-title-input"
+                  value={active.title}
+                  onChange={e => updateNote('title', e.target.value)}
+                  placeholder="笔记标题"
+                />
+                <div className="toolbar-sep"></div>
+                <div className="mode-toggle">
+                  <button className={`mode-btn ${mode === 'edit' ? 'active' : ''}`} onClick={() => setMode('edit')}>编辑</button>
+                  <button className={`mode-btn ${mode === 'preview' ? 'active' : ''}`} onClick={() => setMode('preview')}>预览</button>
+                </div>
+                <div className="toolbar-sep"></div>
+                <button className="toolbar-action danger" title="删除此笔记" onClick={() => setShowDelete(true)}>
+                  <svg width="14" height="14" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 4h10M6 4V3h4v1M5 4v8a1 1 0 001 1h4a1 1 0 001-1V4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                </button>
+              </div>
+
+              <div className="editor-body">
+                {mode === 'edit' ? (
+                  <textarea
+                    className="editor-textarea"
+                    value={active.content}
+                    onChange={e => updateNote('content', e.target.value)}
+                    placeholder="开始写作……支持 Markdown 语法"
+                    style={{ fontSize: tweaks.fontSize, lineHeight: tweaks.lineHeight }}
+                    spellCheck={false}
+                  />
+                ) : (
+                  <div
+                    className="preview-body"
+                    style={{ fontSize: tweaks.fontSize, lineHeight: tweaks.lineHeight }}
+                    dangerouslySetInnerHTML={{ __html: previewHtml }}
+                  />
+                )}
+
+                {showDelete && (
+                  <div className="del-confirm">
+                    <p>确认删除「{active.title}」？此操作不可撤销。</p>
+                    <div className="del-confirm-actions">
+                      <button className="del-btn" onClick={() => setShowDelete(false)}>取消</button>
+                      <button className="del-btn confirm" onClick={deleteNote}>删除</button>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="status-bar">
+                <div className="status-dot" style={{background: saved ? 'var(--accent)' : '#e5a832'}}></div>
+                <span className="status-item">{saved ? '已保存' : '编辑中…'}</span>
+                <span className="status-item">·</span>
+                <span className="status-item">{wc} 字</span>
+                <span className="status-item">·</span>
+                <span className="status-item">Markdown</span>
+                <span className="status-item" style={{marginLeft:'auto'}}>{formatDate(active)}</span>
+              </div>
+            </>
+          ) : (
+            <div className="empty-state">
+              <div className="empty-icon">笺</div>
+              <div className="empty-text">选择或新建一篇笔记</div>
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Floating notes / tiles */}
+      <div className="float-layer">
+        {floats.map(f => (
+          <FloatingNote
+            key={f.id}
+            note={f}
+            onUpdate={patch => updateFloat(f.id, patch)}
+            onClose={() => closeFloat(f.id)}
+            onPin={() => pinFloat(f.id)}
+            onOpenInMain={() => openFloatInMain(f)}
+            onBringToFront={() => bringToFront(f.id)}
+          />
+        ))}
+      </div>
+
+      <TweaksPanel>        <TweakSection label="侧栏">
+          <TweakSlider label="侧栏宽度" value={tweaks.sidebarWidth} min={160} max={320} step={4} onChange={v => setTweak('sidebarWidth', v)} />
+        </TweakSection>
+        <TweakSection label="编辑器">
+          <TweakSlider label="字号" value={tweaks.fontSize} min={11} max={18} step={1} onChange={v => setTweak('fontSize', v)} />
+          <TweakSlider label="行距" value={tweaks.lineHeight} min={1.4} max={2.6} step={0.1} onChange={v => setTweak('lineHeight', v)} />
+        </TweakSection>
+        <TweakSection label="色调">
+          <TweakSlider label="主色色相" value={tweaks.accentHue} min={100} max={220} step={5} onChange={v => setTweak('accentHue', v)} />
+        </TweakSection>
+      </TweaksPanel>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+</script>
+</body>
+</html>

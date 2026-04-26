@@ -1,0 +1,29 @@
+## .NET / Visual Studio
+bin/
+obj/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+.vs/
+
+## NuGet
+*.nupkg
+**/[Pp]ackages/*
+!**/[Pp]ackages/build/
+
+## Build results
+[Dd]ebug/
+[Rr]elease/
+x64/
+x86/
+
+## IDE
+.idea/
+*.swp
+*~
+
+## OS
+Thumbs.db
+Desktop.ini
+.DS_Store
