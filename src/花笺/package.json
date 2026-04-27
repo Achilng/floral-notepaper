@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
+    "test": "vitest run",
     "preview": "vite preview",
     "tauri": "set PATH=D:\\Rust\\rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\bin;%PATH%&& tauri"
   },
@@ -23,6 +24,7 @@
     "@vitejs/plugin-react": "^4.6.0",
     "tailwindcss": "^4.2.4",
     "typescript": "~5.8.3",
-    "vite": "^7.0.4"
+    "vite": "^7.0.4",
+    "vitest": "^4.0.0"
   }
 }

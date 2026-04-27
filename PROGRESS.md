@@ -1,6 +1,6 @@
 # 花笺 开发进度
 
-## 当前阶段：R2 — Rust 数据核心完成，准备进入 R3 主窗口迁移
+## 当前阶段：R3 — 主窗口真实数据接入完成，准备进入 R4 便签与磁贴迁移
 
 当前主线已从 C# + WPF 转为 Tauri 2 + React + TypeScript + Rust。旧 WPF 版本不再作为继续扩展的主线，但其已经完成的功能和 Windows 经验会作为迁移参考。
 
@@ -139,12 +139,12 @@
 
 | 任务 | 状态 |
 |------|------|
-| 拆分生产级 MainWindow 组件 | 待开始 |
-| 接入真实笔记列表 | 待开始 |
-| 接入新建、选择、编辑、保存、删除 | 待开始 |
-| 实现 Markdown 预览 | 待开始 |
-| 实现搜索过滤 | 待开始 |
-| 实现保存状态和自动保存 | 待开始 |
+| 拆分生产级 MainWindow 组件 | 已完成，抽出 notes API、notes utility、Markdown preview |
+| 接入真实笔记列表 | 已完成，调用 Rust `notes_list` / `notes_get` |
+| 接入新建、选择、编辑、保存、删除 | 已完成 |
+| 实现 Markdown 预览 | 已完成 |
+| 实现搜索过滤 | 已完成 |
+| 实现保存状态和自动保存 | 已完成，编辑后自动延迟保存，也保留手动保存入口 |
 
 ### Phase R4：便签与磁贴迁移
 
@@ -226,9 +226,26 @@ R2 验证记录：
 - 已运行：`npm.cmd run build`
 - 结果：通过，TypeScript 与 Vite 生产构建成功。
 
+R3 验证记录：
+
+- 已运行：`npm.cmd test`
+- 结果：通过，3 个前端 utility 测试全部通过。
+- 已运行：`npm.cmd run build`
+- 结果：通过，TypeScript 与 Vite 生产构建成功。
+- 已运行：`cargo test`
+- 结果：通过，3 个 Rust 单元测试全部通过。
+
 ---
 
 ## 六、变更日志
+
+### 2026-04-28（Tauri R3 主窗口真实数据接入）
+
+- 新增前端 notes API 封装，统一调用 `notes_list`、`notes_get`、`notes_create`、`notes_update`、`notes_delete`。
+- 将主窗口从 mock 数据切换到 Rust 数据核心，支持真实笔记列表、新建、选择、编辑、保存和删除。
+- 新增保存状态和延迟自动保存策略，并保留手动保存入口。
+- 新增 Markdown preview 生产组件，保留确认版设计稿的纸面与墨色视觉方向。
+- 新增前端 notes utility 和 Vitest 测试，覆盖标题展示、预览生成、字数统计和搜索过滤。
 
 ### 2026-04-28（Tauri R2 Rust 数据核心）
 
@@ -272,7 +289,7 @@ R2 验证记录：
 
 ## 七、下一步
 
-1. 开始 Phase R3：建立前端 notes API 封装，接入 Rust commands。
-2. 将主窗口从 mock 数据切换为真实笔记列表、创建、编辑、保存和删除。
-3. 接入 Markdown 预览、搜索过滤、保存状态和自动保存。
-4. R3 完成后继续更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。
+1. 开始 Phase R4：将便签窗口接入真实笔记数据。
+2. 设计并实现 `notepad-*`、`tile-*` 动态窗口创建和窗口内关闭、置顶、尺寸控制。
+3. 实现从主窗口钉住当前笔记为磁贴，从便签新建或打开已有笔记并保存。
+4. R4 完成后继续更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。
