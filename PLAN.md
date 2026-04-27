@@ -285,12 +285,12 @@ Rust 后端是文件系统和数据一致性的唯一权威。React 前端只通
 
 **目标**：先跑通不依赖 UI 的笔记数据闭环。
 
-- [ ] 定义 `Note`、`NoteMetadata`、`AppConfig`、错误类型和 command DTO。
-- [ ] 实现笔记目录初始化。
-- [ ] 实现 `.md` 创建、读取、更新、删除。
-- [ ] 实现 `metadata.json` 读写和损坏恢复策略。
-- [ ] 实现 `config.json` 读写。
-- [ ] 为 Rust 服务添加单元测试，测试数据放在临时目录。
+- [x] 定义 `Note`、`NoteMetadata`、`AppConfig`、错误类型和 command DTO。
+- [x] 实现笔记目录初始化。
+- [x] 实现 `.md` 创建、读取、更新、删除。
+- [x] 实现 `metadata.json` 读写和损坏恢复策略。
+- [x] 实现 `config.json` 读写。
+- [x] 为 Rust 服务添加单元测试，测试数据放在临时目录。
 
 ### Phase R3：主窗口功能迁移
 

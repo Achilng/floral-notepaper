@@ -1,6 +1,6 @@
 # 花笺 开发进度
 
-## 当前阶段：R1 — Tauri 2 基础骨架启动
+## 当前阶段：R2 — Rust 数据核心完成，准备进入 R3 主窗口迁移
 
 当前主线已从 C# + WPF 转为 Tauri 2 + React + TypeScript + Rust。旧 WPF 版本不再作为继续扩展的主线，但其已经完成的功能和 Windows 经验会作为迁移参考。
 
@@ -128,12 +128,12 @@
 
 | 任务 | 状态 |
 |------|------|
-| 定义 Note / Metadata / Config 模型 | 待开始 |
-| 实现笔记目录初始化 | 待开始 |
-| 实现 `.md` CRUD | 待开始 |
-| 实现 `metadata.json` 读写 | 待开始 |
-| 实现 `config.json` 读写 | 待开始 |
-| 添加 Rust 单元测试 | 待开始 |
+| 定义 Note / Metadata / Config 模型 | 已完成 |
+| 实现笔记目录初始化 | 已完成 |
+| 实现 `.md` CRUD | 已完成 |
+| 实现 `metadata.json` 读写 | 已完成，包含损坏文件改名备份和重建 |
+| 实现 `config.json` 读写 | 已完成 |
+| 添加 Rust 单元测试 | 已完成，测试数据位于 `D:\Agent\Agent_temp\huajian-rust-tests` |
 
 ### Phase R3：主窗口迁移
 
@@ -218,9 +218,25 @@ R1 验证记录：
 - 结果：通过。Tauri 识别到 WebView2、MSVC、`rustc 1.94.1`、`cargo 1.94.1`；因未走 rustup 默认代理，`rustup/toolchain` 检测项有警告。
 - 已调整：`package.json` 的 `tauri` 脚本在 npm 进程内临时加入 `D:\Rust\rustup\toolchains\stable-x86_64-pc-windows-msvc\bin`，不修改系统 PATH。
 
+R2 验证记录：
+
+- 已运行：`cargo test`
+- 运行方式：本次进程临时设置 `PATH=D:\Rust\rustup\toolchains\stable-x86_64-pc-windows-msvc\bin;...`，并设置 `CARGO_HOME=D:\Agent\Agent_temp\cargo-home`。
+- 结果：通过，3 个 Rust 单元测试全部通过。
+- 已运行：`npm.cmd run build`
+- 结果：通过，TypeScript 与 Vite 生产构建成功。
+
 ---
 
 ## 六、变更日志
+
+### 2026-04-28（Tauri R2 Rust 数据核心）
+
+- 新增 Rust 数据核心服务，统一管理笔记目录、`.md` 原文、`metadata.json` 和 `config.json`。
+- 新增 `Note`、`NoteMetadata`、`AppConfig`、`SaveNoteRequest`、`AppError` 等模型和 DTO。
+- 新增 Tauri commands：`notes_list`、`notes_get`、`notes_create`、`notes_update`、`notes_delete`、`config_get`、`config_save`。
+- 实现 metadata 损坏恢复：损坏文件会改名为 `metadata.corrupt-*.json`，再从现有 `.md` 文件重建索引。
+- 新增 Rust 单元测试覆盖笔记 CRUD、metadata 损坏重建、config 读写。
 
 ### 2026-04-28（Tauri R1 基础骨架启动）
 
@@ -256,7 +272,7 @@ R1 验证记录：
 
 ## 七、下一步
 
-1. 运行 `npm.cmd run tauri -- dev` 验证桌面应用启动路径。
-2. 建立前端 API 调用封装，为 R2 Rust 数据核心接入做准备。
-3. 先实现 Rust 数据核心，再把主窗口从 mock 数据切换到真实笔记数据。
-4. 每完成一个重构阶段，都更新本文件的任务状态和验证记录。
+1. 开始 Phase R3：建立前端 notes API 封装，接入 Rust commands。
+2. 将主窗口从 mock 数据切换为真实笔记列表、创建、编辑、保存和删除。
+3. 接入 Markdown 预览、搜索过滤、保存状态和自动保存。
+4. R3 完成后继续更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。
