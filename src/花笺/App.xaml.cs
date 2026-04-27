@@ -8,6 +8,9 @@ namespace 花笺;
 
 public partial class App : Application
 {
+    private HotkeyService? _hotkeyService;
+    private NotePadManager? _notePadManager;
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
@@ -15,9 +18,22 @@ public partial class App : Application
         var config = new AppConfig();
         var metadataService = new MetadataService(config.NotesDirectory);
         var noteService = new NoteService(metadataService);
-        var viewModel = new MainViewModel(noteService);
+
+        _notePadManager = new NotePadManager(noteService);
+        var viewModel = new MainViewModel(noteService, _notePadManager);
 
         var mainWindow = new MainWindow(viewModel);
         mainWindow.Show();
+
+        _hotkeyService = new HotkeyService();
+        _hotkeyService.QuickNoteRequested += _notePadManager.CreateQuickNote;
+        _hotkeyService.Register(mainWindow);
+    }
+
+    protected override void OnExit(ExitEventArgs e)
+    {
+        _notePadManager?.CloseAll();
+        _hotkeyService?.Dispose();
+        base.OnExit(e);
     }
 }

@@ -1,0 +1,286 @@
+<Window x:Class="花笺.Views.NotePadWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:helpers="clr-namespace:花笺.Helpers"
+        WindowStyle="None" AllowsTransparency="True"
+        Background="Transparent" ShowInTaskbar="False"
+        Width="360" Height="280" MinWidth="240" MinHeight="150"
+        WindowStartupLocation="Manual"
+        Topmost="{Binding IsTopmost, Mode=TwoWay}">
+
+    <Window.Resources>
+        <helpers:BoolToVisibilityConverter x:Key="BoolToVis" />
+        <helpers:InverseBoolToVisibilityConverter x:Key="InvBoolToVis" />
+        <helpers:NoteTitleConverter x:Key="NoteTitleConv" />
+        <helpers:NoteDateConverter x:Key="NoteDateConv" />
+    </Window.Resources>
+
+    <Border x:Name="OuterBorder" Margin="12" CornerRadius="12"
+            BorderThickness="1" BorderBrush="#DDE6E0">
+        <Border.Style>
+            <Style TargetType="Border">
+                <Setter Property="Background" Value="#FEFFFD" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsTile}" Value="True">
+                        <Setter Property="Background" Value="#F8FBF7" />
+                        <Setter Property="BorderBrush" Value="#D7E4DC" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="28" ShadowDepth="6" Opacity="0.18" Color="#000000" />
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+
+            <!-- Row 0: Header (drag handle) -->
+            <Grid Grid.Row="0" x:Name="DragHandle" Background="Transparent"
+                  Margin="10,8,10,6" MouseLeftButtonDown="DragHandle_MouseLeftButtonDown">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="18" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="18" />
+                </Grid.ColumnDefinitions>
+
+                <Thumb x:Name="MoveGrip" Grid.Column="0"
+                       Width="16" Height="18" Cursor="SizeAll"
+                       DragDelta="MoveGrip_DragDelta"
+                       ToolTip="拖动窗口">
+                    <Thumb.Template>
+                        <ControlTemplate TargetType="Thumb">
+                            <Grid Width="16" Height="18" Background="Transparent">
+                                <UniformGrid Columns="2" Rows="3"
+                                             Width="8" Height="12"
+                                             HorizontalAlignment="Center"
+                                             VerticalAlignment="Center">
+                                    <Ellipse Width="2.4" Height="2.4" Fill="#A8B5AD" />
+                                    <Ellipse Width="2.4" Height="2.4" Fill="#A8B5AD" />
+                                    <Ellipse Width="2.4" Height="2.4" Fill="#A8B5AD" />
+                                    <Ellipse Width="2.4" Height="2.4" Fill="#A8B5AD" />
+                                    <Ellipse Width="2.4" Height="2.4" Fill="#A8B5AD" />
+                                    <Ellipse Width="2.4" Height="2.4" Fill="#A8B5AD" />
+                                </UniformGrid>
+                            </Grid>
+                        </ControlTemplate>
+                    </Thumb.Template>
+                </Thumb>
+
+                <TextBox x:Name="TitleInput"
+                         Grid.Column="1"
+                         Text="{Binding Title, UpdateSourceTrigger=PropertyChanged}"
+                         Background="Transparent" BorderThickness="0"
+                         FontFamily="Noto Serif SC, SimSun, serif"
+                         FontSize="12.5" FontWeight="Medium"
+                         Foreground="#1E2D23" CaretBrush="#1E2D23"
+                         VerticalAlignment="Center" Padding="0"
+                         Margin="6,0,8,0"
+                         GotFocus="TitleInput_GotFocus"
+                         PreviewMouseLeftButtonDown="TitleInput_PreviewMouseLeftButtonDown">
+                    <TextBox.Style>
+                        <Style TargetType="TextBox">
+                            <Style.Triggers>
+                                <Trigger Property="IsFocused" Value="False">
+                                    <Setter Property="Cursor" Value="Arrow" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBox.Style>
+                </TextBox>
+                <TextBlock Grid.Column="1"
+                           Text="标题" IsHitTestVisible="False"
+                           FontFamily="Noto Serif SC, SimSun, serif"
+                           FontSize="12.5" Foreground="#BFC8C1"
+                           VerticalAlignment="Center" Padding="2,0,0,0"
+                           Margin="6,0,8,0">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding Title}" Value="">
+                                    <Setter Property="Visibility" Value="Visible" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <!-- Close button -->
+                <Button x:Name="CloseBtn" Grid.Column="2"
+                        HorizontalAlignment="Right" VerticalAlignment="Top"
+                        Command="{Binding RequestCloseCommand}">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Opacity" Value="0" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border x:Name="Bd" Background="Transparent"
+                                                CornerRadius="4" Width="18" Height="18" Cursor="Hand">
+                                            <Path Data="M5,5 L11,11 M11,5 L5,11"
+                                                  Stroke="#7E8C84" StrokeThickness="1.4"
+                                                  StrokeStartLineCap="Round" StrokeEndLineCap="Round"
+                                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="#E9F0EC" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType=Window}}" Value="True">
+                                    <Setter Property="Opacity" Value="1" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </Grid>
+
+            <!-- Row 1: Divider -->
+            <Border Grid.Row="1" Height="1" Background="#E6EDE8" Margin="12,0" />
+
+            <!-- Row 2: Mode toggle (hidden in tile mode) -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="12,6,12,2"
+                        Visibility="{Binding IsTile, Converter={StaticResource InvBoolToVis}}">
+                <Button x:Name="NewModeBtn" Content="新建" FontSize="11" Padding="0"
+                        FontFamily="Noto Sans SC, sans-serif"
+                        Command="{Binding ShowNewNoteCommand}" Cursor="Hand">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Foreground" Value="#939F96" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Padding="6,2" CornerRadius="3"
+                                                Background="{TemplateBinding Background}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNoteListMode}" Value="False">
+                                    <Setter Property="Foreground" Value="#3A8A5C" />
+                                    <Setter Property="Background" Value="#EFF4F1" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+                <Button x:Name="OpenModeBtn" Content="打开" FontSize="11" Padding="0"
+                        FontFamily="Noto Sans SC, sans-serif"
+                        Command="{Binding ShowNoteListCommand}" Cursor="Hand"
+                        Margin="4,0,0,0">
+                    <Button.Style>
+                        <Style TargetType="Button">
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="BorderThickness" Value="0" />
+                            <Setter Property="Foreground" Value="#939F96" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="Button">
+                                        <Border Padding="6,2" CornerRadius="3"
+                                                Background="{TemplateBinding Background}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsNoteListMode}" Value="True">
+                                    <Setter Property="Foreground" Value="#3A8A5C" />
+                                    <Setter Property="Background" Value="#EFF4F1" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </Button.Style>
+                </Button>
+            </StackPanel>
+
+            <!-- Row 3: Content -->
+            <Grid Grid.Row="3">
+                <!-- Edit textarea -->
+                <TextBox x:Name="ContentEditor"
+                         Text="{Binding Content, UpdateSourceTrigger=PropertyChanged}"
+                         Visibility="{Binding IsNoteListMode, Converter={StaticResource InvBoolToVis}}"
+                         AcceptsReturn="True" AcceptsTab="True" TextWrapping="Wrap"
+                         Background="Transparent" BorderThickness="0"
+                        FontFamily="Noto Serif SC, SimSun, serif"
+                         FontSize="12.5" Foreground="#1E2D23"
+                         CaretBrush="#1E2D23" Padding="12,6,12,12"
+                         SelectionBrush="#CFE8D8"
+                         VerticalScrollBarVisibility="Auto"
+                         SpellCheck.IsEnabled="False"
+                         ContextMenuOpening="OnContextMenuOpening">
+                    <TextBox.ContextMenu>
+                        <ContextMenu x:Name="NoteContextMenu" />
+                    </TextBox.ContextMenu>
+                </TextBox>
+
+                <!-- Note list (open mode) -->
+                <ListBox x:Name="NoteListBox"
+                         Visibility="{Binding IsNoteListMode, Converter={StaticResource BoolToVis}}"
+                         ItemsSource="{Binding NoteList}"
+                         Background="Transparent" BorderThickness="0"
+                         Margin="4,2,4,4"
+                         SelectionChanged="NoteList_SelectionChanged"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="Bd" Padding="8,6" CornerRadius="4"
+                                                Background="Transparent" Cursor="Hand">
+                                            <ContentPresenter />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="Bd" Property="Background" Value="#E5ECE8" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Converter={StaticResource NoteTitleConv}}"
+                                           FontSize="12" FontWeight="Medium" Foreground="#1E2D23"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding Converter={StaticResource NoteDateConv}}"
+                                           FontSize="10" Foreground="#939F96" Margin="0,2,0,0" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+
+                <!-- Resize grip -->
+                <Thumb x:Name="ResizeGrip" Width="16" Height="16"
+                       HorizontalAlignment="Right" VerticalAlignment="Bottom"
+                       Cursor="SizeNWSE" Opacity="0"
+                       DragDelta="ResizeGrip_DragDelta">
+                    <Thumb.Template>
+                        <ControlTemplate TargetType="Thumb">
+                            <Border Background="Transparent" />
+                        </ControlTemplate>
+                    </Thumb.Template>
+                </Thumb>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

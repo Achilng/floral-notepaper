@@ -35,6 +35,36 @@
                            FontFamily="Noto Serif SC, SimSun, serif"
                            FontSize="12" Foreground="{StaticResource Text2Brush}"
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
+
+                <!-- Quick Note button -->
+                <Button HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,14,0"
+                        Command="{Binding QuickNoteCommand}" Cursor="Hand"
+                        ToolTip="Ctrl+Space 呼出快速记录">
+                    <Button.Template>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd" Padding="8,3" CornerRadius="4"
+                                    BorderThickness="1" BorderBrush="{StaticResource BorderBrush}"
+                                    Background="{StaticResource BgBrush}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <TextBlock Text="快速记录" FontSize="11"
+                                               FontFamily="Noto Sans SC, sans-serif"
+                                               Foreground="{StaticResource Text2Brush}" />
+                                    <Border Margin="6,0,0,0" Padding="3,0" CornerRadius="2"
+                                            Background="{StaticResource BgSidebarBrush}"
+                                            BorderThickness="1" BorderBrush="{StaticResource BorderBrush}">
+                                        <TextBlock Text="Ctrl+Space" FontSize="9"
+                                                   Foreground="{StaticResource Text3Brush}" />
+                                    </Border>
+                                </StackPanel>
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AccentBrush}" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Button.Template>
+                </Button>
             </Grid>
         </Border>
 
@@ -236,6 +266,14 @@
                                 </Border>
 
                                 <Border Width="1" Height="16" Background="{StaticResource BorderBrush}" Margin="0,0,8,0" />
+
+                                <!-- Pin Note Button -->
+                                <Button Style="{StaticResource FlatButton}"
+                                        Command="{Binding PinNoteCommand}"
+                                        ToolTip="钉为磁贴" Foreground="{StaticResource Text3Brush}"
+                                        Margin="0,0,4,0">
+                                    <TextBlock Text="&#xE718;" FontFamily="Segoe MDL2 Assets" FontSize="13" />
+                                </Button>
 
                                 <!-- Delete Button -->
                                 <Button Style="{StaticResource DangerButton}"

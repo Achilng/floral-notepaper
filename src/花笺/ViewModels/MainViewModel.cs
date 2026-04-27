@@ -10,6 +10,7 @@ namespace 花笺.ViewModels;
 public partial class MainViewModel : ObservableObject
 {
     private readonly NoteService _noteService;
+    private readonly NotePadManager _notePadManager;
     private readonly DispatcherTimer _saveTimer;
 
     [ObservableProperty]
@@ -45,9 +46,10 @@ public partial class MainViewModel : ObservableObject
     [ObservableProperty]
     private string _previewHtml = string.Empty;
 
-    public MainViewModel(NoteService noteService)
+    public MainViewModel(NoteService noteService, NotePadManager notePadManager)
     {
         _noteService = noteService;
+        _notePadManager = notePadManager;
 
         _saveTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(800) };
         _saveTimer.Tick += (_, _) =>
@@ -55,6 +57,8 @@ public partial class MainViewModel : ObservableObject
             _saveTimer.Stop();
             PerformSave();
         };
+
+        _notePadManager.NoteSavedToLibrary += OnNoteSavedExternally;
 
         LoadNotes();
     }
@@ -230,6 +234,26 @@ public partial class MainViewModel : ObservableObject
             Notes.Insert(index, note);
             SelectedNote = note;
         }
+    }
+
+    [RelayCommand]
+    private void QuickNote()
+    {
+        _notePadManager.CreateQuickNote();
+    }
+
+    [RelayCommand]
+    private void PinNote()
+    {
+        if (SelectedNote != null)
+            _notePadManager.PinNote(SelectedNote);
+    }
+
+    private void OnNoteSavedExternally(Note note)
+    {
+        var allNotes = _noteService.GetAllNotes();
+        Notes = new ObservableCollection<Note>(allNotes);
+        SelectedNote = Notes.FirstOrDefault(n => n.Id == note.Id);
     }
 
     public string GetDisplayTitle(Note note)
