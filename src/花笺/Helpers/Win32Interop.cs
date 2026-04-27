@@ -16,6 +16,11 @@ public static class Win32Interop
     public const uint MOD_SHIFT = 0x0004;
     public const uint VK_SPACE = 0x20;
 
+    public const uint WM_SPAWN_WORKERW = 0x052C;
+    public const string PROGMAN_CLASS = "Progman";
+    public const string WORKERW_CLASS = "WorkerW";
+    public const string SHELLDLL_DEFVIEW_CLASS = "SHELLDLL_DefView";
+
     public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
 
     [DllImport("user32.dll")]
@@ -27,8 +32,11 @@ public static class Win32Interop
     [DllImport("user32.dll")]
     public static extern IntPtr SendMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
 
-    [DllImport("user32.dll")]
+    [DllImport("user32.dll", SetLastError = true)]
     public static extern IntPtr SetParent(IntPtr hWndChild, IntPtr hWndNewParent);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr GetParent(IntPtr hWnd);
 
     [DllImport("user32.dll")]
     public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);

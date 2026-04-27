@@ -16,6 +16,7 @@ public partial class NotePadViewModel : ObservableObject
     [ObservableProperty] private string _content = string.Empty;
     [ObservableProperty] private bool _isTile;
     [ObservableProperty] private bool _isTopmost;
+    [ObservableProperty] private bool _isDesktopEmbedded;
     [ObservableProperty] private bool _isNoteListMode;
     [ObservableProperty] private ObservableCollection<Note> _noteList = [];
 
@@ -81,9 +82,11 @@ public partial class NotePadViewModel : ObservableObject
             EnsureLinked();
             IsTile = true;
             IsTopmost = true;
+            IsDesktopEmbedded = false;
         }
         else
         {
+            IsDesktopEmbedded = false;
             IsTile = false;
             IsTopmost = false;
         }
@@ -139,7 +142,31 @@ public partial class NotePadViewModel : ObservableObject
     [RelayCommand]
     private void ToggleTopmost()
     {
+        if (IsDesktopEmbedded)
+            IsDesktopEmbedded = false;
+
         IsTopmost = !IsTopmost;
+    }
+
+    [RelayCommand]
+    private void ToggleDesktopEmbed()
+    {
+        if (!IsTile)
+        {
+            EnsureLinked();
+            IsTile = true;
+        }
+
+        if (!IsDesktopEmbedded)
+        {
+            IsTopmost = false;
+            IsDesktopEmbedded = true;
+        }
+        else
+        {
+            IsDesktopEmbedded = false;
+            IsTopmost = true;
+        }
     }
 
     private void EnsureLinked()

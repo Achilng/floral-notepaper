@@ -10,6 +10,7 @@ public partial class App : Application
 {
     private HotkeyService? _hotkeyService;
     private NotePadManager? _notePadManager;
+    private DesktopEmbedService? _desktopEmbedService;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -19,7 +20,8 @@ public partial class App : Application
         var metadataService = new MetadataService(config.NotesDirectory);
         var noteService = new NoteService(metadataService);
 
-        _notePadManager = new NotePadManager(noteService);
+        _desktopEmbedService = new DesktopEmbedService();
+        _notePadManager = new NotePadManager(noteService, _desktopEmbedService);
         var viewModel = new MainViewModel(noteService, _notePadManager);
 
         var mainWindow = new MainWindow(viewModel);

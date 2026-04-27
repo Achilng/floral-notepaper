@@ -8,14 +8,16 @@ namespace 花笺.Services;
 public class NotePadManager
 {
     private readonly NoteService _noteService;
+    private readonly DesktopEmbedService _desktopEmbedService;
     private readonly List<NotePadWindow> _windows = [];
     private int _staggerOffset;
 
     public event Action<Note>? NoteSavedToLibrary;
 
-    public NotePadManager(NoteService noteService)
+    public NotePadManager(NoteService noteService, DesktopEmbedService desktopEmbedService)
     {
         _noteService = noteService;
+        _desktopEmbedService = desktopEmbedService;
     }
 
     public void CreateQuickNote()
@@ -60,7 +62,7 @@ public class NotePadManager
 
     private NotePadWindow BuildWindow(NotePadViewModel vm)
     {
-        var window = new NotePadWindow(vm);
+        var window = new NotePadWindow(vm, _desktopEmbedService);
 
         vm.CloseRequested += () =>
         {

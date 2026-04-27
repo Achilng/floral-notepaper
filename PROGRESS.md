@@ -1,6 +1,6 @@
 # 花笺 开发进度
 
-## 当前阶段：Phase 3 — 便签窗口
+## 当前阶段：Phase 4 — 系统集成
 
 ### Phase 1 任务清单
 
@@ -32,7 +32,7 @@
 | 磁贴态：可缩放、可拖拽的无边框窗口 | 已完成 — 点阵握柄拖拽移动，Thumb 拖拽调整大小 |
 | 磁贴态：内容可编辑 | 已完成 — 始终保持 TextBox 可编辑 |
 | 置顶悬浮模式 | 已完成 — Topmost 绑定 |
-| 桌面嵌入模式（WorkerW） | 待开发 |
+| 桌面嵌入模式（WorkerW） | 已完成 — 右键菜单切换"贴在桌面"/"切回置顶悬浮" |
 | 多便签并存管理 | 已完成 — NotePadManager 管理列表 |
 | 主窗口中对笔记执行"钉住"操作 | 已完成 — 工具栏钉住按钮 |
 
@@ -64,7 +64,8 @@ src/花笺/
 │   ├── NoteService.cs
 │   ├── MarkdownService.cs
 │   ├── HotkeyService.cs          ← Phase 3 新增：Win32 全局热键
-│   └── NotePadManager.cs         ← Phase 3 新增：便签窗口管理
+│   ├── NotePadManager.cs         ← Phase 3 新增：便签窗口管理
+│   └── DesktopEmbedService.cs    ← Phase 3 新增：WorkerW 桌面嵌入
 ├── ViewModels/
 │   ├── MainViewModel.cs          ← Phase 3 更新：QuickNote/PinNote 命令
 │   └── NotePadViewModel.cs       ← Phase 3 新增
@@ -101,9 +102,16 @@ src/花笺/
   - 自动保存：关联已有笔记的便签 800ms 防抖自动保存；未关联的便签关闭时自动创建笔记 ✅
   - 便签保存到笔记库后自动刷新主窗口笔记列表 ✅
 
+### 2026-04-27（WorkerW 桌面嵌入）
+- 新增 `DesktopEmbedService`：通过 `Progman` 触发 WorkerW 创建，枚举包含 `SHELLDLL_DefView` 的桌面窗口并找到相邻 `WorkerW`，使用 `SetParent` 将磁贴窗口嵌入桌面层。
+- 新增磁贴模式切换：`NotePadViewModel.IsDesktopEmbedded` 和 `ToggleDesktopEmbedCommand` 管理"置顶悬浮 / 贴在桌面"状态；进入桌面嵌入时关闭 `Topmost`，切回悬浮时恢复置顶。
+- 更新 `NotePadWindow` 右键菜单：磁贴态新增"贴在桌面"与"切回置顶悬浮"入口；窗口关闭或取消钉住时自动从桌面层还原。
+- 验证：WorkerW 结构性回归检查先失败后通过；`dotnet build .\src\花笺\花笺.csproj --no-restore -o D:\Agent\Agent_temp\huajian-build-check-project` 通过（0 警告，0 错误）。
+- 手动试用反馈：暂未发现明显问题；若后续出现桌面层级、多显示器或 Explorer 重启后的异常，归入 Phase 6 打磨项继续处理。
+
 ### 下一步
-- Phase 3 仅剩明确计划项：桌面嵌入模式（WorkerW）。建议下一轮先实现 `DesktopEmbedService`，让磁贴支持"置顶悬浮 / 贴在桌面"两种吸附模式切换。
-- 若暂时不做 WorkerW，可进入 Phase 4：系统托盘图标、最小化/关闭到托盘、开机自启和 `config.json` 配置管理。
+- Phase 3 计划项已经收口。下一轮进入 Phase 4：系统托盘图标、最小化/关闭到托盘、开机自启和 `config.json` 配置管理。
+- 建议先做托盘常驻：接入 Hardcodet.NotifyIcon.Wpf，提供"快速记录"、"打开主窗口"、"退出"三个基础菜单项。
 - 当前便签窗口已可用，但仍需要后续 UI/交互打磨；这些细节可放入 Phase 6 统一处理。
 
 ### 2026-04-26
