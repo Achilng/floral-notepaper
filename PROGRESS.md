@@ -1,8 +1,62 @@
 # 花笺 开发进度
 
-## 当前阶段：Phase 4 — 系统集成
+## 当前阶段：R1 — Tauri 2 基础骨架启动
 
-### Phase 1 任务清单
+当前主线已从 C# + WPF 转为 Tauri 2 + React + TypeScript + Rust。旧 WPF 版本不再作为继续扩展的主线，但其已经完成的功能和 Windows 经验会作为迁移参考。
+
+---
+
+## 一、重构决策
+
+| 事项 | 当前结论 |
+|------|----------|
+| 目标技术栈 | Tauri 2 + React + TypeScript + Rust |
+| 目标平台 | Windows 10/11 |
+| 前端设计稿 | `huajian-demo-确认此方案/` |
+| UI 风格 | 纸面质感、墨色文字、竹绿色强调色、轻量低干扰 |
+| 数据策略 | `.md` 原文文件 + `metadata.json` 元数据 + `config.json` 配置 |
+| 旧 WPF 代码 | 已从正式项目路径 `src/花笺/` 移除；本机备份位于 `src/花笺-WPF备份-20260428-002118/`，不推送到远端 |
+
+---
+
+## 二、设计稿检查结果
+
+确认版设计稿目录：`huajian-demo-确认此方案/`
+
+已查看的关键文件：
+
+- `package.json`
+- `src/App.tsx`
+- `src/App.css`
+- `src/components/MainWindow.tsx`
+- `src/components/NotePad.tsx`
+- `src/components/TileShowcase.tsx`
+- `src-tauri/Cargo.toml`
+- `src-tauri/tauri.conf.json`
+- `src-tauri/src/lib.rs`
+- `src-tauri/capabilities/default.json`
+
+设计稿现状：
+
+- 已具备 Vite + React + TypeScript + Tauri 2 基础结构。
+- 前端包含主窗口、便签小窗、磁贴展示三类核心界面。
+- 当前数据均为 mock，Markdown 预览是示例级解析，不是生产级实现。
+- Rust 侧仍是 Tauri 模板级代码，仅有 `greet` 示例命令和 opener 插件。
+- `tauri.conf.json`、`Cargo.toml`、package 名称仍是临时项目名，正式重构时必须改为花笺的产品信息。
+
+验证记录：
+
+- 已运行：`npm.cmd exec tsc -- --noEmit`
+- 结果：通过。
+- 说明：PowerShell 直接运行 `npm` 会被本机执行策略拦截 `npm.ps1`；在 PowerShell 中应使用 `npm.cmd`，不需要修改系统执行策略。
+
+---
+
+## 三、旧 WPF 版本功能快照
+
+旧 WPF 版本已完成到 Phase 4，可作为迁移验收清单。
+
+### Phase 1：基础骨架
 
 | 任务 | 状态 |
 |------|------|
@@ -13,124 +67,196 @@
 | 集成 AvalonEdit 作为 Markdown 编辑器 | 已完成 |
 | 笔记列表的增删操作 | 已完成 |
 
-### Phase 2 任务清单
+### Phase 2：Markdown 支持
 
 | 任务 | 状态 |
 |------|------|
-| AvalonEdit 的 Markdown 语法高亮 | 已完成 |
-| Markdown 实时预览面板（编辑/预览切换） | 已完成 — 使用 WebView2 渲染 |
+| AvalonEdit Markdown 语法高亮 | 已完成 |
+| Markdown 实时预览面板 | 已完成，使用 WebView2 渲染 |
 | 基础 Markdown 工具栏 | 已完成 |
 
-### Phase 3 任务清单
+### Phase 3：便签窗口与磁贴
 
 | 任务 | 状态 |
 |------|------|
-| 实现 HotkeyService：全局热键注册与监听 | 已完成 — Ctrl+Space 注册 |
-| NotePadWindow 基础：热键呼出、编辑、保存关闭 | 已完成 |
-| 新建/打开模式切换 | 已完成 — 新建/打开标签切换 |
-| 钉住功能：窗口从编辑态切换为磁贴态 | 已完成 — 右键菜单"贴在一旁"，实体纸面背景 |
-| 磁贴态：可缩放、可拖拽的无边框窗口 | 已完成 — 点阵握柄拖拽移动，Thumb 拖拽调整大小 |
-| 磁贴态：内容可编辑 | 已完成 — 始终保持 TextBox 可编辑 |
-| 置顶悬浮模式 | 已完成 — Topmost 绑定 |
-| 桌面嵌入模式（WorkerW） | 已完成 — 右键菜单切换"贴在桌面"/"切回置顶悬浮" |
-| 多便签并存管理 | 已完成 — NotePadManager 管理列表 |
-| 主窗口中对笔记执行"钉住"操作 | 已完成 — 工具栏钉住按钮 |
+| 全局热键注册与监听 | 已完成，Ctrl+Space |
+| 便签窗口热键呼出、编辑、保存关闭 | 已完成 |
+| 新建/打开模式切换 | 已完成 |
+| 钉住为磁贴 | 已完成 |
+| 磁贴拖拽、缩放、内容编辑 | 已完成 |
+| 置顶悬浮模式 | 已完成 |
+| WorkerW 桌面嵌入模式 | 已完成 |
+| 多便签并存管理 | 已完成 |
+| 主窗口钉住笔记为磁贴 | 已完成 |
 
-### 环境信息
+### Phase 4：系统集成
+
+| 任务 | 状态 |
+|------|------|
+| 系统托盘图标 + 右键菜单 | 已完成 |
+| 最小化到托盘 / 关闭到托盘 | 已完成 |
+| 开机自启选项 | 已完成 |
+| 应用配置管理（config.json） | 已完成 |
+
+---
+
+## 四、Tauri 重构任务清单
+
+### Phase R0：重构准备
+
+| 任务 | 状态 |
+|------|------|
+| 确认目标技术栈 | 已完成 |
+| 确认前端设计稿目录 | 已完成 |
+| 查看设计稿源码结构 | 已完成 |
+| TypeScript 无输出检查 | 已完成 |
+| 更新 `PLAN.md` | 已完成 |
+| 更新 `PROGRESS.md` | 已完成 |
+| 决定旧 WPF 目录处理方式 | 已完成：备份后用 Tauri 工程覆盖 `src/花笺/` |
+
+### Phase R1：Tauri 基础骨架
+
+| 任务 | 状态 |
+|------|------|
+| 建立正式 Tauri 2 工程结构 | 已完成：位于 `src/花笺/` |
+| 修正产品名、identifier、窗口配置 | 已完成 |
+| 迁移确认版设计稿主题和基础布局 | 已完成初版 |
+| 配置 Tauri capabilities | 基础配置已迁入，后续随插件补齐 |
+| 建立前端 API 调用封装 | 待开始 |
+
+### Phase R2：Rust 数据核心
+
+| 任务 | 状态 |
+|------|------|
+| 定义 Note / Metadata / Config 模型 | 待开始 |
+| 实现笔记目录初始化 | 待开始 |
+| 实现 `.md` CRUD | 待开始 |
+| 实现 `metadata.json` 读写 | 待开始 |
+| 实现 `config.json` 读写 | 待开始 |
+| 添加 Rust 单元测试 | 待开始 |
+
+### Phase R3：主窗口迁移
+
+| 任务 | 状态 |
+|------|------|
+| 拆分生产级 MainWindow 组件 | 待开始 |
+| 接入真实笔记列表 | 待开始 |
+| 接入新建、选择、编辑、保存、删除 | 待开始 |
+| 实现 Markdown 预览 | 待开始 |
+| 实现搜索过滤 | 待开始 |
+| 实现保存状态和自动保存 | 待开始 |
+
+### Phase R4：便签与磁贴迁移
+
+| 任务 | 状态 |
+|------|------|
+| 拆分生产级 NotePad 组件 | 待开始 |
+| 设计多窗口 route / label 规则 | 待开始 |
+| 实现快捷便签窗口创建 | 待开始 |
+| 实现打开已有笔记模式 | 待开始 |
+| 实现钉住为磁贴 | 待开始 |
+| 实现多磁贴生命周期管理 | 待开始 |
+| 实现拖拽、缩放、置顶 | 待开始 |
+
+### Phase R5：Windows 系统集成
+
+| 任务 | 状态 |
+|------|------|
+| 系统托盘 | 待开始 |
+| 关闭到托盘 | 待开始 |
+| 全局快捷键 | 待开始 |
+| 开机自启 | 待开始 |
+| WorkerW 桌面嵌入 | 待开始 |
+| 多显示器 / DPI / Explorer 重启边界验证 | 待开始 |
+
+### Phase R6：导入导出与设置
+
+| 任务 | 状态 |
+|------|------|
+| 单文件 `.md` 导入 | 待开始 |
+| 批量导入 | 待开始 |
+| 当前笔记导出 | 待开始 |
+| 批量导出 | 待开始 |
+| 设置页 | 待开始 |
+| 旧数据目录迁移识别 | 待开始 |
+
+---
+
+## 五、当前环境信息
+
+旧 WPF 环境记录：
 
 - .NET SDK：8.0.420
 - 目标框架：net8.0-windows
 - 开发环境：Windows 11
 
-### 已安装 NuGet 包
+确认版设计稿依赖记录：
 
-- CommunityToolkit.Mvvm 8.4.2
-- AvalonEdit 6.3.1.120
-- Hardcodet.NotifyIcon.Wpf 2.0.1
-- Markdig 1.1.3（Phase 2 新增）
-- Microsoft.Web.WebView2 1.0.3912.50（Phase 2 新增）
+- `@tauri-apps/api`：`^2`
+- `@tauri-apps/cli`：`^2`
+- `@tauri-apps/plugin-opener`：`^2`
+- React：`^19.1.0`
+- TypeScript：`~5.8.3`
+- Vite：`^7.0.4`
+- Tailwind CSS：`^4.2.4`
 
-### 项目文件结构
+注意：
 
-```
-src/花笺/
-├── App.xaml / App.xaml.cs         ← Phase 3 更新：接入 HotkeyService + NotePadManager
-├── Models/
-│   ├── Note.cs
-│   ├── NoteMetadataStore.cs
-│   └── AppConfig.cs
-├── Services/
-│   ├── MetadataService.cs
-│   ├── NoteService.cs
-│   ├── MarkdownService.cs
-│   ├── HotkeyService.cs          ← Phase 3 新增：Win32 全局热键
-│   ├── NotePadManager.cs         ← Phase 3 新增：便签窗口管理
-│   └── DesktopEmbedService.cs    ← Phase 3 新增：WorkerW 桌面嵌入
-├── ViewModels/
-│   ├── MainViewModel.cs          ← Phase 3 更新：QuickNote/PinNote 命令
-│   └── NotePadViewModel.cs       ← Phase 3 新增
-├── Views/
-│   ├── MainWindow.xaml/.cs       ← Phase 3 更新：快速记录按钮 + 钉住按钮
-│   └── NotePadWindow.xaml/.cs    ← Phase 3 新增：便签窗口
-├── Helpers/
-│   ├── AvalonEditBehavior.cs
-│   ├── NoteDisplayConverter.cs
-│   ├── WebBrowserHelper.cs
-│   └── Win32Interop.cs           ← Phase 3 新增：P/Invoke 声明
-└── Resources/
-    ├── Styles.xaml
-    └── MarkdownHighlighting.xshd
-```
+- 本机 PowerShell 执行策略会拦截 `npm.ps1`，后续在 PowerShell 中运行 npm 命令优先使用 `npm.cmd`。
+- 不得擅自升级 Node、Rust、Tauri CLI 或系统环境组件；遇到版本问题先记录并向用户确认。
+- 临时测试数据和一次性脚本统一放到 `D:\Agent\Agent_temp`。
+
+R1 验证记录：
+
+- 已运行：`npm.cmd install --cache D:\Agent\Agent_temp\npm-cache`
+- 结果：通过，0 个漏洞。
+- 已运行：`npm.cmd run build`
+- 结果：通过。
+- 已运行：临时使用 `D:\Rust\rustup\toolchains\stable-x86_64-pc-windows-msvc\bin` 加入本次进程 PATH 后执行 `cargo test`
+- 结果：通过。当前系统 PATH 仍未包含 Cargo；未修改系统环境。
+- 已运行：同样临时 PATH 下执行 `npm.cmd run tauri -- info`
+- 结果：通过。Tauri 识别到 WebView2、MSVC、`rustc 1.94.1`、`cargo 1.94.1`；因未走 rustup 默认代理，`rustup/toolchain` 检测项有警告。
+- 已调整：`package.json` 的 `tauri` 脚本在 npm 进程内临时加入 `D:\Rust\rustup\toolchains\stable-x86_64-pc-windows-msvc\bin`，不修改系统 PATH。
 
 ---
 
-## 变更日志
+## 六、变更日志
 
-### 2026-04-27
-- 修复：便签小窗口/磁贴拖拽区域被标题输入框覆盖的问题；新增左侧点阵拖拽握柄，使用 `Thumb.DragDelta` 直接移动窗口。
-- 修复：磁贴钉住态背景从半透明色改为实体纸面色，降低透底感。
-- 优化：便签窗口圆角、边框、阴影、分隔线、正文选区色和字号细节，整体更接近设计稿的轻量纸面质感。
-- 验证：结构性回归检查通过；结束残留的 `花笺.exe` 进程后，常规 `dotnet build --no-restore` 通过（0 警告，0 错误）。
-- Phase 3 进度：
-  - HotkeyService：通过 Win32 RegisterHotKey 注册 Ctrl+Space 全局热键，HwndSource 消息钩子监听 WM_HOTKEY ✅
-  - NotePadWindow：无边框透明窗口（AllowsTransparency=True），圆角 + DropShadowEffect，标题输入框、关闭按钮（鼠标悬停显示）、拖拽移动、Thumb 缩放 ✅
-  - 新建/打开模式切换：顶部"新建"|"打开"标签，打开模式显示已有笔记列表供选择 ✅
-  - 钉住功能：右键菜单"贴在一旁"将窗口切换为磁贴态（Topmost + 半透明背景），右键"取消钉住"恢复 ✅
-  - NotePadManager：管理所有便签窗口生命周期，支持多窗口并存，错开定位避免重叠 ✅
-  - MainWindow 标题栏新增"快速记录 Ctrl+Space"按钮 ✅
-  - MainWindow 编辑器工具栏新增"钉为磁贴"按钮 ✅
-  - 自动保存：关联已有笔记的便签 800ms 防抖自动保存；未关联的便签关闭时自动创建笔记 ✅
-  - 便签保存到笔记库后自动刷新主窗口笔记列表 ✅
+### 2026-04-28（Tauri R1 基础骨架启动）
 
-### 2026-04-27（WorkerW 桌面嵌入）
-- 新增 `DesktopEmbedService`：通过 `Progman` 触发 WorkerW 创建，枚举包含 `SHELLDLL_DefView` 的桌面窗口并找到相邻 `WorkerW`，使用 `SetParent` 将磁贴窗口嵌入桌面层。
-- 新增磁贴模式切换：`NotePadViewModel.IsDesktopEmbedded` 和 `ToggleDesktopEmbedCommand` 管理"置顶悬浮 / 贴在桌面"状态；进入桌面嵌入时关闭 `Topmost`，切回悬浮时恢复置顶。
-- 更新 `NotePadWindow` 右键菜单：磁贴态新增"贴在桌面"与"切回置顶悬浮"入口；窗口关闭或取消钉住时自动从桌面层还原。
-- 验证：WorkerW 结构性回归检查先失败后通过；`dotnet build .\src\花笺\花笺.csproj --no-restore -o D:\Agent\Agent_temp\huajian-build-check-project` 通过（0 警告，0 错误）。
-- 手动试用反馈：暂未发现明显问题；若后续出现桌面层级、多显示器或 Explorer 重启后的异常，归入 Phase 6 打磨项继续处理。
+- 按要求将 `huajian-demo-确认此方案/` 作为只读设计稿，不修改该目录。
+- 将旧 WPF 项目源码备份到 `src/花笺-WPF备份-20260428-002118/`，备份时排除 `bin/obj`。
+- 在 `src/花笺/` 内建立 Tauri 2 + React + TypeScript + Vite 工程骨架。
+- 将确认版设计稿的主题与基础前端布局迁入正式目录，并去掉设计预览顶部切换壳。
+- 修正 `package.json`、`Cargo.toml`、`tauri.conf.json` 中的临时项目名、identifier、窗口尺寸、构建命令和本机 Rust toolchain 调用路径。
+- 删除 Vite/React/Tauri 示例图标资产，补充 Node/Tauri 构建产物 `.gitignore` 规则。
+- 前端构建验证通过；Rust 侧使用 `D:\Rust` 下已有 stable toolchain 验证通过，未修改系统环境。
+- 按要求将正式路径 `src/花笺/` 中旧 WPF 残留文件和根目录旧解决方案移除，仅保留 Tauri 项目结构；WPF 备份作为本机迁移备份忽略，不推送。
 
-### 下一步
-- Phase 3 计划项已经收口。下一轮进入 Phase 4：系统托盘图标、最小化/关闭到托盘、开机自启和 `config.json` 配置管理。
-- 建议先做托盘常驻：接入 Hardcodet.NotifyIcon.Wpf，提供"快速记录"、"打开主窗口"、"退出"三个基础菜单项。
-- 当前便签窗口已可用，但仍需要后续 UI/交互打磨；这些细节可放入 Phase 6 统一处理。
+### 2026-04-27（Tauri 2 重构准备）
 
-### 2026-04-26
-- 完成 Phase 1 全部任务
-- Phase 2 进度：
-  - Markdown 语法高亮（.xshd 定义：标题/粗体/斜体/代码/链接/引用/列表）✅
-  - 编辑/预览模式切换：从 IE WebBrowser 迁移至 WebView2（Edge Chromium），修复首次预览空白/未导航问题 ✅
-  - 修复空笔记初次输入时 AvalonEdit 未同步到 ViewModel，导致预览一直显示"空内容"的问题 ✅
-  - 修复普通换行在预览中被浏览器折叠，导致连续文本显示在同一行的问题 ✅
-  - Markdown 工具栏（标题/粗体/斜体/代码/列表/引用/分割线，支持选中文本包裹）✅
+- 决定项目主线重构为 Tauri 2 + React + TypeScript + Rust。
+- 确认前端设计稿使用 `huajian-demo-确认此方案/`。
+- 查看确认版设计稿的主窗口、便签小窗、磁贴展示、主题样式和 Tauri 模板结构。
+- 运行 `npm.cmd exec tsc -- --noEmit`，确认设计稿 TypeScript 检查通过。
+- 更新 `PLAN.md` 为 Tauri 2 重构实施计划。
+- 更新 `PROGRESS.md` 为重构准备进度。
 
-## 踩坑记录
+### 2026-04-27（旧 WPF：系统集成）
 
-### Markdown 预览修复
+- 旧 WPF 版本已完成托盘、关闭到托盘、开机自启、配置管理等 Phase 4 功能。
+- 旧 WPF 版本中 WorkerW 桌面嵌入、便签窗口生命周期和热键逻辑后续作为 Rust/Tauri 迁移参考。
 
-- 旧版 WPF `WebBrowser` 走 IE 内核，Markdown 预览渲染能力和兼容性不足；本阶段改为 WebView2 + Markdig。
-- WebView2 初始化是异步流程，不能假设点击"预览"时控件已经可导航；初始化和 `NavigateToString` 必须回到 UI Dispatcher，并等待布局进入可见状态后再执行。
-- 预览导航不能只监听 `IsEditMode` 切换；`PreviewHtml` 生成也会触发属性变化，需要在预览模式下响应 `PreviewHtml` 更新，否则容易出现首次预览空白或旧内容。
-- 空笔记场景暴露了 AvalonEdit 双向绑定问题：`BoundText` 附加属性默认值原本是 `string.Empty`，而空笔记初始内容也是 `string.Empty`，WPF 不触发属性变更回调，导致 `TextChanged` 事件没有挂上，用户输入无法同步到 `EditorContent`，预览始终拿到空字符串。
-- 修复 AvalonEdit 绑定时，将 `BoundText` 默认值改为 `null`，并在 getter 中兜底为空字符串，确保空笔记第一次绑定也会完成初始化。
-- 验证用例不能只覆盖"文件已有内容后切预览"；必须覆盖"新建空笔记 → 在编辑器输入 → 切到预览"的真实用户路径。前者会绕过 AvalonEdit 输入同步问题，容易误判修复完成。
-- Markdig 默认遵循标准 Markdown 软换行语义：段落内普通换行不会生成 `<br>`，浏览器会把换行空白折叠成同一行。对笔记软件来说，用户在编辑器里按回车通常期待预览也换行，因此在 Markdown 管线中启用 `UseSoftlineBreakAsHardlineBreak()`，把软换行渲染为可见换行。
+### 2026-04-26（旧 WPF：基础与 Markdown）
+
+- 旧 WPF 版本完成 Phase 1 基础骨架。
+- 完成 Markdown 语法高亮、WebView2 预览、工具栏和相关预览问题修复。
+
+---
+
+## 七、下一步
+
+1. 运行 `npm.cmd run tauri -- dev` 验证桌面应用启动路径。
+2. 建立前端 API 调用封装，为 R2 Rust 数据核心接入做准备。
+3. 先实现 Rust 数据核心，再把主窗口从 mock 数据切换到真实笔记数据。
+4. 每完成一个重构阶段，都更新本文件的任务状态和验证记录。

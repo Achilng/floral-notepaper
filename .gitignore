@@ -18,6 +18,15 @@ obj/
 x64/
 x86/
 
+## Node / Tauri
+node_modules/
+dist/
+src-tauri/target/
+src-tauri/gen/
+
+## Local migration backups
+src/*WPF备份*/
+
 ## IDE
 .idea/
 *.swp
