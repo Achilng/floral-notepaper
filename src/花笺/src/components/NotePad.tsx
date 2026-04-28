@@ -203,13 +203,14 @@ export function NotePad({
   const isTile = surfaceMode === "tile";
   const tileNoteId = editingNoteId ?? initialNoteId ?? "";
   const tileTitle = title.trim();
+  const surfaceWrapperClassName = `w-full h-screen flex flex-col transition-all duration-200 ease-out bg-transparent ${
+    isTile ? "p-0" : "p-1"
+  }`;
   const padSurfaceClassName =
     "noise-bg w-full bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/40 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
 
   return (
-    <div
-      className="w-full h-screen flex flex-col transition-all duration-200 ease-out bg-transparent p-1"
-    >
+    <div className={surfaceWrapperClassName}>
       {isTile ? (
         <Tile
           title={tileTitle || undefined}

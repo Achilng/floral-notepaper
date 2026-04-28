@@ -19,7 +19,8 @@ describe("NotePad surface modes", () => {
     );
 
     expect(markup).toContain('data-surface-mode="tile"');
-    expect(markup).toContain("bg-transparent p-1");
+    expect(markup).toContain("bg-transparent p-0");
+    expect(markup).not.toContain("bg-transparent p-1");
     expect(markup).toContain("rounded-xl");
     expect(markup).toContain("bg-[#d8eee9]");
     expect(markup).toContain("border-[#99cbc1]/55");
