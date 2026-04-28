@@ -13,6 +13,7 @@ describe("MainWindow settings", () => {
           closeToTray: true,
           autostart: false,
           defaultViewMode: "split",
+          noteSurfaceAutoSave: true,
         }}
       />,
     );

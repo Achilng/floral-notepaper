@@ -22,6 +22,12 @@ import {
   startCurrentWindowDrag,
   startCurrentWindowResize,
 } from "../features/windows/controls";
+import { getConfig } from "../features/settings/api";
+import { shouldSaveBeforeSwitchingToTile } from "../features/windows/noteSurfaceSavePolicy";
+import {
+  NOTE_SURFACE_ACTION_EVENT,
+  surfaceActionFromEvent,
+} from "../features/windows/surfaceActions";
 import {
   NOTE_SURFACE_MODE_EVENT,
   getSurfaceTargetBounds,
@@ -35,11 +41,13 @@ type OpenMode = "new" | "open";
 interface NotePadProps {
   initialNoteId?: string;
   initialSurfaceMode?: NoteSurfaceMode;
+  initialAutoSave?: boolean;
 }
 
 export function NotePad({
   initialNoteId,
   initialSurfaceMode = "pad",
+  initialAutoSave = true,
 }: NotePadProps) {
   const [surfaceMode, setSurfaceMode] =
     useState<NoteSurfaceMode>(initialSurfaceMode);
@@ -51,6 +59,8 @@ export function NotePad({
   const [hoveredNote, setHoveredNote] = useState<string | null>(null);
   const [status, setStatus] = useState("空");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] =
+    useState(initialAutoSave);
 
   const refreshNotes = useCallback(async () => {
     const loadedNotes = await listNotes();
@@ -71,7 +81,10 @@ export function NotePad({
 
     async function bootstrap() {
       try {
-        await refreshNotes();
+        const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
+        if (!cancelled) {
+          setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
+        }
         if (initialNoteId) {
           const note = await getNote(initialNoteId);
           if (!cancelled) applyNote(note);
@@ -107,6 +120,11 @@ export function NotePad({
     setStatus("已保存");
     return note;
   }, [content, editingNoteId, title]);
+
+  const hasDraftContent = useCallback(
+    () => Boolean(editingNoteId || title.trim() || content.trim()),
+    [content, editingNoteId, title],
+  );
 
   const switchSurfaceMode = useCallback(async (nextMode: NoteSurfaceMode) => {
     setSurfaceMode(nextMode);
@@ -146,7 +164,7 @@ export function NotePad({
     void setCurrentWindowAlwaysOnTop(true).catch(() => undefined);
   }, [surfaceMode]);
 
-  const handleSave = async () => {
+  const handleSave = useCallback(async () => {
     setErrorMessage(null);
     try {
       await saveNote();
@@ -154,7 +172,7 @@ export function NotePad({
       setStatus("保存失败");
       setErrorMessage(getErrorMessage(error));
     }
-  };
+  }, [saveNote]);
 
   const handleOpenNote = async (noteId: string) => {
     setErrorMessage(null);
@@ -170,20 +188,84 @@ export function NotePad({
   const handlePin = async () => {
     setErrorMessage(null);
     try {
-      await saveNote();
+      if (shouldSaveBeforeSwitchingToTile(noteSurfaceAutoSave)) {
+        await saveNote();
+      }
       await switchSurfaceMode("tile");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
   };
 
-  const handleClose = async () => {
+  const handleClose = useCallback(async () => {
     try {
       await closeCurrentWindow();
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
-  };
+  }, []);
+
+  const copyTileContent = useCallback(async () => {
+    setErrorMessage(null);
+    try {
+      const clipboard = navigator.clipboard;
+      if (!clipboard?.writeText) {
+        throw new Error("当前环境不支持复制");
+      }
+      await clipboard.writeText(content);
+      setStatus("已复制");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, [content]);
+
+  useEffect(() => {
+    function handleSurfaceActionRequest(event: Event) {
+      const action = surfaceActionFromEvent(event);
+      if (!action) return;
+
+      if (action === "copy") {
+        void copyTileContent();
+        return;
+      }
+
+      if (action === "save") {
+        void handleSave();
+        return;
+      }
+
+      if (action === "close") {
+        void handleClose();
+        return;
+      }
+
+      void switchSurfaceMode("pad");
+    }
+
+    window.addEventListener(
+      NOTE_SURFACE_ACTION_EVENT,
+      handleSurfaceActionRequest,
+    );
+    return () => {
+      window.removeEventListener(
+        NOTE_SURFACE_ACTION_EVENT,
+        handleSurfaceActionRequest,
+      );
+    };
+  }, [copyTileContent, handleClose, handleSave, switchSurfaceMode]);
+
+  useEffect(() => {
+    if (!noteSurfaceAutoSave || mode !== "new" || status !== "未保存") {
+      return undefined;
+    }
+    if (!hasDraftContent()) return undefined;
+
+    const timer = window.setTimeout(() => {
+      void handleSave();
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [handleSave, hasDraftContent, mode, noteSurfaceAutoSave, status]);
 
   const handleDrag = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;

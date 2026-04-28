@@ -14,6 +14,8 @@ pub struct AppConfig {
     pub close_to_tray: bool,
     pub autostart: bool,
     pub default_view_mode: String,
+    #[serde(default = "default_note_surface_auto_save")]
+    pub note_surface_auto_save: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -299,6 +301,7 @@ impl NoteStore {
             close_to_tray: true,
             autostart: false,
             default_view_mode: "split".into(),
+            note_surface_auto_save: true,
         }
     }
 
@@ -519,6 +522,10 @@ fn imported_markdown_title(path: &Path, content: &str) -> String {
         .to_string()
 }
 
+fn default_note_surface_auto_save() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -618,6 +625,7 @@ mod tests {
 
         let default_config = store.load_config().expect("load default config");
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
+        assert!(default_config.note_surface_auto_save);
         assert!(default_config.notes_dir.ends_with(r"\notes"));
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
@@ -627,6 +635,7 @@ mod tests {
             close_to_tray: false,
             autostart: true,
             default_view_mode: "preview".into(),
+            note_surface_auto_save: false,
         };
 
         store.save_config(saved.clone()).expect("save config");
@@ -634,6 +643,31 @@ mod tests {
         let loaded = store.load_config().expect("reload config");
         assert_eq!(loaded, saved);
         assert!(custom_notes_dir.exists());
+    }
+
+    #[test]
+    fn loads_legacy_config_with_note_surface_auto_save_enabled() {
+        let store = NoteStore::new(test_root("legacy-config"));
+        let notes_dir = store.base_dir().join("notes");
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(
+            store.config_path(),
+            format!(
+                r#"{{
+  "notesDir": "{}",
+  "globalShortcut": "Ctrl+Space",
+  "closeToTray": true,
+  "autostart": false,
+  "defaultViewMode": "split"
+}}"#,
+                notes_dir.to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .expect("write legacy config");
+
+        let loaded = store.load_config().expect("load legacy config");
+
+        assert!(loaded.note_surface_auto_save);
     }
 
     #[test]

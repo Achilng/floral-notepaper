@@ -6,4 +6,5 @@ export interface AppConfig {
   closeToTray: boolean;
   autostart: boolean;
   defaultViewMode: string;
+  noteSurfaceAutoSave: boolean;
 }

@@ -109,6 +109,13 @@ export function SettingsPanel({
             checked={config.autostart}
             onChange={(checked) => setConfigValue("autostart", checked)}
           />
+          <ToggleRow
+            label="便签自动保存"
+            checked={config.noteSurfaceAutoSave}
+            onChange={(checked) =>
+              setConfigValue("noteSurfaceAutoSave", checked)
+            }
+          />
         </section>
 
         <section className="space-y-2">

@@ -895,6 +895,7 @@ mod tests {
             close_to_tray: true,
             autostart: false,
             default_view_mode: "split".into(),
+            note_surface_auto_save: true,
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -902,6 +903,7 @@ mod tests {
             close_to_tray: false,
             autostart: true,
             default_view_mode: "preview".into(),
+            note_surface_auto_save: false,
         };
 
         assert_eq!(

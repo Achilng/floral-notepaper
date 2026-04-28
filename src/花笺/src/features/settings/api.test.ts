@@ -34,6 +34,7 @@ describe("settings api", () => {
       closeToTray: true,
       autostart: false,
       defaultViewMode: "split",
+      noteSurfaceAutoSave: true,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -49,6 +50,7 @@ describe("settings api", () => {
       closeToTray: false,
       autostart: true,
       defaultViewMode: "preview",
+      noteSurfaceAutoSave: false,
     };
     mockedInvoke.mockResolvedValue(config);
 
