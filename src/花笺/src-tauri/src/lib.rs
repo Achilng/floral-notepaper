@@ -47,7 +47,7 @@ fn config_save(config: AppConfig) -> Result<AppConfig, AppError> {
 }
 
 #[tauri::command]
-fn open_notepad_window(app: AppHandle, note_id: Option<String>) -> Result<String, AppError> {
+async fn open_notepad_window(app: AppHandle, note_id: Option<String>) -> Result<String, AppError> {
     let label = notepad_window_label(note_id.as_deref());
     let url = match note_id {
         Some(id) => format!("index.html?view=notepad&noteId={id}"),
@@ -58,7 +58,7 @@ fn open_notepad_window(app: AppHandle, note_id: Option<String>) -> Result<String
 }
 
 #[tauri::command]
-fn open_tile_window(app: AppHandle, note_id: String) -> Result<String, AppError> {
+async fn open_tile_window(app: AppHandle, note_id: String) -> Result<String, AppError> {
     let label = tile_window_label(&note_id);
     let url = format!("index.html?view=tile&noteId={note_id}");
 
@@ -87,8 +87,7 @@ fn open_or_focus_window(
         .resizable(true)
         .decorations(decorations)
         .always_on_top(always_on_top)
-        .build()?
-        .set_focus()?;
+        .build()?;
 
     Ok(label.to_string())
 }

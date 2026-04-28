@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import type { MouseEvent } from "react";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 import {
   createNote,
@@ -18,6 +19,13 @@ import {
   metadataFromNote,
 } from "../features/notes/noteUtils";
 import { openNotepadWindow, openTileWindow } from "../features/windows/api";
+import {
+  closeCurrentWindow,
+  minimizeCurrentWindow,
+  toggleMaximizeCurrentWindow,
+  isCurrentWindowMaximized,
+  startCurrentWindowDrag,
+} from "../features/windows/controls";
 
 type ViewMode = "edit" | "preview" | "split";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -208,6 +216,12 @@ export function MainWindow() {
     }
   };
 
+  const [isMaximized, setIsMaximized] = useState(false);
+
+  useEffect(() => {
+    void isCurrentWindowMaximized().then(setIsMaximized);
+  }, []);
+
   const handlePinEntry = async () => {
     if (!selectedId) return;
     if (saveState === "dirty") {
@@ -222,24 +236,41 @@ export function MainWindow() {
     }
   };
 
+  const handleTitleBarDrag = (event: MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    void startCurrentWindowDrag().catch(() => undefined);
+  };
+
+  const handleTitleBarDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    void toggleMaximizeCurrentWindow().then(() =>
+      isCurrentWindowMaximized().then(setIsMaximized),
+    );
+  };
+
+  const handleMinimize = () => {
+    void minimizeCurrentWindow();
+  };
+
+  const handleMaximize = () => {
+    void toggleMaximizeCurrentWindow().then(() =>
+      isCurrentWindowMaximized().then(setIsMaximized),
+    );
+  };
+
+  const handleClose = () => {
+    void closeCurrentWindow();
+  };
+
   return (
-    <div className="w-full max-w-6xl mx-auto animate-scale-in">
-      <div
-        className="noise-bg rounded-2xl bg-cloud border border-paper-deep/40 overflow-hidden flex flex-col"
-        style={{
-          height: "680px",
-          boxShadow:
-            "0 2px 8px rgba(26,26,24,0.04), 0 20px 60px rgba(26,26,24,0.08), 0 0 0 0.5px rgba(26,26,24,0.03)",
-        }}
-      >
-        <div className="flex items-center justify-between px-4 h-11 bg-paper/60 border-b border-paper-deep/30 shrink-0 select-none">
+    <div className="w-full h-screen flex flex-col">
+      <div className="noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
+        <div
+          className="flex items-center justify-between pl-5 pr-0 h-11 bg-paper/60 border-b border-paper-deep/30 shrink-0 select-none cursor-grab active:cursor-grabbing"
+          onMouseDown={handleTitleBarDrag}
+          onDoubleClick={handleTitleBarDoubleClick}
+        >
           <div className="flex items-center gap-3 min-w-0">
-            <div className="flex items-center gap-[7px] shrink-0">
-              <div className="w-[11px] h-[11px] rounded-full bg-[#ff5f57] border border-[#e14640]/40" />
-              <div className="w-[11px] h-[11px] rounded-full bg-[#febc2e] border border-[#d8a118]/40" />
-              <div className="w-[11px] h-[11px] rounded-full bg-[#28c840] border border-[#1aab2e]/40" />
-            </div>
-            <div className="h-4 w-px bg-paper-deep/40" />
             <span className="text-[13px] font-display font-medium text-ink-soft tracking-wide">
               花笺
             </span>
@@ -248,15 +279,15 @@ export function MainWindow() {
               {title || selectedNote?.preview || "无标题笔记"}
             </span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center">
             {errorMessage && (
-              <span className="max-w-[260px] truncate text-[11px] text-red-400">
+              <span className="max-w-[200px] truncate text-[11px] text-red-400 mr-2">
                 {errorMessage}
               </span>
             )}
             <button
               onClick={() => void handleOpenNotepad()}
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all"
+              className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer"
               title="快捷便签"
             >
               <svg
@@ -274,7 +305,7 @@ export function MainWindow() {
               </svg>
             </button>
             <button
-              className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all"
+              className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
               title="设置"
             >
               <svg
@@ -289,6 +320,43 @@ export function MainWindow() {
               >
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
+              </svg>
+            </button>
+
+            <div className="w-px h-4 bg-paper-deep/30 mx-0.5" />
+
+            <button
+              onClick={handleMinimize}
+              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
+              title="最小化"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12">
+                <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
+              </svg>
+            </button>
+            <button
+              onClick={handleMaximize}
+              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
+              title={isMaximized ? "还原" : "最大化"}
+            >
+              {isMaximized ? (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
+                  <rect x="3" y="3" width="7" height="7" rx="1" />
+                  <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
+                </svg>
+              ) : (
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
+                  <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
+                </svg>
+              )}
+            </button>
+            <button
+              onClick={handleClose}
+              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"
+              title="关闭"
+            >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+                <path d="M2 2l8 8M10 2l-8 8" />
               </svg>
             </button>
           </div>

@@ -115,21 +115,20 @@ export function TileShowcase({ noteId }: TileShowcaseProps) {
   };
 
   return (
-    <div className="w-full max-w-[360px] mx-auto pt-4">
+    <div className="w-full h-screen flex flex-col">
       <div
-        className="noise-bg relative rounded-xl bg-bamboo-mist border border-bamboo-glow/60 overflow-hidden shadow-[0_8px_30px_rgba(26,26,24,0.1)]"
+        className="noise-bg relative bg-bamboo-mist overflow-hidden flex flex-col flex-1"
         onMouseDown={handleDrag}
       >
-        <div className="flex items-center gap-2 px-3 pt-2.5 pb-1 cursor-grab active:cursor-grabbing">
-          <div className="flex gap-[3px] text-bamboo-light/50">
-            {[...Array(6)].map((_, index) => (
-              <div
-                key={index}
-                className="w-[3px] h-[3px] rounded-full bg-current opacity-60"
-                style={{ marginTop: index % 2 === 0 ? 0 : 4 }}
-              />
-            ))}
-          </div>
+        <div className="flex items-center gap-1.5 px-3 pt-2 pb-1 cursor-grab active:cursor-grabbing shrink-0">
+          <svg width="10" height="14" viewBox="0 0 10 14" className="text-bamboo-light/40 shrink-0 mr-1">
+            <circle cx="2.5" cy="2.5" r="1.2" fill="currentColor" />
+            <circle cx="7.5" cy="2.5" r="1.2" fill="currentColor" />
+            <circle cx="2.5" cy="7" r="1.2" fill="currentColor" />
+            <circle cx="7.5" cy="7" r="1.2" fill="currentColor" />
+            <circle cx="2.5" cy="11.5" r="1.2" fill="currentColor" />
+            <circle cx="7.5" cy="11.5" r="1.2" fill="currentColor" />
+          </svg>
 
           <input
             value={title}
@@ -143,19 +142,30 @@ export function TileShowcase({ noteId }: TileShowcaseProps) {
 
           <button
             onClick={() => void toggleAlwaysOnTop()}
-            className={`w-5 h-5 rounded-full transition-all ${
-              isAlwaysOnTop ? "bg-bamboo/50" : "bg-ink-ghost/25"
+            className={`w-6 h-6 flex items-center justify-center rounded-md transition-all cursor-pointer ${
+              isAlwaysOnTop
+                ? "text-bamboo bg-bamboo-glow/60"
+                : "text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
             }`}
-            title="置顶"
-          />
+            title={isAlwaysOnTop ? "取消置顶" : "置顶"}
+          >
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M12 17v5" />
+              <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z" />
+            </svg>
+          </button>
           <button
             onClick={() => void handleClose()}
-            className="w-5 h-5 rounded-full bg-red-300/50 hover:bg-red-400/80 transition-all"
+            className="w-6 h-6 flex items-center justify-center rounded-md text-ink-ghost hover:text-red-500 hover:bg-red-50 transition-all cursor-pointer"
             title="关闭"
-          />
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M2 2l8 8M10 2l-8 8" />
+            </svg>
+          </button>
         </div>
 
-        <div className="px-3.5 pt-1 pb-3">
+        <div className="px-3.5 pt-1 pb-3 flex-1 min-h-0 flex flex-col">
           <textarea
             value={content}
             onChange={(event) => {
@@ -163,7 +173,7 @@ export function TileShowcase({ noteId }: TileShowcaseProps) {
               markDirty();
             }}
             placeholder="磁贴内容"
-            className="w-full min-h-[190px] text-[13px] leading-[1.7] text-ink-soft/80 whitespace-pre-wrap font-body bg-transparent placeholder:text-ink-ghost/50"
+            className="w-full flex-1 min-h-0 text-[13px] leading-[1.7] text-ink-soft/80 whitespace-pre-wrap font-body bg-transparent placeholder:text-ink-ghost/50"
           />
         </div>
 

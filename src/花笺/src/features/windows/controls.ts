@@ -4,6 +4,18 @@ export function closeCurrentWindow(): Promise<void> {
   return getCurrentWindow().close();
 }
 
+export function minimizeCurrentWindow(): Promise<void> {
+  return getCurrentWindow().minimize();
+}
+
+export function toggleMaximizeCurrentWindow(): Promise<void> {
+  return getCurrentWindow().toggleMaximize();
+}
+
+export function isCurrentWindowMaximized(): Promise<boolean> {
+  return getCurrentWindow().isMaximized();
+}
+
 export function setCurrentWindowAlwaysOnTop(enabled: boolean): Promise<void> {
   return getCurrentWindow().setAlwaysOnTop(enabled);
 }

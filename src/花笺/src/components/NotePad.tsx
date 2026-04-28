@@ -32,7 +32,6 @@ export function NotePad({ initialNoteId }: NotePadProps) {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [isPinned, setIsPinned] = useState(false);
   const [hoveredNote, setHoveredNote] = useState<string | null>(null);
   const [status, setStatus] = useState("空");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -118,8 +117,7 @@ export function NotePad({ initialNoteId }: NotePadProps) {
     try {
       const note = await saveNote();
       await openTileWindow(note.id);
-      setIsPinned(true);
-      setStatus("已钉住");
+      await closeCurrentWindow();
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -148,14 +146,8 @@ export function NotePad({ initialNoteId }: NotePadProps) {
   };
 
   return (
-    <div className="flex flex-col items-center gap-5 pt-4 w-full max-w-md mx-auto">
-      <div
-        className="noise-bg w-full rounded-2xl bg-cloud border border-paper-deep/40 overflow-hidden"
-        style={{
-          boxShadow:
-            "0 2px 8px rgba(26,26,24,0.04), 0 12px 40px rgba(26,26,24,0.07), 0 0 0 0.5px rgba(26,26,24,0.03)",
-        }}
-      >
+    <div className="w-full h-screen flex flex-col">
+      <div className="noise-bg w-full bg-cloud overflow-hidden flex flex-col flex-1">
         <div
           className="flex items-center justify-between px-5 pt-4 pb-0 cursor-grab active:cursor-grabbing"
           onMouseDown={handleDrag}
@@ -192,12 +184,8 @@ export function NotePad({ initialNoteId }: NotePadProps) {
           <div className="flex items-center gap-1.5">
             <button
               onClick={() => void handlePin()}
-              className={`group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer ${
-                isPinned
-                  ? "bg-bamboo-mist text-bamboo"
-                  : "text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
-              }`}
-              title="钉为磁贴"
+              className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
+              title="转为磁贴"
             >
               <svg
                 width="14"
@@ -208,7 +196,6 @@ export function NotePad({ initialNoteId }: NotePadProps) {
                 strokeWidth="2"
                 strokeLinecap="round"
                 strokeLinejoin="round"
-                className={`transition-transform duration-200 ${isPinned ? "rotate-[-45deg]" : ""}`}
               >
                 <path d="M12 17v5" />
                 <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z" />
@@ -238,7 +225,7 @@ export function NotePad({ initialNoteId }: NotePadProps) {
         <div className="mx-5 mt-1.5 h-px bg-paper-deep/50" />
 
         {mode === "new" ? (
-          <div className="px-5 py-4">
+          <div className="px-5 py-4 flex flex-col flex-1 min-h-0">
             <input
               type="text"
               value={title}
@@ -247,7 +234,7 @@ export function NotePad({ initialNoteId }: NotePadProps) {
                 setStatus("未保存");
               }}
               placeholder="标题（可选）"
-              className="w-full text-[15px] font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-3 tracking-wide"
+              className="w-full text-[15px] font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-3 tracking-wide shrink-0"
             />
 
             <textarea
@@ -257,10 +244,10 @@ export function NotePad({ initialNoteId }: NotePadProps) {
                 setStatus("未保存");
               }}
               placeholder="写点什么……"
-              className="w-full h-48 text-[14px] leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
+              className="w-full flex-1 min-h-0 text-[14px] leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
             />
 
-            <div className="flex items-center justify-between mt-2 pt-3 border-t border-paper-deep/30">
+            <div className="flex items-center justify-between mt-2 pt-3 border-t border-paper-deep/30 shrink-0">
               <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
                 {errorMessage ?? `${countNoteChars(content)} 字 · ${status}`}
               </span>
@@ -281,7 +268,7 @@ export function NotePad({ initialNoteId }: NotePadProps) {
             </div>
           </div>
         ) : (
-          <div className="p-2 max-h-[310px] overflow-y-auto">
+          <div className="p-2 flex-1 min-h-0 overflow-y-auto">
             <div className="space-y-0.5">
               {notes.map((note) => (
                 <button

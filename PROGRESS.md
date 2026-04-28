@@ -1,6 +1,6 @@
 # 花笺 开发进度
 
-## 当前阶段：R4 — 便签与磁贴窗口迁移完成，准备进入 R5 Windows 系统集成
+## 当前阶段：R5 — Windows 系统集成（进行中）
 
 当前主线已从 C# + WPF 转为 Tauri 2 + React + TypeScript + Rust。旧 WPF 版本不再作为继续扩展的主线，但其已经完成的功能和 Windows 经验会作为迁移参考。
 
@@ -253,6 +253,23 @@ R4 验证记录：
 
 ## 六、变更日志
 
+### 2026-04-28（UI 修正：无边框窗口与交互统一）
+
+- 所有窗口移除系统标题栏（`decorations: false`），主窗口新增自定义标题栏，含拖拽、双击最大化/还原、自定义最小化/最大化/关闭按钮。
+- 删除设计稿遗留的仿 Mac 红黄绿圆点导航栏。
+- 去除主窗口、便签、磁贴内容的卡片式外层包裹（圆角、边框、间距），内容铺满整个窗口。
+- 便签"钉为磁贴"改为"转为磁贴"：转换后便签窗口自动关闭，不再两窗并存。
+- 磁贴操作栏从 Mac 风格彩色圆形按钮改为与应用一致的图标按钮。
+- 新增全局自定义右键菜单组件（剪切/复制/粘贴/全选），替代浏览器默认右键菜单，风格与应用统一。
+- 新增窗口控制 API：`minimizeCurrentWindow`、`toggleMaximizeCurrentWindow`、`isCurrentWindowMaximized`。
+- 更新 Tauri capabilities，增加 `minimize`、`toggle-maximize`、`is-maximized`、`show`、`hide` 权限。
+
+### 2026-04-28（R4 补丁：修复便签窗口打开卡死）
+
+- 将 `open_notepad_window` 和 `open_tile_window` 从同步命令改为 `async fn`，避免 `WebviewWindowBuilder::build()` 在同步命令中向主线程派发窗口创建时，与 Windows WebView2 IPC 处理产生死锁。
+- 移除 `build()` 之后的 `set_focus()` 调用，新创建的窗口默认获得焦点，在窗口尚未完全初始化时立即调用 `set_focus()` 可能导致阻塞。
+- 验证：`cargo test` 4 通过、`npm test` 6 通过、`tauri dev` 手动测试便签和磁贴窗口正常打开不再卡死。
+
 ### 2026-04-28（Tauri R4 便签与磁贴窗口迁移）
 
 - 新增窗口路由模块，统一解析和生成 `main`、`notepad`、`tile` 视图及 `noteId` 参数。
@@ -312,6 +329,9 @@ R4 验证记录：
 
 ## 七、下一步
 
-1. 开始 Phase R5：接入系统托盘、关闭到托盘、全局快捷键和开机自启。
-2. 迁移 WorkerW 桌面嵌入能力，并验证 Explorer 重启、多显示器和 DPI 缩放场景。
-3. 继续保持每完成一个阶段就更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。
+1. **R5-1**：接入系统托盘和托盘菜单（打开主窗口、快速记录、退出）。
+2. **R5-2**：实现关闭到托盘（关闭主窗口时隐藏而非退出）。
+3. **R5-3**：接入全局快捷键呼出便签（默认 Ctrl+Space）。
+4. **R5-4**：接入开机自启。
+5. **R5-5**：迁移 WorkerW 桌面嵌入能力，验证 Explorer 重启、多显示器和 DPI 缩放场景。
+6. 继续保持每完成一个阶段就更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。
