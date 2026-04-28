@@ -87,6 +87,12 @@ impl From<serde_json::Error> for AppError {
     }
 }
 
+impl From<tauri::Error> for AppError {
+    fn from(error: tauri::Error) -> Self {
+        Self::new("tauri", error.to_string())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct MetadataFile {

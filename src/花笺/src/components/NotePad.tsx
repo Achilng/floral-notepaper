@@ -1,36 +1,154 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import type { MouseEvent } from "react";
+import {
+  createNote,
+  getErrorMessage,
+  getNote,
+  listNotes,
+  updateNote,
+} from "../features/notes/api";
+import type { Note, NoteMetadata } from "../features/notes/types";
+import {
+  countNoteChars,
+  formatShortDate,
+  getDisplayTitle,
+  metadataFromNote,
+} from "../features/notes/noteUtils";
+import { openTileWindow } from "../features/windows/api";
+import {
+  closeCurrentWindow,
+  startCurrentWindowDrag,
+} from "../features/windows/controls";
 
 type Mode = "new" | "open";
 
-const existingNotes = [
-  { id: 1, title: "读书笔记：月亮与六便士", date: "04-26", preview: "满地都是六便士，他却抬头看见了月亮……" },
-  { id: 2, title: "周末采购清单", date: "04-25", preview: "牛奶、面包、橄榄油、番茄" },
-  { id: 3, title: "项目灵感", date: "04-24", preview: "试试用 WebGL 做一个粒子书法效果？" },
-  { id: 4, title: "给自己的信", date: "04-22", preview: "不要急，慢慢来。所有的经历都会变成养分……" },
-];
+interface NotePadProps {
+  initialNoteId?: string;
+}
 
-export function NotePad() {
-  const [mode, setMode] = useState<Mode>("new");
+export function NotePad({ initialNoteId }: NotePadProps) {
+  const [mode, setMode] = useState<Mode>(initialNoteId ? "new" : "new");
+  const [notes, setNotes] = useState<NoteMetadata[]>([]);
+  const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [isPinned, setIsPinned] = useState(false);
-  const [hoveredNote, setHoveredNote] = useState<number | null>(null);
+  const [hoveredNote, setHoveredNote] = useState<string | null>(null);
+  const [status, setStatus] = useState("空");
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+
+  const refreshNotes = useCallback(async () => {
+    const loadedNotes = await listNotes();
+    setNotes(loadedNotes);
+    return loadedNotes;
+  }, []);
+
+  const applyNote = useCallback((note: Note) => {
+    setEditingNoteId(note.id);
+    setTitle(note.title);
+    setContent(note.content);
+    setMode("new");
+    setStatus("已打开");
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function bootstrap() {
+      try {
+        await refreshNotes();
+        if (initialNoteId) {
+          const note = await getNote(initialNoteId);
+          if (!cancelled) applyNote(note);
+        }
+      } catch (error) {
+        if (!cancelled) setErrorMessage(getErrorMessage(error));
+      }
+    }
+
+    void bootstrap();
+    return () => {
+      cancelled = true;
+    };
+  }, [applyNote, initialNoteId, refreshNotes]);
+
+  const saveNote = async () => {
+    const request = { title, content };
+    const note = editingNoteId
+      ? await updateNote(editingNoteId, request)
+      : await createNote(request);
+
+    setEditingNoteId(note.id);
+    setNotes((current) => {
+      const metadata = metadataFromNote(note);
+      const exists = current.some((item) => item.id === note.id);
+      const next = exists
+        ? current.map((item) => (item.id === note.id ? metadata : item))
+        : [metadata, ...current];
+      return [...next].sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      );
+    });
+    setStatus("已保存");
+    return note;
+  };
+
+  const handleSave = async () => {
+    setErrorMessage(null);
+    try {
+      await saveNote();
+    } catch (error) {
+      setStatus("保存失败");
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleOpenNote = async (noteId: string) => {
+    setErrorMessage(null);
+    try {
+      const note = await getNote(noteId);
+      applyNote(note);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handlePin = async () => {
+    setErrorMessage(null);
+    try {
+      const note = await saveNote();
+      await openTileWindow(note.id);
+      setIsPinned(true);
+      setStatus("已钉住");
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleClose = async () => {
+    try {
+      await closeCurrentWindow();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleDrag = (event: MouseEvent<HTMLDivElement>) => {
+    if ((event.target as HTMLElement).closest("button")) return;
+    void startCurrentWindowDrag().catch(() => undefined);
+  };
+
+  const resetDraft = () => {
+    setEditingNoteId(null);
+    setTitle("");
+    setContent("");
+    setMode("new");
+    setStatus("空");
+    setErrorMessage(null);
+  };
 
   return (
-    <div className="flex flex-col items-center gap-8 pt-8 w-full max-w-md mx-auto">
-      {/* Keyboard shortcut hint */}
-      <div className="flex items-center gap-2 text-ink-faint">
-        <kbd className="px-2 py-0.5 text-[11px] font-mono bg-paper-warm border border-paper-deep rounded-[4px] text-ink-faint tracking-wide">
-          Ctrl
-        </kbd>
-        <span className="text-[10px]">+</span>
-        <kbd className="px-2 py-0.5 text-[11px] font-mono bg-paper-warm border border-paper-deep rounded-[4px] text-ink-faint tracking-wide">
-          Space
-        </kbd>
-        <span className="text-[12px] ml-1.5">呼出便签</span>
-      </div>
-
-      {/* NotePad window */}
+    <div className="flex flex-col items-center gap-5 pt-4 w-full max-w-md mx-auto">
       <div
         className="noise-bg w-full rounded-2xl bg-cloud border border-paper-deep/40 overflow-hidden"
         style={{
@@ -38,19 +156,20 @@ export function NotePad() {
             "0 2px 8px rgba(26,26,24,0.04), 0 12px 40px rgba(26,26,24,0.07), 0 0 0 0.5px rgba(26,26,24,0.03)",
         }}
       >
-        {/* Top bar with tabs */}
-        <div className="flex items-center justify-between px-5 pt-4 pb-0">
-          {/* Mode tabs */}
+        <div
+          className="flex items-center justify-between px-5 pt-4 pb-0 cursor-grab active:cursor-grabbing"
+          onMouseDown={handleDrag}
+        >
           <div className="flex items-center gap-0.5">
             <button
-              onClick={() => setMode("new")}
+              onClick={resetDraft}
               className={`relative px-3.5 py-1.5 text-[13px] rounded-t-lg transition-all duration-250 cursor-pointer ${
                 mode === "new"
                   ? "text-bamboo font-medium"
                   : "text-ink-ghost hover:text-ink-faint"
               }`}
             >
-              新建
+              {editingNoteId ? "编辑" : "新建"}
               {mode === "new" && (
                 <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-bamboo rounded-full" />
               )}
@@ -70,11 +189,9 @@ export function NotePad() {
             </button>
           </div>
 
-          {/* Window controls */}
           <div className="flex items-center gap-1.5">
-            {/* Pin button */}
             <button
-              onClick={() => setIsPinned(!isPinned)}
+              onClick={() => void handlePin()}
               className={`group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer ${
                 isPinned
                   ? "bg-bamboo-mist text-bamboo"
@@ -98,92 +215,107 @@ export function NotePad() {
               </svg>
             </button>
 
-            {/* Close button */}
             <button
+              onClick={() => void handleClose()}
               className="group w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:bg-red-50 hover:text-red-400 transition-all duration-200 cursor-pointer"
               title="关闭"
             >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+              <svg
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.5"
+                strokeLinecap="round"
+              >
                 <path d="M18 6L6 18M6 6l12 12" />
               </svg>
             </button>
           </div>
         </div>
 
-        {/* Divider */}
         <div className="mx-5 mt-1.5 h-px bg-paper-deep/50" />
 
-        {/* Content area */}
         {mode === "new" ? (
           <div className="px-5 py-4">
-            {/* Title input */}
             <input
               type="text"
               value={title}
-              onChange={(e) => setTitle(e.target.value)}
+              onChange={(event) => {
+                setTitle(event.target.value);
+                setStatus("未保存");
+              }}
               placeholder="标题（可选）"
               className="w-full text-[15px] font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-3 tracking-wide"
             />
 
-            {/* Body textarea */}
             <textarea
               value={content}
-              onChange={(e) => setContent(e.target.value)}
+              onChange={(event) => {
+                setContent(event.target.value);
+                setStatus("未保存");
+              }}
               placeholder="写点什么……"
               className="w-full h-48 text-[14px] leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
             />
 
-            {/* Bottom bar */}
             <div className="flex items-center justify-between mt-2 pt-3 border-t border-paper-deep/30">
-              <span className="text-[11px] text-ink-ghost font-mono tabular-nums">
-                {content.length > 0 ? `${content.length} 字` : "空"}
+              <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
+                {errorMessage ?? `${countNoteChars(content)} 字 · ${status}`}
               </span>
               <div className="flex items-center gap-2">
-                <button className="px-4 py-1.5 text-[12px] text-ink-faint hover:text-ink-soft rounded-lg hover:bg-paper-warm transition-all duration-200 cursor-pointer">
-                  取消
+                <button
+                  onClick={resetDraft}
+                  className="px-4 py-1.5 text-[12px] text-ink-faint hover:text-ink-soft rounded-lg hover:bg-paper-warm transition-all duration-200 cursor-pointer"
+                >
+                  清空
                 </button>
-                <button className="px-4 py-1.5 text-[12px] text-cloud bg-bamboo hover:bg-bamboo-light rounded-lg transition-all duration-200 font-medium cursor-pointer shadow-[0_1px_3px_rgba(45,90,61,0.2)]">
+                <button
+                  onClick={() => void handleSave()}
+                  className="px-4 py-1.5 text-[12px] text-cloud bg-bamboo hover:bg-bamboo-light rounded-lg transition-all duration-200 font-medium cursor-pointer shadow-[0_1px_3px_rgba(45,90,61,0.2)]"
+                >
                   保存
                 </button>
               </div>
             </div>
           </div>
         ) : (
-          <div className="p-2">
-            {/* Note list in open mode */}
+          <div className="p-2 max-h-[310px] overflow-y-auto">
             <div className="space-y-0.5">
-              {existingNotes.map((note) => (
+              {notes.map((note) => (
                 <button
                   key={note.id}
+                  onClick={() => void handleOpenNote(note.id)}
                   onMouseEnter={() => setHoveredNote(note.id)}
                   onMouseLeave={() => setHoveredNote(null)}
                   className="w-full text-left px-3.5 py-3 rounded-xl transition-all duration-200 cursor-pointer group hover:bg-paper-warm/70"
                 >
                   <div className="flex items-baseline justify-between mb-0.5">
-                    <span className="text-[13px] font-display font-medium text-ink-soft group-hover:text-ink transition-colors">
-                      {note.title}
+                    <span className="text-[13px] font-display font-medium text-ink-soft group-hover:text-ink transition-colors truncate pr-3">
+                      {getDisplayTitle(note)}
                     </span>
                     <span className="text-[11px] text-ink-ghost font-mono tabular-nums">
-                      {note.date}
+                      {formatShortDate(note.updatedAt)}
                     </span>
                   </div>
                   <p className="text-[12px] text-ink-ghost leading-relaxed line-clamp-1 group-hover:text-ink-faint transition-colors">
-                    {note.preview}
+                    {note.preview || "空白笔记"}
                   </p>
                   {hoveredNote === note.id && (
                     <div className="mt-1.5 h-px bg-bamboo/10 transition-all duration-300" />
                   )}
                 </button>
               ))}
+              {notes.length === 0 && (
+                <div className="px-4 py-8 text-center text-[12px] text-ink-ghost">
+                  还没有可打开的笔记
+                </div>
+              )}
             </div>
           </div>
         )}
       </div>
-
-      {/* Label underneath */}
-      <p className="text-[12px] text-ink-ghost text-center max-w-xs leading-relaxed">
-        便签小窗 — 随时呼出，快速记录灵感
-      </p>
     </div>
   );
 }

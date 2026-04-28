@@ -1,6 +1,6 @@
 # 花笺 开发进度
 
-## 当前阶段：R3 — 主窗口真实数据接入完成，准备进入 R4 便签与磁贴迁移
+## 当前阶段：R4 — 便签与磁贴窗口迁移完成，准备进入 R5 Windows 系统集成
 
 当前主线已从 C# + WPF 转为 Tauri 2 + React + TypeScript + Rust。旧 WPF 版本不再作为继续扩展的主线，但其已经完成的功能和 Windows 经验会作为迁移参考。
 
@@ -150,13 +150,13 @@
 
 | 任务 | 状态 |
 |------|------|
-| 拆分生产级 NotePad 组件 | 待开始 |
-| 设计多窗口 route / label 规则 | 待开始 |
-| 实现快捷便签窗口创建 | 待开始 |
-| 实现打开已有笔记模式 | 待开始 |
-| 实现钉住为磁贴 | 待开始 |
-| 实现多磁贴生命周期管理 | 待开始 |
-| 实现拖拽、缩放、置顶 | 待开始 |
+| 拆分生产级 NotePad 组件 | 已完成 |
+| 设计多窗口 route / label 规则 | 已完成，使用 `main`、`notepad-*`、`tile-*` |
+| 实现快捷便签窗口创建 | 已完成，Rust command 动态创建或聚焦窗口 |
+| 实现打开已有笔记模式 | 已完成 |
+| 实现钉住为磁贴 | 已完成，主窗口和便签窗口均可打开磁贴 |
+| 实现多磁贴生命周期管理 | 已完成，按 `tile-{noteId}` label 管理 |
+| 实现拖拽、缩放、置顶 | 已完成，使用 Tauri window API；WorkerW 桌面嵌入留到 R5 |
 
 ### Phase R5：Windows 系统集成
 
@@ -235,9 +235,32 @@ R3 验证记录：
 - 已运行：`cargo test`
 - 结果：通过，3 个 Rust 单元测试全部通过。
 
+R4 验证记录：
+
+- 已运行：`npm.cmd test`
+- 结果：通过，2 个测试文件、6 个前端测试全部通过。
+- 已运行：`npm.cmd run build`
+- 结果：通过，TypeScript 与 Vite 生产构建成功。
+- 已运行：`cargo test`
+- 结果：通过，4 个 Rust 单元测试全部通过。
+- 已运行：`npm.cmd run tauri -- info`
+- 结果：通过，Tauri 识别到 WebView2、MSVC、`rustc 1.94.1`、`cargo 1.94.1`；仍提示 rustup/toolchain 检测警告，原因是本项目通过 `D:\Rust` 中已有 toolchain 直接注入 PATH。
+- 已运行：`npm.cmd run tauri -- build --debug`
+- 结果：通过，生成 `src-tauri\target\debug\huajian.exe`、`src-tauri\target\debug\bundle\msi\花笺_0.1.0_x64_zh-CN.msi`、`src-tauri\target\debug\bundle\nsis\花笺_0.1.0_x64-setup.exe`。
+- 调试记录：首次 MSI 打包失败是 WiX 默认 `en-US`/code page 1252 不支持中文产品名；已在 `tauri.conf.json` 配置 WiX `language` 为 `zh-CN` 后验证通过。
+
 ---
 
 ## 六、变更日志
+
+### 2026-04-28（Tauri R4 便签与磁贴窗口迁移）
+
+- 新增窗口路由模块，统一解析和生成 `main`、`notepad`、`tile` 视图及 `noteId` 参数。
+- 新增 Rust 动态窗口 commands：`open_notepad_window`、`open_tile_window`，使用 `notepad-*`、`tile-*` label 创建或聚焦窗口。
+- 更新 Tauri capabilities，允许便签和磁贴窗口调用关闭、置顶、设置尺寸、设置位置、拖拽和缩放相关窗口 API。
+- 将便签窗口接入真实笔记数据，支持新建、保存、打开已有笔记、钉为磁贴和关闭窗口。
+- 将磁贴窗口接入真实笔记数据，支持编辑保存、自动保存、关闭、置顶、拖拽和右下角缩放。
+- 修复中文产品名 MSI 打包问题，将 WiX 语言配置为 `zh-CN`。
 
 ### 2026-04-28（Tauri R3 主窗口真实数据接入）
 
@@ -289,7 +312,6 @@ R3 验证记录：
 
 ## 七、下一步
 
-1. 开始 Phase R4：将便签窗口接入真实笔记数据。
-2. 设计并实现 `notepad-*`、`tile-*` 动态窗口创建和窗口内关闭、置顶、尺寸控制。
-3. 实现从主窗口钉住当前笔记为磁贴，从便签新建或打开已有笔记并保存。
-4. R4 完成后继续更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。
+1. 开始 Phase R5：接入系统托盘、关闭到托盘、全局快捷键和开机自启。
+2. 迁移 WorkerW 桌面嵌入能力，并验证 Explorer 重启、多显示器和 DPI 缩放场景。
+3. 继续保持每完成一个阶段就更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。

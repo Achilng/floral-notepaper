@@ -17,6 +17,7 @@ import {
   getDisplayTitle,
   metadataFromNote,
 } from "../features/notes/noteUtils";
+import { openNotepadWindow, openTileWindow } from "../features/windows/api";
 
 type ViewMode = "edit" | "preview" | "split";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
@@ -198,9 +199,27 @@ export function MainWindow() {
     if (selectedId) setSaveState("dirty");
   };
 
-  const handlePinEntry = () => {
+  const handleOpenNotepad = async () => {
+    setErrorMessage(null);
+    try {
+      await openNotepadWindow();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handlePinEntry = async () => {
     if (!selectedId) return;
-    setErrorMessage("磁贴窗口将在 Phase R4 接入。");
+    if (saveState === "dirty") {
+      await saveCurrentNote();
+    }
+
+    setErrorMessage(null);
+    try {
+      await openTileWindow(selectedId);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
   };
 
   return (
@@ -235,6 +254,25 @@ export function MainWindow() {
                 {errorMessage}
               </span>
             )}
+            <button
+              onClick={() => void handleOpenNotepad()}
+              className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all"
+              title="快捷便签"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M4 4h16v14H7l-3 3V4z" />
+                <path d="M8 9h8M8 13h5" />
+              </svg>
+            </button>
             <button
               className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all"
               title="设置"
@@ -422,7 +460,7 @@ export function MainWindow() {
                 <div className="h-4 w-px bg-paper-deep/30 mx-1" />
 
                 <button
-                  onClick={handlePinEntry}
+                  onClick={() => void handlePinEntry()}
                   disabled={!selectedId}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                   title="钉为磁贴"

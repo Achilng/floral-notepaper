@@ -2,20 +2,11 @@ import "./App.css";
 import { MainWindow } from "./components/MainWindow";
 import { NotePad } from "./components/NotePad";
 import { TileShowcase } from "./components/TileShowcase";
-
-type View = "main" | "notepad" | "tile";
-
-function getInitialView(): View {
-  const params = new URLSearchParams(window.location.search);
-  const v = params.get("view");
-  if (v === "tile") return "tile";
-  if (v === "notepad") return "notepad";
-  if (v === "main") return "main";
-  return "main";
-}
+import { getInitialRoute } from "./features/windows/windowRoutes";
 
 function App() {
-  const activeView = getInitialView();
+  const route = getInitialRoute();
+  const activeView = route.view;
 
   const isMainView = activeView === "main";
 
@@ -42,9 +33,9 @@ function App() {
           {activeView === "main" ? (
             <MainWindow />
           ) : activeView === "notepad" ? (
-            <NotePad />
+            <NotePad initialNoteId={route.noteId} />
           ) : (
-            <TileShowcase />
+            <TileShowcase noteId={route.noteId} />
           )}
         </div>
       </main>
