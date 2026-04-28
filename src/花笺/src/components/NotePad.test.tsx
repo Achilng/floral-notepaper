@@ -7,7 +7,8 @@ describe("NotePad surface modes", () => {
     const markup = renderToStaticMarkup(<NotePad />);
 
     expect(markup).toContain('data-surface-mode="pad"');
-    expect(markup).toContain("bg-transparent p-1");
+    expect(markup).toContain("bg-transparent p-0");
+    expect(markup).not.toContain("bg-transparent p-1");
     expect(markup).toContain("border-paper-deep/40 rounded-xl");
     expect(markup).toContain("<input");
     expect(markup).toContain("<textarea");
