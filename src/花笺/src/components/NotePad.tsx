@@ -61,6 +61,7 @@ export function NotePad({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] =
     useState(initialAutoSave);
+  const [isExiting, setIsExiting] = useState(false);
 
   const refreshNotes = useCallback(async () => {
     const loadedNotes = await listNotes();
@@ -197,13 +198,20 @@ export function NotePad({
     }
   };
 
-  const handleClose = useCallback(async () => {
-    try {
-      await closeCurrentWindow();
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    }
+  const handleClose = useCallback(() => {
+    setIsExiting(true);
   }, []);
+
+  useEffect(() => {
+    if (!isExiting) return;
+    const timer = window.setTimeout(() => {
+      void closeCurrentWindow().catch((error) => {
+        setIsExiting(false);
+        setErrorMessage(getErrorMessage(error));
+      });
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [isExiting]);
 
   const copyTileContent = useCallback(async () => {
     setErrorMessage(null);
@@ -285,8 +293,7 @@ export function NotePad({
   const isTile = surfaceMode === "tile";
   const tileNoteId = editingNoteId ?? initialNoteId ?? "";
   const tileTitle = title.trim();
-  const surfaceWrapperClassName =
-    "w-full h-screen flex flex-col transition-all duration-200 ease-out bg-transparent p-0";
+  const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : "animate-window-enter"}`;
   const padSurfaceClassName =
     "noise-bg w-full bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/40 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
 

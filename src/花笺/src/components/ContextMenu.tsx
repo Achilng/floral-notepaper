@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { requestSurfaceAction } from "../features/windows/surfaceActions";
 import { tileContextMenuItems } from "../features/windows/tileContextMenu";
 
@@ -11,6 +11,7 @@ interface MenuState {
 
 export function ContextMenuProvider({ children }: { children: React.ReactNode }) {
   const [menu, setMenu] = useState<MenuState | null>(null);
+  const [menuClosing, setMenuClosing] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
       if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 4;
 
       if (tileTarget) {
+        setMenuClosing(false);
         setMenu({
           x,
           y,
@@ -47,15 +49,16 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
         return;
       }
 
+      setMenuClosing(false);
       setMenu({ x, y, hasSelection: selection.length > 0, type: "edit" });
     }
 
     function handleClick() {
-      setMenu(null);
+      setMenuClosing(true);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") setMenu(null);
+      if (event.key === "Escape") setMenuClosing(true);
     }
 
     document.addEventListener("contextmenu", handleContextMenu);
@@ -68,16 +71,29 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     };
   }, []);
 
+  useEffect(() => {
+    if (!menuClosing || !menu) return;
+    const timer = window.setTimeout(() => {
+      setMenu(null);
+      setMenuClosing(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [menuClosing, menu]);
+
+  const dismissMenu = useCallback(() => {
+    setMenuClosing(true);
+  }, []);
+
   const runCommand = (command: string) => {
     document.execCommand(command);
-    setMenu(null);
+    dismissMenu();
   };
 
   const runSurfaceAction = (
     action: (typeof tileContextMenuItems)[number]["action"],
   ) => {
     requestSurfaceAction(action);
-    setMenu(null);
+    dismissMenu();
   };
 
   const items = menu
@@ -123,7 +139,7 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
       {menu && (
         <div
           ref={menuRef}
-          className="fixed z-[9999] min-w-[152px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none"
+          className={`fixed z-[9999] min-w-[152px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${menuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
           style={{
             left: menu.x,
             top: menu.y,

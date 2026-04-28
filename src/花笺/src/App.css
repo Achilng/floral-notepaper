@@ -87,6 +87,22 @@ textarea::placeholder, input::placeholder {
 @keyframes dash-draw {
   to { stroke-dashoffset: 0; }
 }
+@keyframes window-enter {
+  from { opacity: 0; transform: scale(0.96); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes window-exit {
+  from { opacity: 1; transform: scale(1); }
+  to { opacity: 0; transform: scale(0.96); }
+}
+@keyframes menu-enter {
+  from { opacity: 0; transform: translateY(4px) scale(0.97); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes menu-exit {
+  from { opacity: 1; transform: translateY(0) scale(1); }
+  to { opacity: 0; transform: translateY(4px) scale(0.97); }
+}
 
 .animate-fade-up {
   animation: fade-up 0.55s cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -96,4 +112,18 @@ textarea::placeholder, input::placeholder {
 }
 .animate-float {
   animation: float-gentle 4s ease-in-out infinite;
+}
+.animate-window-enter {
+  animation: window-enter 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.animate-window-exit {
+  animation: window-exit 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
+}
+.animate-menu-enter {
+  animation: menu-enter 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.animate-menu-exit {
+  animation: menu-exit 0.15s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
 }

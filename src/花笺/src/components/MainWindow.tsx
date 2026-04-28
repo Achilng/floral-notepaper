@@ -79,6 +79,7 @@ export function MainWindow({
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noteMenu, setNoteMenu] = useState<NoteMenuState | null>(null);
+  const [noteMenuClosing, setNoteMenuClosing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
   const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(
     initialConfig ?? null,
@@ -184,7 +185,7 @@ export function MainWindow({
 
   useEffect(() => {
     function closeNoteMenu() {
-      setNoteMenu(null);
+      setNoteMenuClosing(true);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -198,6 +199,15 @@ export function MainWindow({
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!noteMenuClosing || !noteMenu) return;
+    const timer = window.setTimeout(() => {
+      setNoteMenu(null);
+      setNoteMenuClosing(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [noteMenuClosing, noteMenu]);
 
   const saveCurrentNote = useCallback(async () => {
     if (!selectedId) return null;
@@ -368,6 +378,7 @@ export function MainWindow({
     const x = Math.min(event.clientX, window.innerWidth - menuWidth - 4);
     const y = Math.min(event.clientY, window.innerHeight - menuHeight - 4);
 
+    setNoteMenuClosing(false);
     setHoveredId(noteId);
     setNoteMenu({
       x: Math.max(4, x),
@@ -395,7 +406,7 @@ export function MainWindow({
 
   const handleNoteMenuAction = (action: NoteContextMenuAction) => {
     const note = noteMenuTarget;
-    setNoteMenu(null);
+    setNoteMenuClosing(true);
     if (!note) return;
 
     if (action === "export") {
@@ -969,7 +980,7 @@ export function MainWindow({
       </div>
       {noteMenu && noteMenuTarget && (
         <div
-          className="fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none"
+          className={`fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${noteMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
           style={{ left: noteMenu.x, top: noteMenu.y }}
           onMouseDown={(event) => event.stopPropagation()}
         >
