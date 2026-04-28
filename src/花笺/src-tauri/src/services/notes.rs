@@ -273,6 +273,25 @@ impl NoteStore {
         self.save_metadata(&metadata_file)
     }
 
+    pub fn import_markdown_file(&self, path: &Path) -> Result<Note, AppError> {
+        if !is_markdown_path(path) {
+            return Err(AppError::new("unsupportedFile", "只支持导入 .md 文件"));
+        }
+
+        let content = fs::read_to_string(path)?;
+        let title = imported_markdown_title(path, &content);
+        self.create_note(SaveNoteRequest { title, content })
+    }
+
+    pub fn export_markdown_file(&self, id: &str, path: &Path) -> Result<(), AppError> {
+        let note = self.read_note(id)?;
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(path, note.content)?;
+        Ok(())
+    }
+
     fn default_config(&self) -> AppConfig {
         AppConfig {
             notes_dir: self.base_dir.join("notes").to_string_lossy().to_string(),
@@ -473,6 +492,33 @@ fn infer_title(file_name: &str, content: &str) -> String {
         .unwrap_or_default()
 }
 
+fn is_markdown_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.eq_ignore_ascii_case("md"))
+        .unwrap_or(false)
+}
+
+fn imported_markdown_title(path: &Path, content: &str) -> String {
+    let first_line = content.lines().next().unwrap_or_default();
+    let first_line = first_line.trim_start_matches('\u{feff}').trim_start();
+
+    if let Some(title) = first_line
+        .strip_prefix("# ")
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+    {
+        return title.to_string();
+    }
+
+    path.file_stem()
+        .and_then(|file_stem| file_stem.to_str())
+        .map(str::trim)
+        .filter(|title| !title.is_empty())
+        .unwrap_or("导入笔记")
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -588,5 +634,61 @@ mod tests {
         let loaded = store.load_config().expect("reload config");
         assert_eq!(loaded, saved);
         assert!(custom_notes_dir.exists());
+    }
+
+    #[test]
+    fn imports_markdown_heading_title_without_stripping_content() {
+        let root = test_root("import-heading-title");
+        let source_path = root.join("外部文件.md");
+        let source_content = "# 导入标题\n正文第一行\n正文第二行";
+        fs::write(&source_path, source_content).expect("write source markdown");
+        let store = NoteStore::new(root.join("store"));
+
+        let imported = store
+            .import_markdown_file(&source_path)
+            .expect("import markdown");
+
+        assert_eq!(imported.title, "导入标题");
+        assert_eq!(imported.content, source_content);
+        assert_eq!(store.read_note(&imported.id).expect("read imported").content, source_content);
+    }
+
+    #[test]
+    fn imports_markdown_title_from_file_name_without_heading() {
+        let root = test_root("import-file-title");
+        let source_path = root.join("会议记录.md");
+        let source_content = "正文第一行\n# 不是第一行标题";
+        fs::write(&source_path, source_content).expect("write source markdown");
+        let store = NoteStore::new(root.join("store"));
+
+        let imported = store
+            .import_markdown_file(&source_path)
+            .expect("import markdown");
+
+        assert_eq!(imported.title, "会议记录");
+        assert_eq!(imported.content, source_content);
+    }
+
+    #[test]
+    fn exports_markdown_file_without_rewriting_content() {
+        let root = test_root("export-markdown");
+        let store = NoteStore::new(root.join("store"));
+        let content = "# 原始标题\n正文\n- 列表";
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "导出标题".into(),
+                content: content.into(),
+            })
+            .expect("create note");
+        let export_path = root.join("exports").join("导出.md");
+
+        store
+            .export_markdown_file(&note.id, &export_path)
+            .expect("export markdown");
+
+        assert_eq!(
+            fs::read_to_string(export_path).expect("read exported markdown"),
+            content
+        );
     }
 }

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { MouseEvent } from "react";
+import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 import {
   createNote,
@@ -18,6 +19,10 @@ import {
   getDisplayTitle,
   metadataFromNote,
 } from "../features/notes/noteUtils";
+import {
+  noteContextMenuItems,
+  type NoteContextMenuAction,
+} from "../features/notes/noteContextMenu";
 import { openNotepadWindow, openTileWindow } from "../features/windows/api";
 import {
   closeCurrentWindow,
@@ -29,6 +34,12 @@ import {
 
 type ViewMode = "edit" | "preview" | "split";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+
+interface NoteMenuState {
+  x: number;
+  y: number;
+  noteId: string;
+}
 
 const saveStateLabel: Record<SaveState, string> = {
   idle: "未选择",
@@ -50,10 +61,16 @@ export function MainWindow() {
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [noteMenu, setNoteMenu] = useState<NoteMenuState | null>(null);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
     [notes, selectedId],
+  );
+
+  const noteMenuTarget = useMemo(
+    () => notes.find((note) => note.id === noteMenu?.noteId) ?? null,
+    [noteMenu?.noteId, notes],
   );
 
   const filteredNotes = useMemo(
@@ -129,6 +146,23 @@ export function MainWindow() {
     };
   }, [applyNote]);
 
+  useEffect(() => {
+    function closeNoteMenu() {
+      setNoteMenu(null);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") closeNoteMenu();
+    }
+
+    document.addEventListener("mousedown", closeNoteMenu);
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", closeNoteMenu);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, []);
+
   const saveCurrentNote = useCallback(async () => {
     if (!selectedId) return null;
 
@@ -167,6 +201,24 @@ export function MainWindow() {
     }
   };
 
+  const handleImportNote = async () => {
+    setErrorMessage(null);
+    try {
+      if (selectedId && saveState === "dirty") {
+        const saved = await saveCurrentNote();
+        if (!saved) return;
+      }
+
+      const note = await importMarkdownNote();
+      if (!note) return;
+
+      replaceNoteMetadata(note);
+      applyNote(note);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
   const handleSelectNote = async (id: string) => {
     if (id === selectedId) return;
     if (saveState === "dirty") {
@@ -183,16 +235,16 @@ export function MainWindow() {
     }
   };
 
-  const handleDeleteNote = async () => {
-    if (!selectedId) return;
+  const handleDeleteNote = async (noteId = selectedId) => {
+    if (!noteId) return;
 
     setErrorMessage(null);
     try {
-      await deleteNote(selectedId);
+      await deleteNote(noteId);
       const remaining = await refreshNotes();
-      if (remaining[0]) {
+      if (noteId === selectedId && remaining[0]) {
         await loadNote(remaining[0].id);
-      } else {
+      } else if (noteId === selectedId) {
         setSelectedId(null);
         setTitle("");
         setContent("");
@@ -201,6 +253,56 @@ export function MainWindow() {
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
+  };
+
+  const handleOpenNoteMenu = (
+    event: MouseEvent<HTMLElement>,
+    noteId: string,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    const menuWidth = 168;
+    const menuHeight = 76;
+    const x = Math.min(event.clientX, window.innerWidth - menuWidth - 4);
+    const y = Math.min(event.clientY, window.innerHeight - menuHeight - 4);
+
+    setHoveredId(noteId);
+    setNoteMenu({
+      x: Math.max(4, x),
+      y: Math.max(4, y),
+      noteId,
+    });
+  };
+
+  const handleExportNote = async (note: NoteMetadata) => {
+    setErrorMessage(null);
+    try {
+      if (note.id === selectedId && saveState === "dirty") {
+        const saved = await saveCurrentNote();
+        if (!saved) return;
+      }
+
+      await exportMarkdownNote({
+        id: note.id,
+        title: note.id === selectedId ? title : note.title,
+      });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleNoteMenuAction = (action: NoteContextMenuAction) => {
+    const note = noteMenuTarget;
+    setNoteMenu(null);
+    if (!note) return;
+
+    if (action === "export") {
+      void handleExportNote(note);
+      return;
+    }
+
+    void handleDeleteNote(note.id);
   };
 
   const markDirty = () => {
@@ -412,7 +514,7 @@ export function MainWindow() {
               </div>
             </div>
 
-            <div className="px-3 pb-2 shrink-0">
+            <div className="px-3 pb-2 shrink-0 space-y-1">
               <button
                 onClick={handleNewNote}
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-body text-bamboo hover:bg-bamboo-mist/60 transition-all cursor-pointer group"
@@ -430,6 +532,26 @@ export function MainWindow() {
                   <path d="M12 5v14M5 12h14" />
                 </svg>
                 <span>新建笔记</span>
+              </button>
+              <button
+                onClick={() => void handleImportNote()}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-body text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer group"
+              >
+                <svg
+                  width="13"
+                  height="13"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <path d="M12 3v12" />
+                  <path d="m7 8 5-5 5 5" />
+                  <path d="M5 21h14" />
+                </svg>
+                <span>导入 Markdown</span>
               </button>
             </div>
 
@@ -449,6 +571,7 @@ export function MainWindow() {
                     <button
                       key={note.id}
                       onClick={() => void handleSelectNote(note.id)}
+                      onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
                       onMouseEnter={() => setHoveredId(note.id)}
                       onMouseLeave={() => setHoveredId(null)}
                       className={`w-full text-left rounded-xl px-3 py-2.5 transition-all duration-200 cursor-pointer group relative ${
@@ -732,6 +855,27 @@ export function MainWindow() {
           </div>
         </div>
       </div>
+      {noteMenu && noteMenuTarget && (
+        <div
+          className="fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none"
+          style={{ left: noteMenu.x, top: noteMenu.y }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {noteContextMenuItems.map((item, index) => (
+            <button
+              key={item.action}
+              onClick={() => handleNoteMenuAction(item.action)}
+              className={`w-full flex items-center justify-between px-3 py-1.5 text-[12px] font-body transition-colors cursor-pointer ${
+                item.tone === "danger"
+                  ? "text-red-400 hover:bg-red-50 hover:text-red-500"
+                  : "text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo"
+              } ${index === 1 ? "border-t border-paper-deep/40 mt-1 pt-2" : ""}`}
+            >
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

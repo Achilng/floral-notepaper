@@ -2,6 +2,7 @@ pub mod desktop;
 pub mod services;
 
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
+use std::path::PathBuf;
 use tauri::AppHandle;
 
 #[tauri::command]
@@ -32,6 +33,16 @@ fn notes_update(id: String, request: SaveNoteRequest) -> Result<Note, AppError> 
 #[tauri::command]
 fn notes_delete(id: String) -> Result<(), AppError> {
     default_store()?.delete_note(&id)
+}
+
+#[tauri::command]
+fn notes_import_markdown(path: String) -> Result<Note, AppError> {
+    default_store()?.import_markdown_file(&PathBuf::from(path))
+}
+
+#[tauri::command]
+fn notes_export_markdown(id: String, path: String) -> Result<(), AppError> {
+    default_store()?.export_markdown_file(&id, &PathBuf::from(path))
 }
 
 #[tauri::command]
@@ -68,6 +79,7 @@ async fn open_tile_window(
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             desktop::setup_desktop(app)?;
             Ok(())
@@ -80,6 +92,8 @@ pub fn run() {
             notes_create,
             notes_update,
             notes_delete,
+            notes_import_markdown,
+            notes_export_markdown,
             config_get,
             config_save,
             open_notepad_window,

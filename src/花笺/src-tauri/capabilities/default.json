@@ -18,6 +18,8 @@
     "core:window:allow-start-resize-dragging",
     "core:window:allow-show",
     "core:window:allow-hide",
+    "dialog:allow-open",
+    "dialog:allow-save",
     "opener:default"
   ]
 }
