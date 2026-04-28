@@ -162,10 +162,10 @@
 
 | 任务 | 状态 |
 |------|------|
-| 系统托盘 | 待开始 |
-| 关闭到托盘 | 待开始 |
-| 全局快捷键 | 待开始 |
-| 开机自启 | 待开始 |
+| 系统托盘 | 已完成，托盘菜单包含打开主窗口、快速记录、关闭到托盘、开机自启动、退出 |
+| 关闭到托盘 | 已完成，主窗口关闭时按配置隐藏到托盘 |
+| 全局快捷键 | 已完成，启动时按 `config.json` 中 `globalShortcut` 注册，默认 `Ctrl+Space` 呼出便签 |
+| 开机自启 | 已完成，接入 `tauri-plugin-autostart` 并与 `config.json` 同步 |
 | WorkerW 桌面嵌入 | 待开始 |
 | 多显示器 / DPI / Explorer 重启边界验证 | 待开始 |
 
@@ -249,9 +249,131 @@ R4 验证记录：
 - 结果：通过，生成 `src-tauri\target\debug\huajian.exe`、`src-tauri\target\debug\bundle\msi\花笺_0.1.0_x64_zh-CN.msi`、`src-tauri\target\debug\bundle\nsis\花笺_0.1.0_x64-setup.exe`。
 - 调试记录：首次 MSI 打包失败是 WiX 默认 `en-US`/code page 1252 不支持中文产品名；已在 `tauri.conf.json` 配置 WiX `language` 为 `zh-CN` 后验证通过。
 
+R5 阶段验证记录（托盘 / 关闭到托盘 / 快捷键 / 自启动）：
+
+- 已运行：`cargo test`
+- 结果：通过，8 个 Rust 单元测试全部通过。
+- 已运行：`npm.cmd test`
+- 结果：通过，2 个测试文件、6 个前端测试全部通过。
+- 已运行：`npm.cmd run build`
+- 结果：通过，TypeScript 与 Vite 生产构建成功。
+- 已运行：`npm.cmd run tauri -- build --debug`
+- 结果：通过，生成 `src-tauri\target\debug\huajian.exe`、`src-tauri\target\debug\bundle\msi\花笺_0.1.0_x64_zh-CN.msi`、`src-tauri\target\debug\bundle\nsis\花笺_0.1.0_x64-setup.exe`。
+- 备注：Tauri 提示 identifier `com.huajian.app` 对 macOS bundle 不推荐；当前目标平台是 Windows，暂不调整。
+
+磁贴只读交互验证记录：
+
+- 已运行：`npm.cmd test -- src/components/TileShowcase.test.tsx`
+- 结果：通过，磁贴组件渲染中不再包含 `input`、`textarea` 和“保存”按钮。
+- 已运行：`npm.cmd test -- src/features/windows/api.test.ts`
+- 结果：通过，窗口 API 打开便签和磁贴时会携带可选 bounds，用于同位转换。
+- 已运行：`npm.cmd test`
+- 结果：通过，4 个测试文件、9 个前端测试全部通过。
+- 已运行：`npm.cmd run build`
+- 结果：通过，TypeScript 与 Vite 生产构建成功。
+- 已运行：`cargo test`
+- 结果：通过，8 个 Rust 单元测试全部通过。
+- 已运行：`npm.cmd run tauri -- build --debug`
+- 结果：通过，生成最新可运行文件 `src-tauri\target\debug\huajian.exe`，以及 MSI / NSIS debug 安装包。
+
+磁贴同窗变形验证记录：
+
+- 已运行：`npm.cmd test -- src/features/windows/surfaceMode.test.ts src/components/NotePad.test.tsx src/components/TileShowcase.test.tsx`
+- 结果：通过，新增 surface mode 约束和组件渲染测试；磁贴初始态不再渲染输入框、正文编辑框或“保存”按钮，并保留圆角与边框纸面外观。
+- 已运行：`npm.cmd test`
+- 结果：通过，6 个测试文件、13 个前端测试全部通过。
+- 已运行：`npm.cmd run build`
+- 结果：通过，TypeScript 与 Vite 生产构建成功。
+- 已运行：`cargo test`
+- 结果：通过，8 个 Rust 单元测试全部通过。
+- 已运行：`npm.cmd run tauri -- build --debug`
+- 结果：通过，生成最新可运行文件 `src-tauri\target\debug\huajian.exe`，以及 MSI / NSIS debug 安装包；Tauri 仍提示 Windows 文件占用导致 NSIS bundler type 标记写入失败，但命令退出码为 0，产物已输出。
+- 已运行：`git diff --check`
+- 结果：通过，仅有工作区 CRLF 提示，无空白错误。
+
+磁贴尺寸与边框修正验证记录：
+
+- 已运行：`npm.cmd test -- src/features/windows/surfaceMode.test.ts src/components/NotePad.test.tsx src/components/TileShowcase.test.tsx`
+- 结果：通过，磁贴模式切换保持当前窗口位置和尺寸，磁贴渲染中不再出现外层 `p-2` 包边和可见 `border-paper-deep` 内边框。
+- 已运行：`npm.cmd test`
+- 结果：通过，6 个测试文件、13 个前端测试全部通过。
+- 已运行：`npm.cmd run build`
+- 结果：通过，TypeScript 与 Vite 生产构建成功。
+- 已运行：`cargo test`
+- 结果：通过，8 个 Rust 单元测试全部通过。
+- 已运行：`npm.cmd run tauri -- build --debug`
+- 结果：通过，生成最新可运行文件 `src-tauri\target\debug\huajian.exe`，以及 MSI / NSIS debug 安装包；Tauri 仍提示 Windows 文件占用导致 NSIS bundler type 标记写入失败，但命令退出码为 0，产物已输出。
+
+磁贴视觉方案迁移验证记录：
+
+- 已运行：`npm.cmd test -- src/components/NotePad.test.tsx src/components/TileShowcase.test.tsx`
+- 结果：通过，磁贴态渲染已覆盖 12px 圆角、极淡边框、四角 L 形装饰标记、正文 13px / 1.8 排版、空内容状态和无可见功能按钮。
+- 已运行：`npm.cmd test -- src/components/Tile.test.tsx src/components/NotePad.test.tsx src/components/TileShowcase.test.tsx`
+- 结果：通过，新增验证磁贴青色变体、磁贴态透明外层和四角装饰。
+- 已运行：`cargo test makes_note_surfaces_transparent_for_rounded_tile_corners`
+- 结果：通过，便签/磁贴动态窗口创建时启用透明窗口，用于保留可见圆角。
+- 已运行：`npm.cmd test`
+- 结果：通过，6 个测试文件、13 个前端测试全部通过。
+- 已运行：`npm.cmd run build`
+- 结果：通过，TypeScript 与 Vite 生产构建成功。
+- 已运行：`git diff --check`
+- 结果：通过，仅有工作区 CRLF 提示，无空白错误。
+
 ---
 
 ## 六、变更日志
+
+### 2026-04-28（磁贴视觉方案迁移到正式项目）
+
+- 将 `D:\Agent\Agent_temp\tile-design\src\components\Tile.tsx` 直接迁移为正式项目 `src/components/Tile.tsx`，`NotePad` 磁贴态改为调用该组件。
+- 磁贴卡片改为清新淡雅的 `bg-cloud` 表面、12px 圆角、极淡边框、轻阴影和悬停微缩放。
+- 新增更深的青色磁贴变体，并将转为磁贴后的默认外观切换为该青色，以便和普通便签窗口区分。
+- 修复磁贴圆角不可见的问题：磁贴态页面外层改为透明，便签/磁贴动态窗口创建时启用透明窗口。
+- 新增四角纯装饰性 L 形角标（8px、stroke 0.8px、极淡灰色），用于框定内容区域。
+- 移除磁贴态可见的置顶、关闭和缩放图标按钮，保留整体拖拽、右键转小窗和无视觉提示的右下角缩放热区。
+- 正文排版同步为 13px、1.8 行高、墨色 75% 透明度；标题仅在存在时以 11px 极淡衬线字显示，空内容显示极简“空”状态。
+- 更新 `Tile`、`NotePad` 与 `TileShowcase` 渲染测试，防止磁贴重新出现编辑控件、可见功能按钮或缺失四角装饰。
+
+### 2026-04-28（磁贴视觉方案确认）
+
+- 确认磁贴视觉设计方向：清新淡雅，不使用拟物或纸质风格。
+- 四角使用纯装饰性 L 形角标（8×8px、stroke 0.8px、极淡配色），无顶部渐变线。
+- 移除原设计稿中所有功能性元素（拖拽握柄、关闭圆点、缩放角标）。
+- 保留四种色彩变体（default / warm / green / mist）、圆角卡片、悬停微交互。
+- 设计稿位于 `D:\Agent\Agent_temp\tile-design\`，使用与主项目一致的 React + TypeScript + Tailwind 4 技术栈。
+
+### 2026-04-28（磁贴交互：保持小窗尺寸与去双边框）
+
+- 磁贴模式切换不再把当前窗口缩到 280x220，改为保持切换前的小窗位置和尺寸，只改变内部表面样式。
+- Rust 创建磁贴窗口的默认尺寸同步恢复为 420x430，与快捷便签小窗一致。
+- 磁贴外层去掉 `p-2` 绿色包边背景，内部去掉可见纸面边框，避免出现边框包边框；保留圆角、纸面背景和内容内边距。
+- 更新 surface mode 与 `NotePad` 渲染测试，防止磁贴再次缩小或出现嵌套边框。
+
+### 2026-04-28（磁贴交互：同窗变形与紧凑纸面）
+
+- 将便签小窗和磁贴合并为同一个 `NotePad` 表面状态，支持 `pad` / `tile` 两种模式；`TileShowcase` 现在只作为磁贴初始态入口，不再维护另一套编辑窗口。
+- 小窗“转为磁贴”改为保存当前笔记后直接切换当前窗口状态，并通过 Tauri window API 对当前窗口尺寸和位置做短动画；不再先打开磁贴窗口再关闭小窗。
+- 磁贴右键“转为小窗”改为发送当前窗口内的 surface mode 事件，切回小窗模式；不再调用 `openNotepadWindow` 和 `closeCurrentWindow`。
+- 磁贴恢复纸面外观：当时默认目标尺寸为 280x220，保留圆角、边框、纸面背景和内边距，空内容时仅显示“空”；后续已改为保持小窗尺寸并去掉嵌套边框。
+- 新增窗口 surface mode 工具与测试，覆盖模式白名单、目标尺寸居中计算，以及小窗/磁贴两种渲染形态。
+
+### 2026-04-28（磁贴交互：只读展示与右键转小窗）
+
+- 磁贴窗口改为只读展示，移除标题输入框、正文编辑框、自动保存逻辑和底部“保存”按钮。
+- 磁贴进一步精简为只显示正文内容；移除标题、日期、字数、状态栏和按钮 tooltip 文案，正文为空时仅显示“空”。
+- 磁贴整体区域可拖动窗口，置顶、关闭和右下角缩放控件弱化为悬停显示。
+- 小窗“转为磁贴”和磁贴右键“转为小窗”都会读取当前窗口位置与尺寸，并将目标窗口创建到相同位置和尺寸，降低跳窗感。
+- 去除小窗保存按钮和自定义右键菜单中的投影效果；Rust 创建便签/磁贴窗口时关闭窗口阴影。
+- 新增 `TileShowcase` 渲染测试和窗口 API 测试，防止磁贴重新出现编辑控件、元信息 UI 或转换时丢失 bounds。
+
+### 2026-04-28（Tauri R5：系统托盘、快捷键与自启动接入）
+
+- 新增 Rust `desktop` 模块，集中管理主窗口、便签窗口、磁贴窗口、托盘菜单、关闭到托盘、全局快捷键和自启动逻辑。
+- 接入 Tauri tray API，托盘菜单支持打开主窗口、快速记录、切换关闭到托盘、切换开机自启动和退出。
+- 主窗口关闭事件改为读取 `config.json` 中的 `closeToTray`：开启时隐藏窗口，托盘退出时才真正退出应用。
+- 接入 `tauri-plugin-global-shortcut`，启动时根据 `globalShortcut` 注册快捷键，默认 `Ctrl+Space` 打开快捷便签。
+- 接入 `tauri-plugin-autostart`，托盘菜单切换时同步系统开机自启动状态与 `config.json`。
+- 新增 Rust 单元测试覆盖托盘菜单动作映射、托盘菜单配置状态、快捷键配置解析和动态窗口 label。
 
 ### 2026-04-28（UI 修正：无边框窗口与交互统一）
 
@@ -329,9 +451,31 @@ R4 验证记录：
 
 ## 七、下一步
 
-1. **R5-1**：接入系统托盘和托盘菜单（打开主窗口、快速记录、退出）。
-2. **R5-2**：实现关闭到托盘（关闭主窗口时隐藏而非退出）。
-3. **R5-3**：接入全局快捷键呼出便签（默认 Ctrl+Space）。
-4. **R5-4**：接入开机自启。
-5. **R5-5**：迁移 WorkerW 桌面嵌入能力，验证 Explorer 重启、多显示器和 DPI 缩放场景。
-6. 继续保持每完成一个阶段就更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。
+1. **R5-5**：迁移 WorkerW 桌面嵌入能力，验证 Explorer 重启、多显示器和 DPI 缩放场景。
+2. 继续补充 R5 的真实 Windows 场景手动验证记录：托盘菜单、关闭到托盘、快捷键冲突、自启动开关。
+3. R5 收尾后进入 **R6**：导入导出与设置页。
+4. 继续保持每完成一个阶段就更新 `PLAN.md`、`PROGRESS.md`，提交并推送一次。
+
+---
+
+## 八、当前暂停记录
+
+### 2026-04-28（磁贴视觉方案确认）
+
+- 磁贴视觉方案已确认，设计稿位于 `D:\Agent\Agent_temp\tile-design\`。
+- 设计风格：不使用拟物风格和纸质风格，贯彻清新淡雅的整体设计语言。
+- 装饰元素：四角使用纯装饰性 L 形角标（8px，极淡），像印刷品对位标记一样框定内容区域；不使用顶部渐变线。
+- 去掉的功能性元素：原设计稿中的拖拽握柄、关闭圆点、缩放三角点全部移除；用户默认知晓拖动、缩放和右键转小窗操作，不需要显式 UI 提示。
+- 保留的特征：圆角卡片（12px）、四种色彩变体（default / warm / green / mist）、悬停阴影加深与微缩放、可选标题（11px 极淡衬线字）。
+- 内容区仅显示用户正文；正文为空时显示极简的”空”状态。
+- 设计稿使用与主项目一致的技术栈（React + TypeScript + Tailwind 4），组件可直接迁移。
+- 之前三种被否决的方向（清新竹纸、素雅宣纸、清爽便签）因风格不贴合软件整体风格而弃用。
+- 迁移状态：已迁移到正式项目 `src/花笺/` 中的 `TileShowcase` / `NotePad` 磁贴态。
+
+### 2026-04-28（便签/磁贴圆角修复）
+
+- 便签小窗和磁贴窗口的外层统一改为透明背景并保留 4px 内边距，便签编辑态主体恢复 `rounded-xl` 圆角与轻边框。
+- `notepad-*` / `tile-*` 动态窗口在创建、复用和尺寸变化时都会重新应用 Windows 原生圆角窗口区域，避免只靠 CSS 圆角但系统窗口仍是矩形。
+- 磁贴态继续使用更深的青色变体，用于和普通便签小窗区分。
+- 验证记录：`npm.cmd test -- --run` 通过 7 个测试文件 / 16 个测试；`npm.cmd run build` 通过；`cargo test` 通过 9 个 Rust 测试；`git diff --check` 无空白错误，仅保留既有 CRLF 提示。
+- 运行记录：已重启 Tauri dev，当前便签窗口由新构建的 `huajian.exe` 启动；Win32 `GetWindowRgn` 返回 `3`，确认窗口已应用原生非矩形区域。

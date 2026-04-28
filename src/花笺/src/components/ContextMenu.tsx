@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { requestSurfaceMode } from "../features/windows/surfaceMode";
 
 interface MenuState {
   x: number;
   y: number;
   hasSelection: boolean;
+  type: "edit" | "tile";
 }
 
 export function ContextMenuProvider({ children }: { children: React.ReactNode }) {
@@ -17,8 +19,9 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
         target.tagName === "TEXTAREA" ||
         target.tagName === "INPUT" ||
         target.isContentEditable;
+      const tileTarget = target.closest<HTMLElement>('[data-context-menu="tile"]');
 
-      if (!isEditable) {
+      if (!isEditable && !tileTarget) {
         event.preventDefault();
         return;
       }
@@ -29,11 +32,21 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
       let x = event.clientX;
       let y = event.clientY;
       const menuWidth = 160;
-      const menuHeight = 170;
+      const menuHeight = tileTarget ? 48 : 170;
       if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 4;
       if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 4;
 
-      setMenu({ x, y, hasSelection: selection.length > 0 });
+      if (tileTarget) {
+        setMenu({
+          x,
+          y,
+          hasSelection: false,
+          type: "tile",
+        });
+        return;
+      }
+
+      setMenu({ x, y, hasSelection: selection.length > 0, type: "edit" });
     }
 
     function handleClick() {
@@ -59,14 +72,48 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     setMenu(null);
   };
 
+  const switchTileToPad = () => {
+    requestSurfaceMode("pad");
+    setMenu(null);
+  };
+
   const items = menu
-    ? [
-        { label: "剪切", shortcut: "Ctrl+X", action: () => runCommand("cut"), disabled: !menu.hasSelection },
-        { label: "复制", shortcut: "Ctrl+C", action: () => runCommand("copy"), disabled: !menu.hasSelection },
-        { label: "粘贴", shortcut: "Ctrl+V", action: () => runCommand("paste"), disabled: false },
-        { separator: true as const },
-        { label: "全选", shortcut: "Ctrl+A", action: () => runCommand("selectAll"), disabled: false },
-      ]
+    ? menu.type === "tile"
+      ? [
+          {
+            label: "转为小窗",
+            shortcut: "",
+            action: switchTileToPad,
+            disabled: false,
+          },
+        ]
+      : [
+          {
+            label: "剪切",
+            shortcut: "Ctrl+X",
+            action: () => runCommand("cut"),
+            disabled: !menu.hasSelection,
+          },
+          {
+            label: "复制",
+            shortcut: "Ctrl+C",
+            action: () => runCommand("copy"),
+            disabled: !menu.hasSelection,
+          },
+          {
+            label: "粘贴",
+            shortcut: "Ctrl+V",
+            action: () => runCommand("paste"),
+            disabled: false,
+          },
+          { separator: true as const },
+          {
+            label: "全选",
+            shortcut: "Ctrl+A",
+            action: () => runCommand("selectAll"),
+            disabled: false,
+          },
+        ]
     : [];
 
   return (
@@ -79,7 +126,6 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
           style={{
             left: menu.x,
             top: menu.y,
-            boxShadow: "0 4px 16px rgba(26,26,24,0.10), 0 1px 4px rgba(26,26,24,0.06)",
           }}
           onMouseDown={(event) => event.stopPropagation()}
         >
@@ -89,14 +135,16 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
             ) : (
               <button
                 key={item.label}
-                onClick={item.action}
+                onClick={() => void item.action()}
                 disabled={item.disabled}
                 className="w-full flex items-center justify-between px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer disabled:text-ink-ghost/40 disabled:cursor-default disabled:hover:bg-transparent"
               >
                 <span>{item.label}</span>
-                <span className="text-[10px] text-ink-ghost/60 font-mono ml-6">
-                  {item.shortcut}
-                </span>
+                {item.shortcut && (
+                  <span className="text-[10px] text-ink-ghost/60 font-mono ml-6">
+                    {item.shortcut}
+                  </span>
+                )}
               </button>
             ),
           )}

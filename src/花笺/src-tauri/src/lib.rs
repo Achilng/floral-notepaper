@@ -1,8 +1,8 @@
+pub mod desktop;
 pub mod services;
 
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder};
-use uuid::Uuid;
+use tauri::AppHandle;
 
 #[tauri::command]
 fn app_name() -> &'static str {
@@ -47,81 +47,32 @@ fn config_save(config: AppConfig) -> Result<AppConfig, AppError> {
 }
 
 #[tauri::command]
-async fn open_notepad_window(app: AppHandle, note_id: Option<String>) -> Result<String, AppError> {
-    let label = notepad_window_label(note_id.as_deref());
-    let url = match note_id {
-        Some(id) => format!("index.html?view=notepad&noteId={id}"),
-        None => "index.html?view=notepad".to_string(),
-    };
-
-    open_or_focus_window(&app, &label, url, "花笺便签", 420.0, 430.0, false, true)
+async fn open_notepad_window(
+    app: AppHandle,
+    note_id: Option<String>,
+    bounds: Option<desktop::WindowBounds>,
+) -> Result<String, AppError> {
+    desktop::open_notepad_window(app, note_id, bounds).await
 }
 
 #[tauri::command]
-async fn open_tile_window(app: AppHandle, note_id: String) -> Result<String, AppError> {
-    let label = tile_window_label(&note_id);
-    let url = format!("index.html?view=tile&noteId={note_id}");
-
-    open_or_focus_window(&app, &label, url, "花笺磁贴", 320.0, 320.0, false, true)
-}
-
-fn open_or_focus_window(
-    app: &AppHandle,
-    label: &str,
-    url: String,
-    title: &str,
-    width: f64,
-    height: f64,
-    decorations: bool,
-    always_on_top: bool,
+async fn open_tile_window(
+    app: AppHandle,
+    note_id: String,
+    bounds: Option<desktop::WindowBounds>,
 ) -> Result<String, AppError> {
-    if let Some(window) = app.get_webview_window(label) {
-        window.set_focus()?;
-        return Ok(label.to_string());
-    }
-
-    WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
-        .title(title)
-        .inner_size(width, height)
-        .min_inner_size(260.0, 220.0)
-        .resizable(true)
-        .decorations(decorations)
-        .always_on_top(always_on_top)
-        .build()?;
-
-    Ok(label.to_string())
-}
-
-fn notepad_window_label(note_id: Option<&str>) -> String {
-    match note_id {
-        Some(id) => format!("notepad-{}", sanitize_label_part(id)),
-        None => format!("notepad-{}", Uuid::new_v4()),
-    }
-}
-
-fn tile_window_label(note_id: &str) -> String {
-    format!("tile-{}", sanitize_label_part(note_id))
-}
-
-fn sanitize_label_part(value: &str) -> String {
-    let sanitized: String = value
-        .chars()
-        .map(|ch| {
-            if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
-                ch
-            } else {
-                '-'
-            }
-        })
-        .collect();
-
-    sanitized.trim_matches('-').to_string()
+    desktop::open_tile_window(app, note_id, bounds).await
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .setup(|app| {
+            desktop::setup_desktop(app)?;
+            Ok(())
+        })
+        .on_window_event(desktop::handle_window_event)
         .invoke_handler(tauri::generate_handler![
             app_name,
             notes_list,
@@ -136,16 +87,4 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
-}
-
-#[cfg(test)]
-mod window_tests {
-    use super::*;
-
-    #[test]
-    fn builds_stable_dynamic_window_labels() {
-        assert_eq!(notepad_window_label(Some("abc-123")), "notepad-abc-123");
-        assert!(notepad_window_label(None).starts_with("notepad-"));
-        assert_eq!(tile_window_label("note-1"), "tile-note-1");
-    }
 }
