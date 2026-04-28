@@ -51,8 +51,13 @@ fn config_get() -> Result<AppConfig, AppError> {
 }
 
 #[tauri::command]
-fn config_save(config: AppConfig) -> Result<AppConfig, AppError> {
+fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError> {
     let store = default_store()?;
+    let previous = store.load_config()?;
+    desktop::apply_runtime_config(&app, &previous, &config).map_err(|error| AppError {
+        code: "desktopConfig".into(),
+        message: error.to_string(),
+    })?;
     store.save_config(config.clone())?;
     Ok(config)
 }

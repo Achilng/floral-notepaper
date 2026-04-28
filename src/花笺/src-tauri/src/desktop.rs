@@ -53,6 +53,12 @@ pub enum ShortcutKey {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RuntimeConfigChanges {
+    pub autostart_changed: bool,
+    pub global_shortcut_changed: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShortcutSpec {
     pub modifier: ShortcutModifier,
     pub key: ShortcutKey,
@@ -237,6 +243,31 @@ pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
     };
 
     Some(ShortcutSpec { modifier, key })
+}
+
+pub fn runtime_config_changes(previous: &AppConfig, next: &AppConfig) -> RuntimeConfigChanges {
+    RuntimeConfigChanges {
+        autostart_changed: previous.autostart != next.autostart,
+        global_shortcut_changed: previous.global_shortcut != next.global_shortcut,
+    }
+}
+
+pub fn apply_runtime_config(
+    app: &AppHandle,
+    previous: &AppConfig,
+    next: &AppConfig,
+) -> Result<(), Box<dyn Error>> {
+    let changes = runtime_config_changes(previous, next);
+
+    if changes.global_shortcut_changed {
+        apply_global_shortcut_config(app, &next.global_shortcut)?;
+    }
+
+    if changes.autostart_changed {
+        apply_autostart(app, next.autostart)?;
+    }
+
+    Ok(())
 }
 
 pub async fn open_notepad_window(
@@ -658,16 +689,8 @@ fn register_configured_global_shortcut(app: &AppHandle) {
     let Ok(config) = load_config() else {
         return;
     };
-    let Some(shortcut) = shortcut_from_config(&config.global_shortcut).and_then(to_tauri_shortcut)
-    else {
-        eprintln!(
-            "unsupported global shortcut config: {}",
-            config.global_shortcut
-        );
-        return;
-    };
 
-    if let Err(error) = app.global_shortcut().register(shortcut) {
+    if let Err(error) = register_global_shortcut(app, &config.global_shortcut) {
         eprintln!(
             "failed to register global shortcut {}: {error}",
             config.global_shortcut
@@ -677,6 +700,52 @@ fn register_configured_global_shortcut(app: &AppHandle) {
 
 #[cfg(not(desktop))]
 fn register_configured_global_shortcut(_app: &AppHandle) {}
+
+#[cfg(desktop)]
+fn register_global_shortcut(app: &AppHandle, shortcut_config: &str) -> Result<(), Box<dyn Error>> {
+    let Some(shortcut) = shortcut_from_config(shortcut_config).and_then(to_tauri_shortcut) else {
+        return Err(Box::new(AppError {
+            code: "unsupportedShortcut".into(),
+            message: format!("unsupported global shortcut config: {shortcut_config}"),
+        }));
+    };
+
+    app.global_shortcut().register(shortcut)?;
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+fn register_global_shortcut(
+    _app: &AppHandle,
+    _shortcut_config: &str,
+) -> Result<(), Box<dyn Error>> {
+    Ok(())
+}
+
+#[cfg(desktop)]
+fn apply_global_shortcut_config(
+    app: &AppHandle,
+    shortcut_config: &str,
+) -> Result<(), Box<dyn Error>> {
+    let Some(shortcut) = shortcut_from_config(shortcut_config).and_then(to_tauri_shortcut) else {
+        return Err(Box::new(AppError {
+            code: "unsupportedShortcut".into(),
+            message: format!("unsupported global shortcut config: {shortcut_config}"),
+        }));
+    };
+
+    app.global_shortcut().unregister_all()?;
+    app.global_shortcut().register(shortcut)?;
+    Ok(())
+}
+
+#[cfg(not(desktop))]
+fn apply_global_shortcut_config(
+    _app: &AppHandle,
+    _shortcut_config: &str,
+) -> Result<(), Box<dyn Error>> {
+    Ok(())
+}
 
 #[cfg(desktop)]
 fn to_tauri_shortcut(spec: ShortcutSpec) -> Option<Shortcut> {
@@ -816,6 +885,39 @@ mod tests {
         assert_eq!(shortcut_from_config(""), None);
         assert_eq!(shortcut_from_config("Ctrl+Shift+Space"), None);
         assert_eq!(shortcut_from_config("Ctrl+K"), None);
+    }
+
+    #[test]
+    fn detects_runtime_config_changes() {
+        let previous = AppConfig {
+            notes_dir: "D:\\notes".into(),
+            global_shortcut: "Ctrl+Space".into(),
+            close_to_tray: true,
+            autostart: false,
+            default_view_mode: "split".into(),
+        };
+        let next = AppConfig {
+            notes_dir: "D:\\other-notes".into(),
+            global_shortcut: "Alt+Space".into(),
+            close_to_tray: false,
+            autostart: true,
+            default_view_mode: "preview".into(),
+        };
+
+        assert_eq!(
+            runtime_config_changes(&previous, &next),
+            RuntimeConfigChanges {
+                autostart_changed: true,
+                global_shortcut_changed: true,
+            }
+        );
+        assert_eq!(
+            runtime_config_changes(&previous, &previous),
+            RuntimeConfigChanges {
+                autostart_changed: false,
+                global_shortcut_changed: false,
+            }
+        );
     }
 
     #[test]

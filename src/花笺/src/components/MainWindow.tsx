@@ -3,6 +3,14 @@ import type { MouseEvent } from "react";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 import {
+  chooseNotesDirectory,
+  getConfig,
+  normalizeViewMode,
+  saveConfig,
+} from "../features/settings/api";
+import type { AppConfig, ViewMode } from "../features/settings/types";
+import { SettingsPanel } from "./SettingsPanel";
+import {
   createNote,
   deleteNote,
   getErrorMessage,
@@ -32,7 +40,6 @@ import {
   startCurrentWindowDrag,
 } from "../features/windows/controls";
 
-type ViewMode = "edit" | "preview" | "split";
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
 interface NoteMenuState {
@@ -49,11 +56,21 @@ const saveStateLabel: Record<SaveState, string> = {
   error: "保存失败",
 };
 
-export function MainWindow() {
+interface MainWindowProps {
+  initialSettingsOpen?: boolean;
+  initialConfig?: AppConfig;
+}
+
+export function MainWindow({
+  initialSettingsOpen = false,
+  initialConfig = undefined,
+}: MainWindowProps = {}) {
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
-  const [viewMode, setViewMode] = useState<ViewMode>("split");
+  const [viewMode, setViewMode] = useState<ViewMode>(
+    normalizeViewMode(initialConfig?.defaultViewMode ?? "split"),
+  );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
@@ -62,6 +79,14 @@ export function MainWindow() {
   const [isLoading, setIsLoading] = useState(true);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noteMenu, setNoteMenu] = useState<NoteMenuState | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
+  const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(
+    initialConfig ?? null,
+  );
+  const [savedNotesDir, setSavedNotesDir] = useState<string | null>(
+    initialConfig?.notesDir ?? null,
+  );
+  const [settingsSaving, setSettingsSaving] = useState(false);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -115,14 +140,25 @@ export function MainWindow() {
     return loadedNotes;
   }, []);
 
+  const clearCurrentNote = useCallback(() => {
+    setSelectedId(null);
+    setTitle("");
+    setContent("");
+    setSaveState("idle");
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
 
     async function bootstrap() {
       setIsLoading(true);
       try {
+        const loadedConfig = await getConfig();
         const loadedNotes = await listNotes();
         if (cancelled) return;
+        setSettingsConfig(loadedConfig);
+        setSavedNotesDir(loadedConfig.notesDir);
+        setViewMode(normalizeViewMode(loadedConfig.defaultViewMode));
         setNotes(loadedNotes);
         if (loadedNotes[0]) {
           const note = await getNote(loadedNotes[0].id);
@@ -198,6 +234,71 @@ export function MainWindow() {
       applyNote(note);
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleOpenSettings = async () => {
+    setSettingsOpen(true);
+    if (settingsConfig) return;
+
+    setErrorMessage(null);
+    try {
+      const config = await getConfig();
+      setSettingsConfig(config);
+      setSavedNotesDir(config.notesDir);
+      setViewMode(normalizeViewMode(config.defaultViewMode));
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleChooseNotesDir = async () => {
+    if (!settingsConfig) return;
+
+    setErrorMessage(null);
+    try {
+      const notesDir = await chooseNotesDirectory();
+      if (!notesDir) return;
+      setSettingsConfig({ ...settingsConfig, notesDir });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  };
+
+  const handleSaveSettings = async () => {
+    if (!settingsConfig) return;
+
+    if (selectedId && saveState === "dirty") {
+      const saved = await saveCurrentNote();
+      if (!saved) return;
+    }
+
+    const previousNotesDir = savedNotesDir ?? settingsConfig.notesDir;
+    const normalizedConfig = {
+      ...settingsConfig,
+      defaultViewMode: normalizeViewMode(settingsConfig.defaultViewMode),
+    };
+
+    setSettingsSaving(true);
+    setErrorMessage(null);
+    try {
+      const savedConfig = await saveConfig(normalizedConfig);
+      setSettingsConfig(savedConfig);
+      setSavedNotesDir(savedConfig.notesDir);
+      setViewMode(normalizeViewMode(savedConfig.defaultViewMode));
+
+      if (savedConfig.notesDir !== previousNotesDir) {
+        const loadedNotes = await refreshNotes();
+        if (loadedNotes[0]) {
+          await loadNote(loadedNotes[0].id);
+        } else {
+          clearCurrentNote();
+        }
+      }
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    } finally {
+      setSettingsSaving(false);
     }
   };
 
@@ -407,6 +508,7 @@ export function MainWindow() {
               </svg>
             </button>
             <button
+              onClick={() => void handleOpenSettings()}
               className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
               title="设置"
             >
@@ -853,6 +955,16 @@ export function MainWindow() {
               </div>
             </div>
           </div>
+          {settingsOpen && settingsConfig && (
+            <SettingsPanel
+              config={settingsConfig}
+              isSaving={settingsSaving}
+              onChange={setSettingsConfig}
+              onChooseNotesDir={() => void handleChooseNotesDir()}
+              onClose={() => setSettingsOpen(false)}
+              onSave={() => void handleSaveSettings()}
+            />
+          )}
         </div>
       </div>
       {noteMenu && noteMenuTarget && (
