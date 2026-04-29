@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import {
   createNote,
@@ -14,11 +14,14 @@ import {
   getDisplayTitle,
   metadataFromNote,
 } from "../features/notes/noteUtils";
+import { listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   animateCurrentWindowBounds,
-  closeCurrentWindow,
   getCurrentWindowBounds,
+  recycleCurrentNotepad,
   setCurrentWindowAlwaysOnTop,
+  showCurrentWindow,
   startCurrentWindowDrag,
   startCurrentWindowResize,
 } from "../features/windows/controls";
@@ -121,6 +124,12 @@ export function NotePad({
     normalizeTileColor(initialTileColor),
   );
   const [isExiting, setIsExiting] = useState(false);
+  const contentRef = useRef<HTMLTextAreaElement>(null);
+  const isStandby = useRef(
+    typeof window !== "undefined" &&
+      new URLSearchParams(window.location.search).get("standby") === "1",
+  );
+  const hasEnteredOnce = useRef(false);
 
   const refreshNotes = useCallback(async () => {
     const loadedNotes = await listNotes();
@@ -160,6 +169,55 @@ export function NotePad({
       cancelled = true;
     };
   }, [applyNote, initialNoteId, refreshNotes]);
+
+  useEffect(() => {
+    if (isStandby.current) return;
+    let cancelled = false;
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        if (!cancelled) {
+          hasEnteredOnce.current = true;
+          void showCurrentWindow()
+            .then(() => contentRef.current?.focus())
+            .catch(() => undefined);
+        }
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let myLabel = "";
+    try {
+      myLabel = getCurrentWindow().label;
+    } catch {
+      // not in Tauri environment (tests)
+    }
+
+    const unlisten = listen<string>("notepad:activate", (event) => {
+      if (event.payload !== myLabel) return;
+
+      isStandby.current = false;
+      hasEnteredOnce.current = true;
+      setEditingNoteId(null);
+      setTitle("");
+      setContent("");
+      setMode("new");
+      setStatus("空");
+      setErrorMessage(null);
+      setIsExiting(false);
+      setSurfaceMode("pad");
+      void refreshNotes().catch(() => undefined);
+      void showCurrentWindow()
+        .then(() => contentRef.current?.focus())
+        .catch(() => undefined);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [refreshNotes]);
 
   const saveNote = useCallback(async () => {
     const request = { title, content };
@@ -260,18 +318,11 @@ export function NotePad({
 
   const handleClose = useCallback(() => {
     setIsExiting(true);
+    void recycleCurrentNotepad().catch((error) => {
+      setIsExiting(false);
+      setErrorMessage(getErrorMessage(error));
+    });
   }, []);
-
-  useEffect(() => {
-    if (!isExiting) return;
-    const timer = window.setTimeout(() => {
-      void closeCurrentWindow().catch((error) => {
-        setIsExiting(false);
-        setErrorMessage(getErrorMessage(error));
-      });
-    }, 250);
-    return () => window.clearTimeout(timer);
-  }, [isExiting]);
 
   const copyTileContent = useCallback(async () => {
     setErrorMessage(null);
@@ -353,7 +404,8 @@ export function NotePad({
   const isTile = surfaceMode === "tile";
   const tileNoteId = editingNoteId ?? initialNoteId ?? "";
   const tileTitle = title.trim();
-  const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : "animate-window-enter"}`;
+  const enterClass = hasEnteredOnce.current ? "" : "animate-window-enter";
+  const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : enterClass}`;
   const padSurfaceClassName =
     "relative noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/40 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
 
@@ -469,6 +521,7 @@ export function NotePad({
                 />
 
                 <textarea
+                  ref={contentRef}
                   value={content}
                   onChange={(event) => {
                     setContent(event.target.value);

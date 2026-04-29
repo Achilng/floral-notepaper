@@ -72,6 +72,11 @@ async fn open_notepad_window(
 }
 
 #[tauri::command]
+async fn recycle_notepad_window(app: AppHandle, label: String) -> Result<(), AppError> {
+    desktop::recycle_notepad_window(&app, &label)
+}
+
+#[tauri::command]
 async fn open_tile_window(
     app: AppHandle,
     note_id: String,
@@ -102,6 +107,7 @@ pub fn run() {
             config_get,
             config_save,
             open_notepad_window,
+            recycle_notepad_window,
             open_tile_window
         ])
         .run(tauri::generate_context!())

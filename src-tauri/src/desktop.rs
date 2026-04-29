@@ -2,12 +2,15 @@ use crate::services::notes::{default_store, AppConfig, AppError};
 use serde::Deserialize;
 use std::{
     error::Error,
-    sync::atomic::{AtomicBool, Ordering},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
 };
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
-    App, AppHandle, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
+    App, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl, WebviewWindow,
     WebviewWindowBuilder, Window, WindowEvent,
 };
 use uuid::Uuid;
@@ -24,6 +27,7 @@ const TRAY_TOGGLE_CLOSE_TO_TRAY_ID: &str = "toggle-close-to-tray";
 const TRAY_TOGGLE_AUTOSTART_ID: &str = "toggle-autostart";
 const TRAY_QUIT_ID: &str = "quit";
 const NOTE_SURFACE_CORNER_RADIUS: i32 = 14;
+const NOTEPAD_POOL_CAPACITY: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayMenuAction {
@@ -90,6 +94,34 @@ struct WindowSizeSpec {
 #[derive(Default)]
 struct RuntimeState {
     is_exiting: AtomicBool,
+}
+
+#[derive(Default)]
+struct NotepadPool {
+    available: Mutex<Vec<String>>,
+}
+
+impl NotepadPool {
+    fn take(&self) -> Option<String> {
+        self.available.lock().ok()?.pop()
+    }
+
+    fn put(&self, label: String) -> bool {
+        if let Ok(mut available) = self.available.lock() {
+            if available.len() < NOTEPAD_POOL_CAPACITY {
+                available.push(label);
+                return true;
+            }
+        }
+        false
+    }
+
+    fn is_below_capacity(&self) -> bool {
+        self.available
+            .lock()
+            .map(|a| a.len() < NOTEPAD_POOL_CAPACITY)
+            .unwrap_or(false)
+    }
 }
 
 impl RuntimeState {
@@ -296,11 +328,13 @@ pub async fn open_tile_window(
 
 pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     app.manage(RuntimeState::default());
+    app.manage(NotepadPool::default());
     setup_autostart_plugin(app.handle())?;
     setup_global_shortcut_plugin(app.handle())?;
     sync_autostart_to_config(app.handle());
     register_configured_global_shortcut(app.handle());
     setup_tray(app)?;
+    schedule_notepad_prewarm(app.handle());
     Ok(())
 }
 
@@ -456,6 +490,12 @@ fn open_notepad_window_now(
     note_id: Option<&str>,
     bounds: Option<WindowBounds>,
 ) -> Result<String, AppError> {
+    if note_id.is_none() {
+        if let Some(reused) = activate_pooled_notepad(app, bounds) {
+            return Ok(reused);
+        }
+    }
+
     let label = notepad_window_label(note_id);
     let specs = notepad_window_specs();
     let url = match note_id {
@@ -477,6 +517,103 @@ fn open_notepad_window_now(
         false,
         bounds,
     )
+}
+
+fn activate_pooled_notepad(
+    app: &AppHandle,
+    bounds: Option<WindowBounds>,
+) -> Option<String> {
+    let pool = app.try_state::<NotepadPool>()?;
+    let label = pool.take()?;
+    let window = app.get_webview_window(&label)?;
+
+    let specs = notepad_window_specs();
+    let _ = window.set_size(tauri::LogicalSize::new(specs.width, specs.height));
+    let _ = apply_window_bounds(&window, bounds);
+    let _ = window.show();
+    let _ = window.set_focus();
+    let _ = window.emit("notepad:activate", label.clone());
+
+    schedule_notepad_replenish(app, 100);
+
+    Some(label)
+}
+
+pub fn recycle_notepad_window(app: &AppHandle, label: &str) -> Result<(), AppError> {
+    let Some(window) = app.get_webview_window(label) else {
+        return Ok(());
+    };
+
+    window.hide()?;
+
+    let recycled = app
+        .try_state::<NotepadPool>()
+        .map(|pool| pool.put(label.to_string()))
+        .unwrap_or(false);
+
+    if !recycled {
+        window.close()?;
+    }
+
+    Ok(())
+}
+
+fn schedule_notepad_prewarm(app: &AppHandle) {
+    for i in 0..NOTEPAD_POOL_CAPACITY {
+        let delay = 800 + i as u64 * 400;
+        schedule_notepad_replenish(app, delay);
+    }
+}
+
+fn schedule_notepad_replenish(app: &AppHandle, delay_ms: u64) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+        let handle_inner = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            if let Err(error) = prewarm_notepad(&handle_inner) {
+                eprintln!("failed to replenish notepad pool: {error}");
+            }
+        });
+    });
+}
+
+fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
+    let pool = app
+        .try_state::<NotepadPool>()
+        .ok_or_else(|| AppError {
+            code: "noPool".into(),
+            message: "notepad pool not initialized".into(),
+        })?;
+
+    if !pool.is_below_capacity() {
+        return Ok(());
+    }
+
+    let label = notepad_window_label(None);
+    let specs = notepad_window_specs();
+    let visual_options = dynamic_window_visual_options(&label);
+
+    let window = WebviewWindowBuilder::new(
+        app,
+        &label,
+        WebviewUrl::App("index.html?view=notepad&standby=1".into()),
+    )
+    .title("花笺便签")
+    .inner_size(specs.width, specs.height)
+    .min_inner_size(specs.min_width, specs.min_height)
+    .resizable(true)
+    .decorations(false)
+    .transparent(visual_options.transparent)
+    .always_on_top(true)
+    .shadow(false)
+    .visible(false)
+    .build()?;
+
+    apply_dynamic_window_visuals(&window, visual_options)?;
+    pool.put(label);
+
+    Ok(())
 }
 
 fn notepad_window_specs() -> WindowSizeSpec {
@@ -546,7 +683,8 @@ fn open_or_focus_window(
         .decorations(decorations)
         .transparent(visual_options.transparent)
         .always_on_top(always_on_top)
-        .shadow(shadow);
+        .shadow(shadow)
+        .visible(false);
 
     if let Some(bounds) = bounds {
         builder = builder

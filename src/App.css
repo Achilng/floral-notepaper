@@ -114,10 +114,10 @@ textarea::placeholder, input::placeholder {
   animation: float-gentle 4s ease-in-out infinite;
 }
 .animate-window-enter {
-  animation: window-enter 0.35s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: window-enter 0.18s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 .animate-window-exit {
-  animation: window-exit 0.25s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: window-exit 0.12s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   pointer-events: none;
 }
 .animate-menu-enter {

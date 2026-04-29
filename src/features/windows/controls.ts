@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { WindowBounds } from "./api";
@@ -8,8 +9,22 @@ export type ResizeDirection =
   | "SouthWest"
   | "SouthEast";
 
+export function showCurrentWindow(): Promise<void> {
+  return getCurrentWindow().show();
+}
+
+export function hideCurrentWindow(): Promise<void> {
+  return getCurrentWindow().hide();
+}
+
 export function closeCurrentWindow(): Promise<void> {
   return getCurrentWindow().close();
+}
+
+export function recycleCurrentNotepad(): Promise<void> {
+  return invoke("recycle_notepad_window", {
+    label: getCurrentWindow().label,
+  });
 }
 
 export function minimizeCurrentWindow(): Promise<void> {
