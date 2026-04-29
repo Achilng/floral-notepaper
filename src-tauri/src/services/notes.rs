@@ -539,7 +539,10 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     fn test_root(name: &str) -> PathBuf {
-        let root = PathBuf::from(r"D:\Agent\Agent_temp\huajian-rust-tests").join(name);
+        let base = std::env::var_os("HUAJIAN_TEST_TEMP_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| std::env::temp_dir().join("huajian-rust-tests"));
+        let root = base.join(name);
         if root.exists() {
             fs::remove_dir_all(&root).expect("remove stale test root");
         }

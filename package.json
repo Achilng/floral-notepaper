@@ -8,7 +8,7 @@
     "build": "tsc && vite build",
     "test": "vitest run",
     "preview": "vite preview",
-    "tauri": "set PATH=D:\\Rust\\rustup\\toolchains\\stable-x86_64-pc-windows-msvc\\bin;%PATH%&& tauri"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
