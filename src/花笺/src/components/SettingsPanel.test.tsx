@@ -9,6 +9,7 @@ const config = {
   autostart: false,
   defaultViewMode: "split" as const,
   noteSurfaceAutoSave: true,
+  tileColor: "#f6f3ec",
 };
 
 describe("SettingsPanel", () => {
@@ -32,6 +33,9 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("关闭到托盘");
     expect(markup).toContain("开机自启");
     expect(markup).toContain("便签自动保存");
+    expect(markup).toContain("磁贴颜色");
+    expect(markup).toContain('type="color"');
+    expect(markup).toContain('value="#f6f3ec"');
     expect(markup).toContain("默认视图");
     expect(markup).toContain("编辑");
     expect(markup).toContain("分栏");

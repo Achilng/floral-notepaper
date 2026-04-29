@@ -9,11 +9,15 @@ describe("Tile", () => {
     );
 
     expect(markup).toContain("rounded-xl");
-    expect(markup).toContain("bg-cloud");
-    expect(markup).toContain("border-paper-deep/30");
+    expect(markup).toContain("background-color:#f6f3ec");
+    expect(markup).not.toContain("bg-[#d8eee9]");
     expect(markup).toContain("shadow-[0_1px_8px_rgba(26,26,24,0.04)]");
     expect(markup).toContain("hover:shadow-[0_6px_24px_rgba(26,26,24,0.07)]");
-    expect(markup).toContain("hover:scale-[1.008]");
+    expect(markup).not.toContain("hover:scale");
+    expect(markup).not.toContain("scale(");
+    expect(markup).toContain("text-[15px]");
+    expect(markup).toContain("text-[14px]");
+    expect(markup).toContain("text-ink-faint/45");
     expect(markup).toContain("leading-[1.8]");
     expect(markup).toContain(">读书笔记<");
     expect(markup).toContain("满地都是六便士");
@@ -27,10 +31,12 @@ describe("Tile", () => {
     expect(markup).toContain("text-ink-ghost/40");
   });
 
-  test("supports a deeper cyan tile color for pinned tiles", () => {
-    const markup = renderToStaticMarkup(<Tile color="cyan" content="磁贴内容" />);
+  test("uses a custom hex color instead of preset tile palettes", () => {
+    const markup = renderToStaticMarkup(
+      <Tile color="#efe8dc" content="磁贴内容" />,
+    );
 
-    expect(markup).toContain("bg-[#d8eee9]");
-    expect(markup).toContain("border-[#99cbc1]/55");
+    expect(markup).toContain("background-color:#efe8dc");
+    expect(markup).not.toContain("bg-[#d8eee9]");
   });
 });

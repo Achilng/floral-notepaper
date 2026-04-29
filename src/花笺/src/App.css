@@ -37,6 +37,9 @@ html {
 ::-webkit-scrollbar-thumb { background: var(--color-ink-ghost); border-radius: 2px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--color-ink-faint); }
 
+.scrollbar-hidden::-webkit-scrollbar { display: none; }
+.scrollbar-hidden { -ms-overflow-style: none; scrollbar-width: none; }
+
 textarea, input {
   resize: none;
   outline: none;
@@ -50,6 +53,7 @@ textarea::placeholder, input::placeholder {
 /* Noise texture overlay for paper feel */
 .noise-bg {
   position: relative;
+  isolation: isolate;
 }
 .noise-bg::before {
   content: "";
@@ -60,11 +64,7 @@ textarea::placeholder, input::placeholder {
   background-size: 200px 200px;
   pointer-events: none;
   border-radius: inherit;
-  z-index: 0;
-}
-.noise-bg > * {
-  position: relative;
-  z-index: 1;
+  z-index: -1;
 }
 
 /* Animations */

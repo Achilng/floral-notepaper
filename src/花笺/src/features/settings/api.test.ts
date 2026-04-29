@@ -35,6 +35,7 @@ describe("settings api", () => {
       autostart: false,
       defaultViewMode: "split",
       noteSurfaceAutoSave: true,
+      tileColor: "#f6f3ec",
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -51,6 +52,7 @@ describe("settings api", () => {
       autostart: true,
       defaultViewMode: "preview",
       noteSurfaceAutoSave: false,
+      tileColor: "#efe8dc",
     };
     mockedInvoke.mockResolvedValue(config);
 

@@ -2,6 +2,12 @@ import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { WindowBounds } from "./api";
 
+export type ResizeDirection =
+  | "NorthWest"
+  | "NorthEast"
+  | "SouthWest"
+  | "SouthEast";
+
 export function closeCurrentWindow(): Promise<void> {
   return getCurrentWindow().close();
 }
@@ -26,8 +32,10 @@ export function startCurrentWindowDrag(): Promise<void> {
   return getCurrentWindow().startDragging();
 }
 
-export function startCurrentWindowResize(): Promise<void> {
-  return getCurrentWindow().startResizeDragging("SouthEast");
+export function startCurrentWindowResize(
+  direction: ResizeDirection = "SouthEast",
+): Promise<void> {
+  return getCurrentWindow().startResizeDragging(direction);
 }
 
 export async function getCurrentWindowBounds(): Promise<WindowBounds> {

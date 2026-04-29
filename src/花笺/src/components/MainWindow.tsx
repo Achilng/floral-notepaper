@@ -9,6 +9,7 @@ import {
   saveConfig,
 } from "../features/settings/api";
 import type { AppConfig, ViewMode } from "../features/settings/types";
+import { normalizeTileColor } from "../features/settings/tileColor";
 import { SettingsPanel } from "./SettingsPanel";
 import {
   createNote,
@@ -287,6 +288,7 @@ export function MainWindow({
     const normalizedConfig = {
       ...settingsConfig,
       defaultViewMode: normalizeViewMode(settingsConfig.defaultViewMode),
+      tileColor: normalizeTileColor(settingsConfig.tileColor),
     };
 
     setSettingsSaving(true);

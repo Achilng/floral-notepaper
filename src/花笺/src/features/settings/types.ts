@@ -7,4 +7,5 @@ export interface AppConfig {
   autostart: boolean;
   defaultViewMode: string;
   noteSurfaceAutoSave: boolean;
+  tileColor: string;
 }

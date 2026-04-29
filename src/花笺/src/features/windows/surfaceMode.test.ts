@@ -26,6 +26,7 @@ describe("surface mode helpers", () => {
     });
 
     expect(SURFACE_WINDOW_SIZES.tile).toEqual(SURFACE_WINDOW_SIZES.pad);
+    expect(SURFACE_WINDOW_SIZES.pad).toEqual({ width: 260, height: 260 });
     expect(target).toEqual(current);
   });
 });

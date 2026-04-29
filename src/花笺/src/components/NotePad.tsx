@@ -22,7 +22,12 @@ import {
   startCurrentWindowDrag,
   startCurrentWindowResize,
 } from "../features/windows/controls";
+import type { ResizeDirection } from "../features/windows/controls";
 import { getConfig } from "../features/settings/api";
+import {
+  DEFAULT_TILE_COLOR,
+  normalizeTileColor,
+} from "../features/settings/tileColor";
 import { shouldSaveBeforeSwitchingToTile } from "../features/windows/noteSurfaceSavePolicy";
 import {
   NOTE_SURFACE_ACTION_EVENT,
@@ -42,12 +47,63 @@ interface NotePadProps {
   initialNoteId?: string;
   initialSurfaceMode?: NoteSurfaceMode;
   initialAutoSave?: boolean;
+  initialTileColor?: string;
+}
+
+const surfaceResizeHandles: Array<{
+  direction: ResizeDirection;
+  className: string;
+  size: string;
+}> = [
+  {
+    direction: "NorthWest",
+    size: "w-8 h-8",
+    className: "top-0 left-0 cursor-nwse-resize",
+  },
+  {
+    direction: "NorthEast",
+    size: "w-5 h-5",
+    className: "top-0 right-0 cursor-nesw-resize",
+  },
+  {
+    direction: "SouthWest",
+    size: "w-8 h-8",
+    className: "bottom-0 left-0 cursor-nesw-resize",
+  },
+  {
+    direction: "SouthEast",
+    size: "w-5 h-5",
+    className: "bottom-0 right-0 cursor-nwse-resize",
+  },
+];
+
+function SurfaceResizeHandles() {
+  return (
+    <>
+      {surfaceResizeHandles.map((handle) => (
+        <div
+          key={handle.direction}
+          aria-hidden="true"
+          data-surface-resize-handle="true"
+          data-resize-direction={handle.direction}
+          onMouseDown={(event) => {
+            event.stopPropagation();
+            void startCurrentWindowResize(handle.direction).catch(
+              () => undefined,
+            );
+          }}
+          className={`absolute ${handle.size} opacity-0 ${handle.className}`}
+        />
+      ))}
+    </>
+  );
 }
 
 export function NotePad({
   initialNoteId,
   initialSurfaceMode = "pad",
   initialAutoSave = true,
+  initialTileColor = DEFAULT_TILE_COLOR,
 }: NotePadProps) {
   const [surfaceMode, setSurfaceMode] =
     useState<NoteSurfaceMode>(initialSurfaceMode);
@@ -61,6 +117,9 @@ export function NotePad({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] =
     useState(initialAutoSave);
+  const [tileColor, setTileColor] = useState(
+    normalizeTileColor(initialTileColor),
+  );
   const [isExiting, setIsExiting] = useState(false);
 
   const refreshNotes = useCallback(async () => {
@@ -85,6 +144,7 @@ export function NotePad({
         const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
         if (!cancelled) {
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
+          setTileColor(normalizeTileColor(loadedConfig.tileColor));
         }
         if (initialNoteId) {
           const note = await getNote(initialNoteId);
@@ -295,7 +355,7 @@ export function NotePad({
   const tileTitle = title.trim();
   const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : "animate-window-enter"}`;
   const padSurfaceClassName =
-    "noise-bg w-full bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/40 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
+    "relative noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/40 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
 
   return (
     <div className={surfaceWrapperClassName}>
@@ -303,7 +363,7 @@ export function NotePad({
         <Tile
           title={tileTitle || undefined}
           content={errorMessage || content}
-          color="cyan"
+          color={tileColor}
           width="100%"
           className="h-full cursor-grab active:cursor-grabbing"
           data-surface-mode={surfaceMode}
@@ -311,20 +371,13 @@ export function NotePad({
           data-note-id={tileNoteId}
           onMouseDown={handleDrag}
         >
-          <div
-            aria-hidden="true"
-            onMouseDown={(event) => {
-              event.stopPropagation();
-              void startCurrentWindowResize().catch(() => undefined);
-            }}
-            className="absolute bottom-0 right-0 w-5 h-5 cursor-se-resize opacity-0"
-          />
+          <SurfaceResizeHandles />
         </Tile>
       ) : (
         <div className={padSurfaceClassName} data-surface-mode={surfaceMode}>
           <>
             <div
-              className="flex items-center justify-between px-5 pt-4 pb-0 cursor-grab active:cursor-grabbing"
+              className="flex items-center justify-between px-4 pt-3 pb-0 cursor-grab active:cursor-grabbing"
               onMouseDown={handleDrag}
             >
               <div className="flex items-center gap-0.5">
@@ -397,10 +450,13 @@ export function NotePad({
               </div>
             </div>
 
-            <div className="mx-5 mt-1.5 h-px bg-paper-deep/50" />
+            <div className="mx-4 mt-1 h-px bg-paper-deep/50" />
 
             {mode === "new" ? (
-              <div className="px-5 py-4 flex flex-col flex-1 min-h-0">
+              <div
+                data-pad-editor-body="true"
+                className="px-4 pt-3 pb-2 flex flex-col flex-1 min-h-0"
+              >
                 <input
                   type="text"
                   value={title}
@@ -409,7 +465,7 @@ export function NotePad({
                     setStatus("未保存");
                   }}
                   placeholder="标题（可选）"
-                  className="w-full text-[15px] font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-3 tracking-wide shrink-0"
+                  className="w-full text-[14px] font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-2 tracking-wide shrink-0"
                 />
 
                 <textarea
@@ -419,10 +475,10 @@ export function NotePad({
                     setStatus("未保存");
                   }}
                   placeholder="写点什么……"
-                  className="w-full flex-1 min-h-0 text-[14px] leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
+                  className="w-full flex-1 min-h-0 pb-2 text-[14px] leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
                 />
 
-                <div className="flex items-center justify-between mt-2 pt-3 border-t border-paper-deep/30 shrink-0">
+                <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">
                   <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
                     {errorMessage ?? `${countNoteChars(content)} 字 · ${status}`}
                   </span>
@@ -478,6 +534,7 @@ export function NotePad({
               </div>
             )}
           </>
+          <SurfaceResizeHandles />
         </div>
       )}
     </div>

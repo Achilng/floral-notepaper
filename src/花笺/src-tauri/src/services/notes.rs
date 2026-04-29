@@ -16,6 +16,8 @@ pub struct AppConfig {
     pub default_view_mode: String,
     #[serde(default = "default_note_surface_auto_save")]
     pub note_surface_auto_save: bool,
+    #[serde(default = "default_tile_color")]
+    pub tile_color: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -302,6 +304,7 @@ impl NoteStore {
             autostart: false,
             default_view_mode: "split".into(),
             note_surface_auto_save: true,
+            tile_color: default_tile_color(),
         }
     }
 
@@ -526,6 +529,10 @@ fn default_note_surface_auto_save() -> bool {
     true
 }
 
+fn default_tile_color() -> String {
+    "#f6f3ec".into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -626,6 +633,7 @@ mod tests {
         let default_config = store.load_config().expect("load default config");
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
         assert!(default_config.note_surface_auto_save);
+        assert_eq!(default_config.tile_color, "#f6f3ec");
         assert!(default_config.notes_dir.ends_with(r"\notes"));
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
@@ -636,6 +644,7 @@ mod tests {
             autostart: true,
             default_view_mode: "preview".into(),
             note_surface_auto_save: false,
+            tile_color: "#efe8dc".into(),
         };
 
         store.save_config(saved.clone()).expect("save config");
@@ -668,6 +677,7 @@ mod tests {
         let loaded = store.load_config().expect("load legacy config");
 
         assert!(loaded.note_surface_auto_save);
+        assert_eq!(loaded.tile_color, "#f6f3ec");
     }
 
     #[test]

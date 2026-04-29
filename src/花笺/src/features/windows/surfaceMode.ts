@@ -8,8 +8,8 @@ export const SURFACE_WINDOW_SIZES: Record<
   NoteSurfaceMode,
   Pick<WindowBounds, "width" | "height">
 > = {
-  pad: { width: 420, height: 430 },
-  tile: { width: 420, height: 430 },
+  pad: { width: 260, height: 260 },
+  tile: { width: 260, height: 260 },
 };
 
 export function isNoteSurfaceMode(value: unknown): value is NoteSurfaceMode {

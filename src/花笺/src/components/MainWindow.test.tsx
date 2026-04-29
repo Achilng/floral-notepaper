@@ -14,6 +14,7 @@ describe("MainWindow settings", () => {
           autostart: false,
           defaultViewMode: "split",
           noteSurfaceAutoSave: true,
+          tileColor: "#f6f3ec",
         }}
       />,
     );

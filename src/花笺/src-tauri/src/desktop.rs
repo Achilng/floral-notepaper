@@ -79,6 +79,14 @@ pub struct WindowBounds {
     pub height: u32,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct WindowSizeSpec {
+    width: f64,
+    height: f64,
+    min_width: f64,
+    min_height: f64,
+}
+
 #[derive(Default)]
 struct RuntimeState {
     is_exiting: AtomicBool,
@@ -449,6 +457,7 @@ fn open_notepad_window_now(
     bounds: Option<WindowBounds>,
 ) -> Result<String, AppError> {
     let label = notepad_window_label(note_id);
+    let specs = notepad_window_specs();
     let url = match note_id {
         Some(id) => format!("index.html?view=notepad&noteId={id}"),
         None => "index.html?view=notepad".to_string(),
@@ -459,15 +468,24 @@ fn open_notepad_window_now(
         &label,
         url,
         "花笺便签",
-        420.0,
-        430.0,
-        260.0,
-        220.0,
+        specs.width,
+        specs.height,
+        specs.min_width,
+        specs.min_height,
         false,
         true,
         false,
         bounds,
     )
+}
+
+fn notepad_window_specs() -> WindowSizeSpec {
+    WindowSizeSpec {
+        width: 260.0,
+        height: 260.0,
+        min_width: 220.0,
+        min_height: 220.0,
+    }
 }
 
 fn open_tile_window_now(
@@ -896,6 +914,7 @@ mod tests {
             autostart: false,
             default_view_mode: "split".into(),
             note_surface_auto_save: true,
+            tile_color: "#f6f3ec".into(),
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -904,6 +923,7 @@ mod tests {
             autostart: true,
             default_view_mode: "preview".into(),
             note_surface_auto_save: false,
+            tile_color: "#efe8dc".into(),
         };
 
         assert_eq!(
@@ -927,6 +947,16 @@ mod tests {
         assert_eq!(notepad_window_label(Some("abc-123")), "notepad-abc-123");
         assert!(notepad_window_label(None).starts_with("notepad-"));
         assert_eq!(tile_window_label("note-1"), "tile-note-1");
+    }
+
+    #[test]
+    fn keeps_notepad_initial_window_compact() {
+        let specs = notepad_window_specs();
+
+        assert_eq!(specs.width, 260.0);
+        assert_eq!(specs.height, 260.0);
+        assert_eq!(specs.min_width, 220.0);
+        assert_eq!(specs.min_height, 220.0);
     }
 
     #[test]

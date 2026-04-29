@@ -1,47 +1,17 @@
-import { useState } from "react";
 import type { CSSProperties, HTMLAttributes } from "react";
-
-export type TileColor = "default" | "warm" | "green" | "mist" | "cyan";
+import {
+  DEFAULT_TILE_COLOR,
+  normalizeTileColor,
+} from "../features/settings/tileColor";
 
 export interface TileProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "color" | "content" | "title"> {
   title?: string;
   content: string;
-  color?: TileColor;
+  color?: string;
   width?: number | string;
   rotation?: number;
 }
-
-const colorMap: Record<
-  TileColor,
-  { bg: string; border: string; corner: string }
-> = {
-  default: {
-    bg: "bg-cloud",
-    border: "border-paper-deep/30",
-    corner: "rgba(184, 184, 174, 0.18)",
-  },
-  warm: {
-    bg: "bg-[#faf6ef]",
-    border: "border-[#e8dfd0]/40",
-    corner: "rgba(196, 184, 152, 0.22)",
-  },
-  green: {
-    bg: "bg-bamboo-mist",
-    border: "border-bamboo-glow/40",
-    corner: "rgba(58, 122, 82, 0.18)",
-  },
-  cyan: {
-    bg: "bg-[#d8eee9]",
-    border: "border-[#99cbc1]/55",
-    corner: "rgba(24, 104, 99, 0.26)",
-  },
-  mist: {
-    bg: "bg-[#f0f4f8]",
-    border: "border-[#d8e2ec]/40",
-    corner: "rgba(176, 196, 216, 0.22)",
-  },
-};
 
 const MARK_SIZE = 8;
 const MARK_OFFSET = 6;
@@ -95,7 +65,7 @@ function CornerMarks({ color }: { color: string }) {
 export function Tile({
   title,
   content,
-  color = "default",
+  color = DEFAULT_TILE_COLOR,
   width = 260,
   rotation = 0,
   className = "",
@@ -103,53 +73,68 @@ export function Tile({
   children,
   ...divProps
 }: TileProps) {
-  const [isHovered, setIsHovered] = useState(false);
-  const scheme = colorMap[color];
+  const tileColor = normalizeTileColor(color);
+  const borderColor = colorWithAlpha(blendHex(tileColor, "#1a1a18", 0.18), 0.3);
+  const cornerColor = colorWithAlpha(blendHex(tileColor, "#1a1a18", 0.3), 0.26);
   const mergedStyle: CSSProperties = {
     width,
-    transform: `rotate(${rotation}deg) scale(${isHovered ? 1.008 : 1})`,
-    transition:
-      "transform 0.3s cubic-bezier(0.22,1,0.36,1), box-shadow 0.3s ease",
+    backgroundColor: tileColor,
+    borderColor,
+    transition: "box-shadow 0.3s ease",
+    ...(rotation ? { transform: `rotate(${rotation}deg)` } : {}),
     ...style,
   };
 
   return (
     <div
       {...divProps}
-      className={`relative rounded-xl ${scheme.bg} border ${scheme.border} overflow-hidden select-none ${
-        isHovered
-          ? "shadow-[0_6px_24px_rgba(26,26,24,0.07)]"
-          : "shadow-[0_1px_8px_rgba(26,26,24,0.04)]"
-      } hover:shadow-[0_6px_24px_rgba(26,26,24,0.07)] hover:scale-[1.008] ${className}`}
+      className={`relative rounded-xl border overflow-hidden select-none shadow-[0_1px_8px_rgba(26,26,24,0.04)] hover:shadow-[0_6px_24px_rgba(26,26,24,0.07)] ${className}`}
       style={mergedStyle}
-      onMouseEnter={(event) => {
-        setIsHovered(true);
-        divProps.onMouseEnter?.(event);
-      }}
-      onMouseLeave={(event) => {
-        setIsHovered(false);
-        divProps.onMouseLeave?.(event);
-      }}
     >
-      <div className="px-4 pt-4 pb-4">
+      <div className="px-4 pt-4 pb-4 h-full overflow-y-auto scrollbar-hidden">
         {title && (
-          <div className="text-[11px] font-display text-ink-faint/45 tracking-wide mb-2 leading-none">
+          <div className="text-[15px] font-display text-ink-faint/45 tracking-wide mb-3 leading-snug">
             {title}
           </div>
         )}
         {content ? (
-          <div className="text-[13px] leading-[1.8] text-ink-soft/75 whitespace-pre-wrap font-body">
+          <div className="text-[14px] leading-[1.8] text-ink-soft/80 whitespace-pre-wrap font-body">
             {content}
           </div>
         ) : (
-          <div className="text-[13px] text-ink-ghost/40 font-body text-center py-6">
+          <div className="text-[14px] text-ink-ghost/40 font-body text-center py-6">
             空
           </div>
         )}
       </div>
 
-      <CornerMarks color={scheme.corner} />
+      <CornerMarks color={cornerColor} />
       {children}
     </div>
   );
+}
+
+function hexToRgb(hexColor: string): [number, number, number] {
+  const normalized = normalizeTileColor(hexColor).slice(1);
+  return [
+    Number.parseInt(normalized.slice(0, 2), 16),
+    Number.parseInt(normalized.slice(2, 4), 16),
+    Number.parseInt(normalized.slice(4, 6), 16),
+  ];
+}
+
+function blendHex(source: string, target: string, amount: number): string {
+  const [sourceR, sourceG, sourceB] = hexToRgb(source);
+  const [targetR, targetG, targetB] = hexToRgb(target);
+  const blend = (from: number, to: number) =>
+    Math.round(from + (to - from) * amount)
+      .toString(16)
+      .padStart(2, "0");
+
+  return `#${blend(sourceR, targetR)}${blend(sourceG, targetG)}${blend(sourceB, targetB)}`;
+}
+
+function colorWithAlpha(hexColor: string, alpha: number): string {
+  const [red, green, blue] = hexToRgb(hexColor);
+  return `rgba(${red}, ${green}, ${blue}, ${alpha})`;
 }

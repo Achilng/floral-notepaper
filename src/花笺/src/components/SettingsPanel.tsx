@@ -1,5 +1,9 @@
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { supportedShortcuts } from "../features/settings/api";
+import {
+  DEFAULT_TILE_COLOR,
+  normalizeTileColor,
+} from "../features/settings/tileColor";
 
 interface SettingsPanelProps {
   config: AppConfig;
@@ -116,6 +120,39 @@ export function SettingsPanel({
               setConfigValue("noteSurfaceAutoSave", checked)
             }
           />
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
+            磁贴颜色
+          </label>
+          <div className="flex items-center gap-2">
+            <input
+              type="color"
+              value={normalizeTileColor(config.tileColor)}
+              onChange={(event) =>
+                setConfigValue("tileColor", event.target.value)
+              }
+              className="w-10 h-8 rounded-lg border border-paper-deep/40 bg-paper-warm/70 cursor-pointer"
+            />
+            <input
+              type="text"
+              value={config.tileColor}
+              onChange={(event) =>
+                setConfigValue("tileColor", event.target.value)
+              }
+              placeholder="#f6f3ec"
+              spellCheck={false}
+              className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => setConfigValue("tileColor", DEFAULT_TILE_COLOR)}
+              className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer whitespace-nowrap"
+            >
+              默认
+            </button>
+          </div>
         </section>
 
         <section className="space-y-2">
