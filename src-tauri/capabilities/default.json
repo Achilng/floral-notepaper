@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "Capability for Huajian windows",
+  "description": "Capability for Floral Notepaper windows",
   "windows": ["main", "notepad-*", "tile-*"],
   "permissions": [
     "core:default",

@@ -1,6 +1,6 @@
 export type NoteSurfaceAction = "copy" | "save" | "switchToPad" | "close";
 
-export const NOTE_SURFACE_ACTION_EVENT = "huajian:surface-action";
+export const NOTE_SURFACE_ACTION_EVENT = "floral-notepaper:surface-action";
 
 export function isNoteSurfaceAction(
   value: unknown,

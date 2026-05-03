@@ -113,7 +113,7 @@ pub fn default_store() -> Result<NoteStore, AppError> {
 }
 
 fn default_base_dir() -> Result<PathBuf, AppError> {
-    if let Ok(path) = env::var("HUAJIAN_DATA_DIR") {
+    if let Ok(path) = env::var("FLORAL_NOTEPAPER_DATA_DIR") {
         let trimmed = path.trim();
         if !trimmed.is_empty() {
             return Ok(PathBuf::from(trimmed));
@@ -539,9 +539,9 @@ mod tests {
     use std::{fs, path::PathBuf};
 
     fn test_root(name: &str) -> PathBuf {
-        let base = std::env::var_os("HUAJIAN_TEST_TEMP_DIR")
+        let base = std::env::var_os("FLORAL_NOTEPAPER_TEST_TEMP_DIR")
             .map(PathBuf::from)
-            .unwrap_or_else(|| std::env::temp_dir().join("huajian-rust-tests"));
+            .unwrap_or_else(|| std::env::temp_dir().join("floral-notepaper-rust-tests"));
         let root = base.join(name);
         if root.exists() {
             fs::remove_dir_all(&root).expect("remove stale test root");

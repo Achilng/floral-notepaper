@@ -2,7 +2,7 @@ import type { WindowBounds } from "./api";
 
 export type NoteSurfaceMode = "pad" | "tile";
 
-export const NOTE_SURFACE_MODE_EVENT = "huajian:surface-mode";
+export const NOTE_SURFACE_MODE_EVENT = "floral-notepaper:surface-mode";
 
 export const SURFACE_WINDOW_SIZES: Record<
   NoteSurfaceMode,

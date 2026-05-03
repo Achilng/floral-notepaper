@@ -2,5 +2,5 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 fn main() {
-    huajian_lib::run()
+    floral_notepaper_lib::run()
 }
