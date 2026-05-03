@@ -608,6 +608,7 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     .always_on_top(true)
     .shadow(false)
     .visible(false)
+    .focused(false)
     .build()?;
 
     apply_dynamic_window_visuals(&window, visual_options)?;
@@ -1120,5 +1121,25 @@ mod tests {
                 corner_radius: None,
             }
         );
+    }
+
+    #[test]
+    fn capability_allows_frontend_window_focus_for_notepad_surfaces() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json"))
+                .expect("default capability should be valid json");
+        let windows = capability["windows"]
+            .as_array()
+            .expect("capability should define windows");
+        let permissions = capability["permissions"]
+            .as_array()
+            .expect("capability should define permissions");
+
+        assert!(windows
+            .iter()
+            .any(|window| window.as_str() == Some("notepad-*")));
+        assert!(permissions
+            .iter()
+            .any(|permission| permission.as_str() == Some("core:window:allow-set-focus")));
     }
 }

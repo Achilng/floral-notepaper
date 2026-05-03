@@ -9,8 +9,10 @@ export type ResizeDirection =
   | "SouthWest"
   | "SouthEast";
 
-export function showCurrentWindow(): Promise<void> {
-  return getCurrentWindow().show();
+export async function showCurrentWindow(): Promise<void> {
+  const window = getCurrentWindow();
+  await window.show();
+  await window.setFocus();
 }
 
 export function hideCurrentWindow(): Promise<void> {
