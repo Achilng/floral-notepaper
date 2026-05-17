@@ -7,11 +7,9 @@ import {
 } from "../features/settings/tileColor";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
-
-const tileColorModes: Array<{ value: TileColorMode; label: string }> = [
-  { value: "system", label: "跟随主题" },
-  { value: "custom", label: "自定义" },
-];
+import { useTranslation } from "../features/i18n/LanguageContext";
+import { languageLabels } from "../features/i18n/translations";
+import type { Language } from "../features/i18n/types";
 
 interface SettingsPanelProps {
   config: AppConfig;
@@ -20,24 +18,14 @@ interface SettingsPanelProps {
   onClose: () => void;
 }
 
-const themeOptions: Array<{ value: ThemeOption; label: string }> = [
-  { value: "light", label: "浅色" },
-  { value: "dark", label: "深色" },
-  { value: "system", label: "跟随系统" },
-];
-
-const viewModes: Array<{ value: ViewMode; label: string }> = [
-  { value: "edit", label: "编辑" },
-  { value: "split", label: "分栏" },
-  { value: "preview", label: "预览" },
-];
-
 export function SettingsPanel({
   config,
   onChange,
   onChooseNotesDir,
   onClose,
 }: SettingsPanelProps) {
+  const { t } = useTranslation();
+
   const setConfigValue = <Key extends keyof AppConfig>(
     key: Key,
     value: AppConfig[Key],
@@ -45,17 +33,34 @@ export function SettingsPanel({
     onChange({ ...config, [key]: value });
   };
 
+  const themeOptions: Array<{ value: ThemeOption; label: string }> = [
+    { value: "light", label: t("settings.themeLight") },
+    { value: "dark", label: t("settings.themeDark") },
+    { value: "system", label: t("settings.themeSystem") },
+  ];
+
+  const tileColorModes: Array<{ value: TileColorMode; label: string }> = [
+    { value: "system", label: t("settings.tileColorSystem") },
+    { value: "custom", label: t("settings.tileColorCustom") },
+  ];
+
+  const viewModes: Array<{ value: ViewMode; label: string }> = [
+    { value: "edit", label: t("main.viewMode.edit") },
+    { value: "split", label: t("main.viewMode.split") },
+    { value: "preview", label: t("main.viewMode.preview") },
+  ];
+
   return (
     <aside className="w-[360px] h-full shrink-0 border-l border-paper-deep/30 bg-cloud/92 backdrop-blur-sm flex flex-col">
       <div className="flex items-center justify-between h-11 px-4 border-b border-paper-deep/25">
         <h2 className="text-[13px] font-display font-medium text-ink-soft">
-          应用设置
+          {t("settings.title")}
         </h2>
         <button
           type="button"
           onClick={onClose}
           className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer"
-          title="关闭设置"
+          title={t("settings.close")}
         >
           <svg
             width="12"
@@ -74,7 +79,7 @@ export function SettingsPanel({
       <div className="flex-1 overflow-y-auto scrollbar-hidden px-4 py-4 space-y-5">
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            主题
+            {t("settings.theme")}
           </label>
           <SlidingButtonGroup
             options={themeOptions}
@@ -89,7 +94,7 @@ export function SettingsPanel({
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            笔记目录
+            {t("settings.notesDir")}
           </label>
           <div className="flex gap-2">
             <input
@@ -103,14 +108,14 @@ export function SettingsPanel({
               onClick={onChooseNotesDir}
               className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer"
             >
-              选择文件夹
+              {t("settings.chooseFolder")}
             </button>
           </div>
         </section>
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            快捷键
+            {t("settings.shortcut")}
           </label>
           <ShortcutDropdown
             value={config.globalShortcut}
@@ -121,22 +126,22 @@ export function SettingsPanel({
 
         <section className="space-y-2">
           <ToggleRow
-            label="关闭到托盘"
+            label={t("settings.closeToTray")}
             checked={config.closeToTray}
             onChange={(checked) => setConfigValue("closeToTray", checked)}
           />
           <ToggleRow
-            label="开机自启"
+            label={t("settings.autostart")}
             checked={config.autostart}
             onChange={(checked) => setConfigValue("autostart", checked)}
           />
           <ToggleRow
-            label="自动保存笔记"
+            label={t("settings.autoSaveNote")}
             checked={config.noteAutoSave}
             onChange={(checked) => setConfigValue("noteAutoSave", checked)}
           />
           <ToggleRow
-            label="小窗笔记自动保存"
+            label={t("settings.autoSaveSurfaceNote")}
             checked={config.noteSurfaceAutoSave}
             onChange={(checked) =>
               setConfigValue("noteSurfaceAutoSave", checked)
@@ -146,7 +151,7 @@ export function SettingsPanel({
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            编辑器字号
+            {t("settings.editorFontSize")}
           </label>
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
             <input
@@ -168,7 +173,7 @@ export function SettingsPanel({
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            小窗/磁贴字号
+            {t("settings.surfaceFontSize")}
           </label>
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
             <input
@@ -190,7 +195,7 @@ export function SettingsPanel({
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            磁贴颜色
+            {t("settings.tileColor")}
           </label>
           <SlidingButtonGroup
             options={tileColorModes}
@@ -222,7 +227,7 @@ export function SettingsPanel({
                 onClick={() => setConfigValue("tileColor", DEFAULT_TILE_COLOR)}
                 className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer whitespace-nowrap"
               >
-                默认
+                {t("settings.default")}
               </button>
             </div>
           )}
@@ -230,7 +235,18 @@ export function SettingsPanel({
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            默认视图
+            {t("settings.language")}
+          </label>
+          <SlidingButtonGroup
+            options={languageLabels}
+            value={config.language}
+            onChange={(v: Language) => setConfigValue("language", v)}
+          />
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
+            {t("settings.defaultView")}
           </label>
           <SlidingButtonGroup
             options={viewModes}

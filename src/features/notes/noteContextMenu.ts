@@ -7,7 +7,7 @@ export interface NoteContextMenuItem {
 }
 
 export const noteContextMenuItems: NoteContextMenuItem[] = [
-  { action: "export", label: "导出 Markdown" },
-  { action: "move", label: "移动到分类…" },
-  { action: "delete", label: "删除笔记", tone: "danger" },
+  { action: "export", label: "main.contextMenu.export" },
+  { action: "move", label: "main.contextMenu.moveToCategory" },
+  { action: "delete", label: "main.contextMenu.deleteNote", tone: "danger" },
 ];

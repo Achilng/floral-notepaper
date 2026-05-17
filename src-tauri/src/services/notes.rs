@@ -28,6 +28,8 @@ pub struct AppConfig {
     pub font_size: u32,
     #[serde(default = "default_surface_font_size")]
     pub surface_font_size: u32,
+    #[serde(default = "default_language")]
+    pub language: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -451,6 +453,7 @@ impl NoteStore {
             theme: default_theme(),
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
+            language: default_language(),
         }
     }
 
@@ -718,6 +721,10 @@ fn default_surface_font_size() -> u32 {
     14
 }
 
+fn default_language() -> String {
+    "zh-CN".into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -845,6 +852,7 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            language: "en".into(),
         };
 
         store.save_config(saved.clone()).expect("save config");
@@ -883,6 +891,7 @@ mod tests {
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
+        assert_eq!(loaded.language, "zh-CN");
     }
 
     #[test]

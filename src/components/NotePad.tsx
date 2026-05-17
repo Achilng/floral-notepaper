@@ -45,6 +45,7 @@ import {
 } from "../features/windows/surfaceMode";
 import type { NoteSurfaceMode } from "../features/windows/surfaceMode";
 import { Tile } from "./Tile";
+import { useTranslation } from "../features/i18n/LanguageContext";
 
 type OpenMode = "new" | "open";
 
@@ -110,6 +111,7 @@ export function NotePad({
   initialAutoSave = true,
   initialTileColor = DEFAULT_TILE_COLOR,
 }: NotePadProps) {
+  const { t } = useTranslation();
   const [surfaceMode, setSurfaceMode] =
     useState<NoteSurfaceMode>(initialSurfaceMode);
   const [mode, setMode] = useState<OpenMode>("new");
@@ -118,7 +120,15 @@ export function NotePad({
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [hoveredNote, setHoveredNote] = useState<string | null>(null);
-  const [status, setStatus] = useState("空");
+  const [status, setStatus] = useState("empty");
+  const statusLabels: Record<string, string> = {
+    empty: t("notepad.status.empty"),
+    opened: t("notepad.status.opened"),
+    saved: t("notepad.status.saved"),
+    unsaved: t("notepad.status.unsaved"),
+    saveFailed: t("notepad.status.saveFailed"),
+    copied: t("notepad.status.copied"),
+  };
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] =
     useState(initialAutoSave);
@@ -149,7 +159,7 @@ export function NotePad({
     setTitle(note.title);
     setContent(note.content);
     setMode("new");
-    setStatus("已打开");
+    setStatus("opened");
   }, []);
 
   useEffect(() => {
@@ -259,7 +269,7 @@ export function NotePad({
       setTitle("");
       setContent("");
       setMode("new");
-      setStatus("空");
+      setStatus("empty");
       setErrorMessage(null);
       setIsExiting(false);
       setSurfaceMode("pad");
@@ -291,7 +301,7 @@ export function NotePad({
         right.updatedAt.localeCompare(left.updatedAt),
       );
     });
-    setStatus("已保存");
+    setStatus("saved");
     return note;
   }, [content, editingNoteId, title]);
 
@@ -343,7 +353,7 @@ export function NotePad({
     try {
       await saveNote();
     } catch (error) {
-      setStatus("保存失败");
+      setStatus("saveFailed");
       setErrorMessage(getErrorMessage(error));
     }
   }, [saveNote]);
@@ -396,10 +406,10 @@ export function NotePad({
     try {
       const clipboard = navigator.clipboard;
       if (!clipboard?.writeText) {
-        throw new Error("当前环境不支持复制");
+        throw new Error(t("notepad.clipboardNotSupported"));
       }
       await clipboard.writeText(content);
-      setStatus("已复制");
+      setStatus("copied");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -441,7 +451,7 @@ export function NotePad({
   }, [copyTileContent, handleClose, handleSave, switchSurfaceMode]);
 
   useEffect(() => {
-    if (!noteSurfaceAutoSave || mode !== "new" || status !== "未保存") {
+    if (!noteSurfaceAutoSave || mode !== "new" || status !== "unsaved") {
       return undefined;
     }
     if (!hasDraftContent()) return undefined;
@@ -464,7 +474,7 @@ export function NotePad({
     setTitle("");
     setContent("");
     setMode("new");
-    setStatus("空");
+    setStatus("empty");
     setErrorMessage(null);
   };
 
@@ -509,7 +519,7 @@ export function NotePad({
                       : "text-ink-ghost hover:text-ink-faint"
                   }`}
                 >
-                  {editingNoteId ? "编辑" : "新建"}
+                  {editingNoteId ? t("notepad.edit") : t("notepad.new")}
                   {mode === "new" && (
                     <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-bamboo rounded-full" />
                   )}
@@ -522,7 +532,7 @@ export function NotePad({
                       : "text-ink-ghost hover:text-ink-faint"
                   }`}
                 >
-                  打开
+                  {t("notepad.open")}
                   {mode === "open" && (
                     <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-bamboo rounded-full" />
                   )}
@@ -533,7 +543,7 @@ export function NotePad({
                 <button
                   onClick={() => void handlePin()}
                   className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
-                  title="转为磁贴"
+                  title={t("notepad.convertToTile")}
                 >
                   <svg
                     width="14"
@@ -553,7 +563,7 @@ export function NotePad({
                 <button
                   onClick={() => void handleClose()}
                   className="group w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:bg-danger-bg hover:text-red-400 transition-all duration-200 cursor-pointer"
-                  title="关闭"
+                  title={t("notepad.close")}
                 >
                   <svg
                     width="13"
@@ -582,9 +592,9 @@ export function NotePad({
                   value={title}
                   onChange={(event) => {
                     setTitle(event.target.value);
-                    setStatus("未保存");
+                    setStatus("unsaved");
                   }}
-                  placeholder="标题（可选）"
+                  placeholder={t("notepad.titlePlaceholder")}
                   className="w-full font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-2 tracking-wide shrink-0"
                   style={{ fontSize: `${surfaceFontSize}px` }}
                 />
@@ -594,29 +604,29 @@ export function NotePad({
                   value={content}
                   onChange={(event) => {
                     setContent(event.target.value);
-                    setStatus("未保存");
+                    setStatus("unsaved");
                   }}
-                  placeholder="写点什么……"
+                  placeholder={t("notepad.contentPlaceholder")}
                   className="w-full flex-1 min-h-0 pb-2 leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
                   style={{ fontSize: `${surfaceFontSize}px` }}
                 />
 
                 <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">
                   <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
-                    {errorMessage ?? `${countNoteChars(content)} 字 · ${status}`}
+                    {errorMessage ?? `${t("notepad.charCount", { count: countNoteChars(content) })} · ${statusLabels[status] ?? status}`}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={resetDraft}
                       className="px-4 py-1.5 text-[12px] text-ink-faint hover:text-ink-soft rounded-lg hover:bg-paper-warm transition-all duration-200 cursor-pointer"
                     >
-                      清空
+                      {t("notepad.clear")}
                     </button>
                     <button
                       onClick={() => void handleSave()}
                       className="px-4 py-1.5 text-[12px] text-cloud bg-bamboo hover:bg-bamboo-light rounded-lg transition-all duration-200 font-medium cursor-pointer"
                     >
-                      保存
+                      {t("notepad.save")}
                     </button>
                   </div>
                 </div>
@@ -641,7 +651,7 @@ export function NotePad({
                         </span>
                       </div>
                       <p className="text-[12px] text-ink-ghost leading-relaxed line-clamp-1 group-hover:text-ink-faint transition-colors">
-                        {note.preview || "空白笔记"}
+                        {note.preview || t("notepad.blankNote")}
                       </p>
                       {hoveredNote === note.id && (
                         <div className="mt-1.5 h-px bg-bamboo/10 transition-all duration-300" />
@@ -650,7 +660,7 @@ export function NotePad({
                   ))}
                   {notes.length === 0 && (
                     <div className="px-4 py-8 text-center text-[12px] text-ink-ghost">
-                      还没有可打开的笔记
+                      {t("notepad.noNotesToOpen")}
                     </div>
                   )}
                 </div>

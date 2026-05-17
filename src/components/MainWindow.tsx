@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
+import { useTranslation } from "../features/i18n/LanguageContext";
+import type { TranslationKey } from "../features/i18n/types";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 import {
@@ -60,32 +62,14 @@ interface NoteMenuState {
   noteId: string;
 }
 
-const saveStateLabel: Record<SaveState, string> = {
-  idle: "未选择",
-  dirty: "未保存",
-  saving: "保存中",
-  saved: "已保存",
-  error: "保存失败",
-};
-
 type FormatAction = "bold" | "italic" | "heading" | "hr" | "ul" | "ol" | "code" | "quote";
-
-const toolbarButtons: { label: string; title: string; style: string; action: FormatAction }[] = [
-  { label: "B", title: "粗体", style: "font-bold", action: "bold" },
-  { label: "I", title: "斜体", style: "italic", action: "italic" },
-  { label: "H", title: "标题", style: "font-bold", action: "heading" },
-  { label: "—", title: "分割线", style: "", action: "hr" },
-  { label: "•", title: "无序列表", style: "", action: "ul" },
-  { label: "1.", title: "有序列表", style: "font-mono text-[9px]", action: "ol" },
-  { label: "<>", title: "代码", style: "font-mono text-[9px]", action: "code" },
-  { label: "❝", title: "引用", style: "", action: "quote" },
-];
 
 function applyFormat(
   textarea: HTMLTextAreaElement,
   action: FormatAction,
   setContent: (v: string) => void,
   markDirty: () => void,
+  t: (key: TranslationKey, params?: Record<string, string | number>) => string,
 ) {
   const { selectionStart: start, selectionEnd: end, value } = textarea;
   const selected = value.slice(start, end);
@@ -101,17 +85,19 @@ function applyFormat(
 
   switch (action) {
     case "bold": {
-      const wrapped = `**${selected || "粗体文本"}**`;
+      const boldText = t("main.format.boldText");
+      const wrapped = `**${selected || boldText}**`;
       result = before + wrapped + after;
       cursorStart = start + 2;
-      cursorEnd = cursorStart + (selected || "粗体文本").length;
+      cursorEnd = cursorStart + (selected || boldText).length;
       break;
     }
     case "italic": {
-      const wrapped = `*${selected || "斜体文本"}*`;
+      const italicText = t("main.format.italicText");
+      const wrapped = `*${selected || italicText}*`;
       result = before + wrapped + after;
       cursorStart = start + 1;
-      cursorEnd = cursorStart + (selected || "斜体文本").length;
+      cursorEnd = cursorStart + (selected || italicText).length;
       break;
     }
     case "heading": {
@@ -133,9 +119,10 @@ function applyFormat(
         cursorStart = start + 3;
         cursorEnd = cursorStart + selected.length;
       } else {
-        result = before + "## 标题" + after;
+        const headingText = t("main.format.headingText");
+        result = before + `## ${headingText}` + after;
         cursorStart = start + 3;
-        cursorEnd = cursorStart + 2;
+        cursorEnd = cursorStart + headingText.length;
       }
       break;
     }
@@ -153,10 +140,11 @@ function applyFormat(
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const item = `- ${selected || "列表项"}`;
+        const listItem = t("main.format.listItem");
+        const item = `- ${selected || listItem}`;
         result = before + item + after;
         cursorStart = start + 2;
-        cursorEnd = cursorStart + (selected || "列表项").length;
+        cursorEnd = cursorStart + (selected || listItem).length;
       }
       break;
     }
@@ -167,10 +155,11 @@ function applyFormat(
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const item = `1. ${selected || "列表项"}`;
+        const listItem = t("main.format.listItem");
+        const item = `1. ${selected || listItem}`;
         result = before + item + after;
         cursorStart = start + 3;
-        cursorEnd = cursorStart + (selected || "列表项").length;
+        cursorEnd = cursorStart + (selected || listItem).length;
       }
       break;
     }
@@ -181,10 +170,11 @@ function applyFormat(
         cursorStart = start + 4;
         cursorEnd = cursorStart + selected.length;
       } else {
-        const wrapped = `\`${selected || "代码"}\``;
+        const codeText = t("main.format.codeText");
+        const wrapped = `\`${selected || codeText}\``;
         result = before + wrapped + after;
         cursorStart = start + 1;
-        cursorEnd = cursorStart + (selected || "代码").length;
+        cursorEnd = cursorStart + (selected || codeText).length;
       }
       break;
     }
@@ -195,10 +185,11 @@ function applyFormat(
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const item = `> ${selected || "引用文本"}`;
+        const quoteText = t("main.format.quoteText");
+        const item = `> ${selected || quoteText}`;
         result = before + item + after;
         cursorStart = start + 2;
-        cursorEnd = cursorStart + (selected || "引用文本").length;
+        cursorEnd = cursorStart + (selected || quoteText).length;
       }
       break;
     }
@@ -232,6 +223,27 @@ export function MainWindow({
   initialSettingsOpen = false,
   initialConfig = undefined,
 }: MainWindowProps = {}) {
+  const { t } = useTranslation();
+
+  const saveStateLabel: Record<SaveState, string> = {
+    idle: t("main.saveState.idle"),
+    dirty: t("main.saveState.dirty"),
+    saving: t("main.saveState.saving"),
+    saved: t("main.saveState.saved"),
+    error: t("main.saveState.error"),
+  };
+
+  const toolbarButtons: { label: string; title: string; style: string; action: FormatAction }[] = [
+    { label: "B", title: t("main.format.bold"), style: "font-bold", action: "bold" },
+    { label: "I", title: t("main.format.italic"), style: "italic", action: "italic" },
+    { label: "H", title: t("main.format.heading"), style: "font-bold", action: "heading" },
+    { label: "—", title: t("main.format.hr"), style: "", action: "hr" },
+    { label: "•", title: t("main.format.ul"), style: "", action: "ul" },
+    { label: "1.", title: t("main.format.ol"), style: "font-mono text-[9px]", action: "ol" },
+    { label: "<>", title: t("main.format.code"), style: "font-mono text-[9px]", action: "code" },
+    { label: "❝", title: t("main.format.quote"), style: "", action: "quote" },
+  ];
+
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
   const [externalFiles, setExternalFiles] = useState<ExternalFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -684,7 +696,7 @@ export function MainWindow({
   const handleRemoveExternalFile = async (id: string) => {
     if (selectedId === id && saveState === "dirty") {
       const shouldSave = window.confirm(
-        `「${title || "未命名文件"}」有未保存的更改，是否保存到原文件？`,
+        t("main.unsavedFileConfirm", { name: title || t("main.untitledNote") }),
       );
       if (shouldSave) {
         const saved = await saveCurrentNote();
@@ -922,11 +934,11 @@ export function MainWindow({
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-[13px] font-display font-medium text-ink-soft tracking-wide">
-              花笺
+              {t("app.name")}
             </span>
             <span className="text-[11px] text-ink-ghost font-body">—</span>
             <span className="text-[11px] text-ink-faint font-body truncate max-w-[240px]">
-              {title || selectedNote?.preview || "无标题笔记"}
+              {title || selectedNote?.preview || t("main.untitledNote")}
             </span>
           </div>
           <div className="flex items-center">
@@ -938,7 +950,7 @@ export function MainWindow({
             <button
               onClick={() => void handleOpenNotepad()}
               className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer"
-              title="快捷便签"
+              title={t("main.quickNotepad")}
             >
               <svg
                 width="14"
@@ -957,7 +969,7 @@ export function MainWindow({
             <button
               onClick={() => void handleOpenSettings()}
               className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-              title="设置"
+              title={t("main.settings")}
             >
               <svg
                 width="14"
@@ -979,7 +991,7 @@ export function MainWindow({
             <button
               onClick={handleMinimize}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title="最小化"
+              title={t("main.minimize")}
             >
               <svg width="12" height="12" viewBox="0 0 12 12">
                 <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
@@ -988,7 +1000,7 @@ export function MainWindow({
             <button
               onClick={handleMaximize}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={isMaximized ? "还原" : "最大化"}
+              title={isMaximized ? t("main.restore") : t("main.maximize")}
             >
               {isMaximized ? (
                 <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
@@ -1004,7 +1016,7 @@ export function MainWindow({
             <button
               onClick={handleClose}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
-              title="关闭"
+              title={t("main.close")}
             >
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M2 2l8 8M10 2l-8 8" />
@@ -1038,14 +1050,14 @@ export function MainWindow({
                   type="text"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="搜索笔记…"
+                  placeholder={t("main.searchPlaceholder")}
                   className="flex-1 text-[12px] font-body text-ink placeholder:text-ink-ghost/60 bg-transparent"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
                     className="text-ink-ghost hover:text-ink-faint transition-colors cursor-pointer"
-                    title="清空搜索"
+                    title={t("main.clearSearch")}
                   >
                     <svg
                       width="10"
@@ -1080,7 +1092,7 @@ export function MainWindow({
                 >
                   <path d="M12 5v14M5 12h14" />
                 </svg>
-                <span>新建笔记</span>
+                <span>{t("main.newNote")}</span>
               </button>
               <button
                 onClick={() => void handleImportNote()}
@@ -1100,18 +1112,18 @@ export function MainWindow({
                   <path d="m7 8 5-5 5 5" />
                   <path d="M5 21h14" />
                 </svg>
-                <span>导入 Markdown</span>
+                <span>{t("main.importMarkdown")}</span>
               </button>
             </div>
 
             <div className="flex items-center justify-between px-5 pb-1.5 shrink-0">
               <span className="text-[10px] text-ink-ghost font-mono tracking-wider uppercase">
-                {filteredNotes.length} 篇笔记{externalFiles.length > 0 ? ` · ${externalFiles.length} 个外部文件` : ""}
+                {t("main.noteCount", { count: filteredNotes.length })}{externalFiles.length > 0 ? ` · ${t("main.externalFileCount", { count: externalFiles.length })}` : ""}
               </span>
               <button
                 onClick={() => setShowCategoryInput(true)}
                 className="text-[10px] text-ink-ghost hover:text-bamboo transition-colors cursor-pointer"
-                title="新建分类"
+                title={t("main.newCategory")}
               >
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <path d="M12 5v14M5 12h14" />
@@ -1134,7 +1146,7 @@ export function MainWindow({
                     }
                   }}
                   onBlur={() => void handleCreateCategory()}
-                  placeholder="输入分类名…"
+                  placeholder={t("main.categoryInputPlaceholder")}
                   className="w-full px-2.5 h-7 rounded-lg text-[12px] font-body text-ink bg-paper-warm/80 border border-paper-deep/40 focus:border-bamboo/30 placeholder:text-ink-ghost/60"
                 />
               </div>
@@ -1145,7 +1157,7 @@ export function MainWindow({
                 {externalFiles.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-[10px] text-ink-ghost/50 font-mono tracking-wider uppercase">
-                      外部文件
+                      {t("main.externalFiles")}
                     </div>
                     {externalFiles.map((file) => {
                       const isSelected = file.id === selectedId;
@@ -1187,7 +1199,7 @@ export function MainWindow({
                                 handleRemoveExternalFile(file.id);
                               }}
                               className="opacity-0 group-hover:opacity-100 text-ink-ghost hover:text-red-400 transition-all p-0.5"
-                              title="从列表移除"
+                              title={t("main.removeFromList")}
                             >
                               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                                 <line x1="18" y1="6" x2="6" y2="18" />
@@ -1241,7 +1253,7 @@ export function MainWindow({
                             </span>
                           </div>
                           <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                            {note.preview || "空白笔记"}
+                            {note.preview || t("main.blankNote")}
                           </p>
                           <div className="flex items-center gap-2 mt-1">
                             <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
@@ -1249,7 +1261,7 @@ export function MainWindow({
                             </span>
                             <span className="text-[10px] text-ink-ghost/40">·</span>
                             <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                              {note.wordCount} 字
+                              {t("main.charCount", { count: note.wordCount })}
                             </span>
                           </div>
                         </button>
@@ -1341,12 +1353,12 @@ export function MainWindow({
                           <button
                             onClick={(e) => {
                               e.stopPropagation();
-                              if (window.confirm(`删除分类「${group.category}」？\n其中的笔记将移至"未分类"。`)) {
+                              if (window.confirm(t("main.categoryDeleteConfirm", { name: group.category }))) {
                                 void handleDeleteCategory(group.category);
                               }
                             }}
                             className="opacity-0 group-hover/cat:opacity-100 text-ink-ghost hover:text-red-400 transition-all p-0.5 shrink-0"
-                            title="删除分类"
+                            title={t("main.deleteCategory")}
                           >
                             <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                               <path d="M18 6L6 18M6 6l12 12" />
@@ -1359,7 +1371,7 @@ export function MainWindow({
                         <div className="bg-bamboo/[0.03] border border-t-0 border-bamboo/10 rounded-b-lg pb-1 pt-1">
                           {group.notes.length === 0 ? (
                             <div className="px-3 py-3 text-center text-[11px] text-ink-ghost/50">
-                              空文件夹
+                              {t("main.emptyFolder")}
                             </div>
                           ) : group.notes.map((note) => {
                             const isSelected = note.id === selectedId;
@@ -1401,7 +1413,7 @@ export function MainWindow({
                                 </div>
 
                                 <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                                  {note.preview || "空白笔记"}
+                                  {note.preview || t("main.blankNote")}
                                 </p>
 
                                 <div className="flex items-center gap-2 mt-1">
@@ -1410,7 +1422,7 @@ export function MainWindow({
                                   </span>
                                   <span className="text-[10px] text-ink-ghost/40">·</span>
                                   <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                    {note.wordCount} 字
+                                    {t("main.charCount", { count: note.wordCount })}
                                   </span>
                                 </div>
                               </button>
@@ -1424,7 +1436,7 @@ export function MainWindow({
 
                 {!isLoading && filteredNotes.length === 0 && externalFiles.length === 0 && (
                   <div className="px-3 py-8 text-center text-[12px] text-ink-ghost leading-relaxed">
-                    {searchQuery ? "没有匹配的笔记" : "还没有笔记"}
+                    {searchQuery ? t("main.noMatchingNotes") : t("main.noNotes")}
                   </div>
                 )}
               </div>
@@ -1437,7 +1449,7 @@ export function MainWindow({
                 <button
                   onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-                  title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+                  title={sidebarCollapsed ? t("main.expandSidebar") : t("main.collapseSidebar")}
                 >
                   <svg
                     width="14"
@@ -1460,7 +1472,7 @@ export function MainWindow({
                   onClick={() => void handlePinEntry()}
                   disabled={!selectedId}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="钉为磁贴"
+                  title={t("main.pinAsTile")}
                 >
                   <svg
                     width="13"
@@ -1482,8 +1494,8 @@ export function MainWindow({
                   onClick={handleUndo}
                   disabled={!selectedId}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="撤销（Ctrl+Z）"
-                  aria-label="撤销"
+                  title={t("main.undo")}
+                  aria-label={t("main.undo")}
                 >
                   <svg
                     data-testid="main-editor-undo-icon"
@@ -1506,14 +1518,14 @@ export function MainWindow({
                   onClick={() => void saveCurrentNote()}
                   disabled={!selectedId || saveState === "saving"}
                   className="px-2.5 h-7 flex items-center justify-center rounded-lg text-[11px] text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="保存"
+                  title={t("main.save")}
                 >
-                  保存
+                  {t("main.save")}
                 </button>
 
                 {deleteConfirm ? (
                   <div className={`flex items-center gap-1 ml-1 ${deleteExiting ? "animate-delete-confirm-exit" : "animate-delete-confirm"}`}>
-                    <span className="text-[11px] text-red-400 whitespace-nowrap">确认删除？</span>
+                    <span className="text-[11px] text-red-400 whitespace-nowrap">{t("main.confirmDelete")}</span>
                     <button
                       onClick={() => {
                         setDeleteExiting(true);
@@ -1525,7 +1537,7 @@ export function MainWindow({
                       }}
                       className="px-2 h-6 rounded-md text-[11px] text-cloud bg-red-400 hover:bg-red-500 transition-colors cursor-pointer whitespace-nowrap"
                     >
-                      删除
+                      {t("main.delete")}
                     </button>
                     <button
                       onClick={() => {
@@ -1537,7 +1549,7 @@ export function MainWindow({
                       }}
                       className="px-2 h-6 rounded-md text-[11px] text-ink-faint hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer"
                     >
-                      取消
+                      {t("main.cancel")}
                     </button>
                   </div>
                 ) : (
@@ -1545,7 +1557,7 @@ export function MainWindow({
                     onClick={() => setDeleteConfirm(true)}
                     disabled={!selectedId}
                     className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-red-400 hover:bg-danger-bg transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="删除笔记"
+                    title={t("main.deleteNote")}
                   >
                     <svg
                       width="13"
@@ -1566,9 +1578,9 @@ export function MainWindow({
 
               <SlidingButtonGroup
                 options={[
-                  { value: "edit" as ViewMode, label: "编辑" },
-                  { value: "split" as ViewMode, label: "分栏" },
-                  { value: "preview" as ViewMode, label: "预览" },
+                  { value: "edit" as ViewMode, label: t("main.viewMode.edit") },
+                  { value: "split" as ViewMode, label: t("main.viewMode.split") },
+                  { value: "preview" as ViewMode, label: t("main.viewMode.preview") },
                 ]}
                 value={viewMode}
                 onChange={setViewMode}
@@ -1590,21 +1602,21 @@ export function MainWindow({
                     contentRef.current?.focus();
                   }
                 }}
-                placeholder="无标题笔记"
+                placeholder={t("main.titlePlaceholder")}
                 disabled={!selectedId}
                 className="w-full text-[20px] font-display font-bold text-ink placeholder:text-ink-ghost/50 tracking-wide disabled:opacity-60"
               />
               <div className="flex items-center gap-3 mt-1.5">
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums truncate max-w-[200px]">
                   {selectedExternalFile
-                    ? `外部文件 · ${selectedExternalFile.filePath}`
+                    ? `${t("main.externalFile")} · ${selectedExternalFile.filePath}`
                     : selectedNote
                       ? `${formatShortDate(selectedNote.updatedAt)} ${formatTime(selectedNote.updatedAt)}`
                       : "--"}
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">·</span>
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {charCount} 字
+                  {t("main.charCount", { count: charCount })}
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">·</span>
                 <span
@@ -1625,7 +1637,7 @@ export function MainWindow({
             <div key={viewMode} className="flex-1 flex min-h-0 animate-view-fade">
               {!selectedId && !isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-[13px] text-ink-ghost">
-                  选择或新建一篇笔记
+                  {t("main.selectOrCreateNote")}
                 </div>
               ) : (
                 <>
@@ -1645,7 +1657,7 @@ export function MainWindow({
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               if (contentRef.current) {
-                                applyFormat(contentRef.current, button.action, setContent, markDirty);
+                                applyFormat(contentRef.current, button.action, setContent, markDirty, t);
                               }
                             }}
                             className={`w-6 h-6 flex items-center justify-center rounded text-[11px] text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer ${button.style}`}
@@ -1665,7 +1677,7 @@ export function MainWindow({
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-mono placeholder:text-ink-ghost/40"
                           style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
-                          placeholder="开始写作……"
+                          placeholder={t("main.startWriting")}
                           spellCheck={false}
                           disabled={!selectedId}
                         />
@@ -1682,7 +1694,7 @@ export function MainWindow({
                       {viewMode === "split" && (
                         <div className="px-4 pt-2.5 pb-1 shrink-0">
                           <span className="text-[10px] text-ink-ghost/60 font-mono tracking-widest uppercase">
-                            Preview
+                            {t("main.previewLabel")}
                           </span>
                         </div>
                       )}
@@ -1754,7 +1766,7 @@ export function MainWindow({
                       : "text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo"
                   } ${index > 0 ? "border-t border-paper-deep/20" : ""}`}
                 >
-                  <span>{item.label}</span>
+                  <span>{t(item.label as TranslationKey)}</span>
                 </button>
               ))}
             </div>
@@ -1767,13 +1779,13 @@ export function MainWindow({
                 <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
-                <span>返回</span>
+                <span>{t("main.contextMenu.back")}</span>
               </button>
               <button
                 onClick={() => void handleMoveNote(noteMenuTarget.id, "")}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
               >
-                未分类
+                {t("main.contextMenu.uncategorized")}
               </button>
               {categories.map((cat) => (
                 <button

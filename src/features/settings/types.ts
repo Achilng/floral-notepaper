@@ -1,3 +1,5 @@
+import type { Language } from "../i18n/types";
+
 export type ViewMode = "edit" | "split" | "preview";
 
 export type ThemeOption = "light" | "dark" | "system";
@@ -17,4 +19,5 @@ export interface AppConfig {
   theme: ThemeOption;
   fontSize: number;
   surfaceFontSize: number;
+  language: Language;
 }

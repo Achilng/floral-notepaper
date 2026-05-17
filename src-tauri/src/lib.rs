@@ -2,13 +2,18 @@ pub mod desktop;
 pub mod services;
 
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
+use services::i18n;
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter, Manager};
 
 
 #[tauri::command]
-fn app_name() -> &'static str {
-    "花笺"
+fn app_name() -> String {
+    let lang_code = default_store()
+        .and_then(|store| store.load_config())
+        .map(|config| config.language)
+        .unwrap_or_default();
+    i18n::window_title(&lang_code, "app")
 }
 
 #[tauri::command]
