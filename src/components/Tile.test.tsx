@@ -15,8 +15,8 @@ describe("Tile", () => {
     expect(markup).toContain("hover:shadow-[0_6px_24px_rgba(26,26,24,0.07)]");
     expect(markup).not.toContain("hover:scale");
     expect(markup).not.toContain("scale(");
-    expect(markup).toContain("text-[15px]");
-    expect(markup).toContain("text-[14px]");
+    expect(markup).toContain("font-size:15px");
+    expect(markup).toContain("font-size:14px");
     expect(markup).toContain("leading-[1.8]");
     expect(markup).toContain(">读书笔记<");
     expect(markup).toContain("满地都是六便士");

@@ -19,6 +19,7 @@ describe("MainWindow settings", () => {
           tileColorMode: "system",
           theme: "light",
           fontSize: 14,
+          surfaceFontSize: 14,
         }}
       />,
     );

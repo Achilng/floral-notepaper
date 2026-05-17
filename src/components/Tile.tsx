@@ -12,6 +12,7 @@ export interface TileProps
   color?: string;
   width?: number | string;
   rotation?: number;
+  fontSize?: number;
 }
 
 const MARK_SIZE = 8;
@@ -69,6 +70,7 @@ export function Tile({
   color = DEFAULT_TILE_COLOR,
   width = 260,
   rotation = 0,
+  fontSize = 14,
   className = "",
   style,
   children,
@@ -99,16 +101,16 @@ export function Tile({
     >
       <div className="px-4 pt-4 pb-4 h-full overflow-y-auto scrollbar-hidden">
         {title && (
-          <div className="text-[15px] font-display tracking-wide mb-3 leading-snug" style={{ color: titleColor }}>
+          <div className="font-display tracking-wide mb-3 leading-snug" style={{ color: titleColor, fontSize: `${fontSize + 1}px` }}>
             {title}
           </div>
         )}
         {content ? (
-          <div className="text-[14px] leading-[1.8] whitespace-pre-wrap font-body" style={{ color: contentColor }}>
+          <div className="leading-[1.8] whitespace-pre-wrap font-body" style={{ color: contentColor, fontSize: `${fontSize}px` }}>
             {content}
           </div>
         ) : (
-          <div className="text-[14px] font-body text-center py-6" style={{ color: emptyColor }}>
+          <div className="font-body text-center py-6" style={{ color: emptyColor, fontSize: `${fontSize}px` }}>
             空
           </div>
         )}

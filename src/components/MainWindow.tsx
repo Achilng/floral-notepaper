@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import { emit } from "@tauri-apps/api/event";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 import {
@@ -485,6 +486,7 @@ export function MainWindow({
   const handleSettingsChange = useCallback(
     (nextConfig: AppConfig) => {
       setSettingsConfig(nextConfig);
+      void emit("config-changed", nextConfig);
       persistSettings(nextConfig);
     },
     [persistSettings],
@@ -1182,10 +1184,10 @@ export function MainWindow({
             </div>
           </div>
           {settingsConfig && (
-            <div className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden ${
+            <div className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden h-full ${
               settingsOpen ? "w-[360px]" : "w-0"
             }`}>
-              <div className="w-[360px]">
+              <div className="w-[360px] h-full">
                 <SettingsPanel
                   config={settingsConfig}
                   onChange={handleSettingsChange}

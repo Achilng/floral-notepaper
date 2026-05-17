@@ -26,6 +26,8 @@ pub struct AppConfig {
     pub theme: String,
     #[serde(default = "default_font_size")]
     pub font_size: u32,
+    #[serde(default = "default_surface_font_size")]
+    pub surface_font_size: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -317,6 +319,7 @@ impl NoteStore {
             tile_color_mode: default_tile_color_mode(),
             theme: default_theme(),
             font_size: default_font_size(),
+            surface_font_size: default_surface_font_size(),
         }
     }
 
@@ -561,6 +564,10 @@ fn default_font_size() -> u32 {
     14
 }
 
+fn default_surface_font_size() -> u32 {
+    14
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -683,6 +690,7 @@ mod tests {
             tile_color_mode: "custom".into(),
             theme: "dark".into(),
             font_size: 16,
+            surface_font_size: 16,
         };
 
         store.save_config(saved.clone()).expect("save config");
@@ -720,6 +728,7 @@ mod tests {
         assert_eq!(loaded.tile_color_mode, "system");
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.font_size, 14);
+        assert_eq!(loaded.surface_font_size, 14);
     }
 
     #[test]

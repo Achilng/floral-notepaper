@@ -126,7 +126,7 @@ export function NotePad({
     normalizeTileColor(initialTileColor),
   );
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
-  const [fontSize, setFontSize] = useState(14);
+  const [surfaceFontSize, setSurfaceFontSize] = useState(14);
   const [tileColor, setTileColor] = useState(() =>
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
@@ -160,7 +160,7 @@ export function NotePad({
         const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
         if (!cancelled) {
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
-          setFontSize(loadedConfig.fontSize ?? 14);
+          setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
           setTileColorRaw(normalizeTileColor(loadedConfig.tileColor));
           setTileColorMode(loadedConfig.tileColorMode ?? "system");
           setTileColor(
@@ -207,14 +207,14 @@ export function NotePad({
     const unlisten = listen<{
       tileColor?: string;
       tileColorMode?: TileColorMode;
-      fontSize?: number;
+      surfaceFontSize?: number;
     }>("config-changed", (event) => {
       const mode = event.payload.tileColorMode ?? tileColorMode;
       const raw = event.payload.tileColor ?? tileColorRaw;
       setTileColorMode(mode);
       setTileColorRaw(normalizeTileColor(raw));
       setTileColor(resolveTileColor(mode, raw));
-      if (event.payload.fontSize != null) setFontSize(event.payload.fontSize);
+      if (event.payload.surfaceFontSize != null) setSurfaceFontSize(event.payload.surfaceFontSize);
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -461,6 +461,7 @@ export function NotePad({
           title={tileTitle || undefined}
           content={errorMessage || content}
           color={tileColor}
+          fontSize={surfaceFontSize}
           width="100%"
           className="h-full cursor-grab active:cursor-grabbing"
           data-surface-mode={surfaceMode}
@@ -563,7 +564,7 @@ export function NotePad({
                   }}
                   placeholder="标题（可选）"
                   className="w-full font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-2 tracking-wide shrink-0"
-                  style={{ fontSize: `${fontSize}px` }}
+                  style={{ fontSize: `${surfaceFontSize}px` }}
                 />
 
                 <textarea
@@ -575,7 +576,7 @@ export function NotePad({
                   }}
                   placeholder="写点什么……"
                   className="w-full flex-1 min-h-0 pb-2 leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
-                  style={{ fontSize: `${fontSize}px` }}
+                  style={{ fontSize: `${surfaceFontSize}px` }}
                 />
 
                 <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">

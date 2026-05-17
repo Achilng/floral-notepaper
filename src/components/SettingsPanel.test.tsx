@@ -14,6 +14,7 @@ const config = {
   tileColorMode: "custom" as const,
   theme: "light" as const,
   fontSize: 14,
+  surfaceFontSize: 14,
 };
 
 describe("SettingsPanel", () => {

@@ -929,6 +929,7 @@ mod tests {
             tile_color_mode: "system".into(),
             theme: "light".into(),
             font_size: 14,
+            surface_font_size: 14,
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -942,6 +943,7 @@ mod tests {
             tile_color_mode: "custom".into(),
             theme: "dark".into(),
             font_size: 16,
+            surface_font_size: 16,
         };
 
         assert_eq!(

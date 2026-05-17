@@ -46,7 +46,7 @@ export function SettingsPanel({
   };
 
   return (
-    <aside className="w-[360px] shrink-0 border-l border-paper-deep/30 bg-cloud/92 backdrop-blur-sm flex flex-col">
+    <aside className="w-[360px] h-full shrink-0 border-l border-paper-deep/30 bg-cloud/92 backdrop-blur-sm flex flex-col">
       <div className="flex items-center justify-between h-11 px-4 border-b border-paper-deep/25">
         <h2 className="text-[13px] font-display font-medium text-ink-soft">
           应用设置
@@ -151,8 +151,8 @@ export function SettingsPanel({
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
             <input
               type="range"
-              min={12}
-              max={20}
+              min={8}
+              max={30}
               step={1}
               value={config.fontSize ?? 14}
               onChange={(event) =>
@@ -162,6 +162,28 @@ export function SettingsPanel({
             />
             <span className="text-[12px] font-mono text-ink-soft tabular-nums w-8 text-right">
               {config.fontSize ?? 14}px
+            </span>
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
+            小窗/磁贴字号
+          </label>
+          <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
+            <input
+              type="range"
+              min={8}
+              max={30}
+              step={1}
+              value={config.surfaceFontSize ?? 14}
+              onChange={(event) =>
+                setConfigValue("surfaceFontSize", Number(event.target.value))
+              }
+              className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
+            />
+            <span className="text-[12px] font-mono text-ink-soft tabular-nums w-8 text-right">
+              {config.surfaceFontSize ?? 14}px
             </span>
           </div>
         </section>

@@ -40,6 +40,7 @@ describe("settings api", () => {
       tileColorMode: "system",
       theme: "light",
       fontSize: 14,
+      surfaceFontSize: 14,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -61,6 +62,7 @@ describe("settings api", () => {
       tileColorMode: "custom",
       theme: "dark",
       fontSize: 16,
+      surfaceFontSize: 16,
     };
     mockedInvoke.mockResolvedValue(config);
 
