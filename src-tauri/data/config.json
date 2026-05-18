@@ -1,0 +1,15 @@
+{
+  "notesDir": "/home/zzc/my_code/floral/floral-notepaper/src-tauri/data/notes",
+  "globalShortcut": "Ctrl+Space",
+  "closeToTray": false,
+  "autostart": false,
+  "defaultViewMode": "split",
+  "noteAutoSave": true,
+  "noteSurfaceAutoSave": true,
+  "tileColor": "#e5a50a",
+  "tileColorMode": "custom",
+  "theme": "system",
+  "fontSize": 21,
+  "surfaceFontSize": 14,
+  "externalFileAutoSave": true
+}

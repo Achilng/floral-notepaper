@@ -3,6 +3,9 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Components } from "react-markdown";
+import remarkMath from 'remark-math';
+import rehypeKatex from 'rehype-katex';
+import 'katex/dist/katex.min.css';
 
 function CodeBlock({ children }: { children: React.ReactNode }) {
   const [copied, setCopied] = useState(false);
@@ -155,7 +158,7 @@ export function MarkdownPreview({ content, fontSize = 14 }: MarkdownPreviewProps
   return (
     <div className="max-w-[560px] font-body" style={{ fontSize: `${fontSize}px` }}>
       {content.trim() ? (
-        <Markdown remarkPlugins={remarkPlugins} components={components}>
+        <Markdown remarkPlugins={[...remarkPlugins, remarkMath]} rehypePlugins={[rehypeKatex]} components={components} >
           {content}
         </Markdown>
       ) : (
