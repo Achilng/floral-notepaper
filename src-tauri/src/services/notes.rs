@@ -28,6 +28,8 @@ pub struct AppConfig {
     pub font_size: u32,
     #[serde(default = "default_surface_font_size")]
     pub surface_font_size: u32,
+    #[serde(default = "default_language")]
+    pub language: String,
     #[serde(default = "default_external_file_auto_save")]
     pub external_file_auto_save: bool,
 }
@@ -453,6 +455,7 @@ impl NoteStore {
             theme: default_theme(),
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
+            language: default_language(),
             external_file_auto_save: default_external_file_auto_save(),
         }
     }
@@ -721,6 +724,10 @@ fn default_surface_font_size() -> u32 {
     14
 }
 
+fn default_language() -> String {
+    "zh-CN".into()
+}
+
 fn default_external_file_auto_save() -> bool {
     true
 }
@@ -852,6 +859,7 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            language: "en".into(),
             external_file_auto_save: true,
         };
 
@@ -891,6 +899,7 @@ mod tests {
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
+        assert_eq!(loaded.language, "zh-CN");
     }
 
     #[test]

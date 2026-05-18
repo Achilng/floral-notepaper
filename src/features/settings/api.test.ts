@@ -40,6 +40,7 @@ describe("settings api", () => {
       theme: "light",
       fontSize: 14,
       surfaceFontSize: 14,
+      language: "zh-CN",
       externalFileAutoSave: true,
     };
     mockedInvoke.mockResolvedValue(config);
@@ -63,6 +64,7 @@ describe("settings api", () => {
       theme: "dark",
       fontSize: 16,
       surfaceFontSize: 16,
+      language: "en",
       externalFileAutoSave: true,
     };
     mockedInvoke.mockResolvedValue(config);

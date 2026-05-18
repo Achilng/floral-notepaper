@@ -4,6 +4,7 @@ import {
   DEFAULT_TILE_COLOR,
   normalizeTileColor,
 } from "../features/settings/tileColor";
+import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 
 export interface TileProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "color" | "content" | "title"> {
@@ -106,8 +107,12 @@ export function Tile({
           </div>
         )}
         {content ? (
-          <div className="leading-[1.8] whitespace-pre-wrap font-body" style={{ color: contentColor, fontSize: `${fontSize}px` }}>
-            {content}
+          <div className="leading-[1.8] font-body" style={{ color: contentColor }}>
+            <MarkdownPreview
+              content={content}
+              fontSize={fontSize}
+              tileMode
+            />
           </div>
         ) : (
           <div className="font-body text-center py-6" style={{ color: emptyColor, fontSize: `${fontSize}px` }}>

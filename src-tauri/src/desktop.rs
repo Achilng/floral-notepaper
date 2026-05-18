@@ -1,4 +1,5 @@
 use crate::services::notes::{default_store, AppConfig, AppError};
+use crate::services::i18n;
 use serde::Deserialize;
 use std::{
     error::Error,
@@ -162,31 +163,31 @@ pub fn tray_menu_action(id: &str) -> Option<TrayMenuAction> {
     }
 }
 
-pub fn tray_menu_specs(close_to_tray: bool, autostart: bool) -> Vec<TrayMenuSpec> {
+pub fn tray_menu_specs(close_to_tray: bool, autostart: bool, lang_code: &str) -> Vec<TrayMenuSpec> {
     vec![
         TrayMenuSpec {
             id: TRAY_SHOW_MAIN_ID,
-            label: "打开主窗口",
+            label: i18n::tray_label(lang_code, "showMain").leak(),
             checked: None,
         },
         TrayMenuSpec {
             id: TRAY_QUICK_NOTE_ID,
-            label: "快速记录",
+            label: i18n::tray_label(lang_code, "quickNote").leak(),
             checked: None,
         },
         TrayMenuSpec {
             id: TRAY_TOGGLE_CLOSE_TO_TRAY_ID,
-            label: "关闭到托盘",
+            label: i18n::tray_label(lang_code, "closeToTray").leak(),
             checked: Some(close_to_tray),
         },
         TrayMenuSpec {
             id: TRAY_TOGGLE_AUTOSTART_ID,
-            label: "开机自启动",
+            label: i18n::tray_label(lang_code, "autostart").leak(),
             checked: Some(autostart),
         },
         TrayMenuSpec {
             id: TRAY_QUIT_ID,
-            label: "退出",
+            label: i18n::tray_label(lang_code, "quit").leak(),
             checked: None,
         },
     ]
@@ -292,6 +293,54 @@ pub fn apply_runtime_config(
         apply_autostart(app, next.autostart)?;
     }
 
+    if previous.language != next.language {
+        rebuild_tray_menu(app, next)?;
+    }
+
+    Ok(())
+}
+
+pub fn rebuild_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
+    let autostart = autostart_enabled(app, config.autostart);
+    let specs = tray_menu_specs(config.close_to_tray, autostart, &config.language);
+
+    let show_main = MenuItem::with_id(app, specs[0].id, specs[0].label, true, None::<&str>)?;
+    let quick_note = MenuItem::with_id(app, specs[1].id, specs[1].label, true, None::<&str>)?;
+    let close_to_tray = CheckMenuItem::with_id(
+        app,
+        specs[2].id,
+        specs[2].label,
+        true,
+        specs[2].checked.unwrap_or(false),
+        None::<&str>,
+    )?;
+    let autostart_item = CheckMenuItem::with_id(
+        app,
+        specs[3].id,
+        specs[3].label,
+        true,
+        specs[3].checked.unwrap_or(false),
+        None::<&str>,
+    )?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, specs[4].id, specs[4].label, true, None::<&str>)?;
+
+    let menu = Menu::with_items(
+        app,
+        &[
+            &show_main,
+            &quick_note,
+            &close_to_tray,
+            &autostart_item,
+            &separator,
+            &quit,
+        ],
+    )?;
+
+    let tray = app.tray_by_id("main").ok_or("tray not found")?;
+    tray.set_menu(Some(menu))?;
+    tray.set_tooltip(Some(&i18n::window_title(&config.language, "tooltip")))?;
+
     Ok(())
 }
 
@@ -384,7 +433,7 @@ fn main_window_close_action(app_is_exiting: bool, close_to_tray: bool) -> MainWi
 fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
     let config = load_config()?;
     let autostart = autostart_enabled(app.handle(), config.autostart);
-    let specs = tray_menu_specs(config.close_to_tray, autostart);
+    let specs = tray_menu_specs(config.close_to_tray, autostart, &config.language);
 
     let show_main = MenuItem::with_id(app, specs[0].id, specs[0].label, true, None::<&str>)?;
     let quick_note = MenuItem::with_id(app, specs[1].id, specs[1].label, true, None::<&str>)?;
@@ -418,13 +467,13 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
         ],
     )?;
 
-    TrayIconBuilder::new()
+    TrayIconBuilder::with_id("main")
         .icon(
             app.default_window_icon()
                 .expect("missing default window icon")
                 .clone(),
         )
-        .tooltip("花笺")
+        .tooltip(&i18n::window_title(&load_config().map(|c| c.language).unwrap_or_default(), "tooltip"))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| {
@@ -473,6 +522,9 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
 }
 
 pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
+    let lang_code = load_config().map(|c| c.language).unwrap_or_default();
+    let title = i18n::window_title(&lang_code, "app");
+
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         window.unminimize()?;
         window.show()?;
@@ -484,7 +536,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
         app,
         MAIN_WINDOW_LABEL,
         "index.html".to_string(),
-        "花笺",
+        &title,
         1180.0,
         760.0,
         900.0,
@@ -515,12 +567,14 @@ fn open_notepad_window_now(
         Some(id) => format!("index.html?view=notepad&noteId={id}"),
         None => "index.html?view=notepad".to_string(),
     };
+    let lang_code = load_config().map(|c| c.language).unwrap_or_default();
+    let title = i18n::window_title(&lang_code, "notepad");
 
     open_or_focus_window(
         app,
         &label,
         url,
-        "花笺便签",
+        &title,
         specs.width,
         specs.height,
         specs.min_width,
@@ -607,13 +661,15 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     let label = notepad_window_label(None);
     let specs = notepad_window_specs();
     let visual_options = dynamic_window_visual_options(&label);
+    let lang_code = load_config().map(|c| c.language).unwrap_or_default();
+    let title = i18n::window_title(&lang_code, "notepad");
 
     WebviewWindowBuilder::new(
         app,
         &label,
         WebviewUrl::App("index.html?view=notepad&standby=1".into()),
     )
-    .title("花笺便签")
+    .title(&title)
     .inner_size(specs.width, specs.height)
     .min_inner_size(specs.min_width, specs.min_height)
     .resizable(true)
@@ -649,12 +705,14 @@ fn open_tile_window_now(
     let url = format!("index.html?view=tile&noteId={note_id}");
 
     let specs = notepad_window_specs();
+    let lang_code = load_config().map(|c| c.language).unwrap_or_default();
+    let title = i18n::window_title(&lang_code, "tile");
 
     open_or_focus_window(
         app,
         &label,
         url,
-        "花笺磁贴",
+        &title,
         specs.width,
         specs.height,
         specs.min_width,
@@ -1062,7 +1120,7 @@ mod tests {
 
     #[test]
     fn builds_tray_menu_specs_with_configured_checked_state() {
-        let specs = tray_menu_specs(true, false);
+        let specs = tray_menu_specs(true, false, "zh-CN");
         let ids: Vec<_> = specs.iter().map(|spec| spec.id).collect();
 
         assert_eq!(
@@ -1168,6 +1226,7 @@ mod tests {
             theme: "light".into(),
             font_size: 14,
             surface_font_size: 14,
+            language: "zh-CN".into(),
             external_file_auto_save: true,
         };
         let next = AppConfig {
@@ -1183,6 +1242,7 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            language: "en".into(),
             external_file_auto_save: true,
         };
 

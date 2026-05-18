@@ -1,6 +1,8 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
+import { LanguageContext } from "../features/i18n/LanguageContext";
+import { translate } from "../features/i18n/LanguageContext";
 
 const config = {
   notesDir: "D:\\Notes\\花笺",
@@ -15,18 +17,27 @@ const config = {
   theme: "light" as const,
   fontSize: 14,
   surfaceFontSize: 14,
+  language: "zh-CN" as const,
   externalFileAutoSave: true,
 };
 
 describe("SettingsPanel", () => {
   test("renders the core configurable app settings", () => {
     const markup = renderToStaticMarkup(
-      <SettingsPanel
-        config={config}
-        onChange={vi.fn()}
-        onChooseNotesDir={vi.fn()}
-        onClose={vi.fn()}
-      />,
+      <LanguageContext.Provider
+        value={{
+          language: "zh-CN",
+          setLanguage: () => {},
+          t: (key, params) => translate("zh-CN", key, params),
+        }}
+      >
+        <SettingsPanel
+          config={config}
+          onChange={vi.fn()}
+          onChooseNotesDir={vi.fn()}
+          onClose={vi.fn()}
+        />
+      </LanguageContext.Provider>,
     );
 
     expect(markup).toContain("应用设置");
@@ -42,6 +53,7 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("自定义");
     expect(markup).toContain('type="color"');
     expect(markup).toContain('value="#f6f3ec"');
+    expect(markup).toContain("语言");
     expect(markup).toContain("默认视图");
     expect(markup).toContain("编辑");
     expect(markup).toContain("分栏");
