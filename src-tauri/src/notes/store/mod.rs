@@ -38,6 +38,14 @@ fn default_base_dir() -> Result<PathBuf, AppError> {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    if let Ok(home) = env::var("HOME") {
+        return Ok(PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("花笺"));
+    }
+
     if let Ok(user_profile) = env::var("USERPROFILE") {
         return Ok(PathBuf::from(user_profile).join("Documents").join("花笺"));
     }
@@ -261,6 +269,9 @@ impl NoteStore {
         if name.is_empty() {
             return Err(AppError::new("invalidCategory", "分类名不能为空"));
         }
+        if name.contains('/') || name.contains('\\') || name.contains(':') || name.contains("..") {
+            return Err(AppError::new("invalidCategory", "分类名不能包含特殊字符"));
+        }
 
         let path = self.notes_dir()?.join(name);
         fs::create_dir_all(path)?;
@@ -271,6 +282,13 @@ impl NoteStore {
         let new_name = new_name.trim();
         if new_name.is_empty() {
             return Err(AppError::new("invalidCategory", "分类名不能为空"));
+        }
+        if new_name.contains('/')
+            || new_name.contains('\\')
+            || new_name.contains(':')
+            || new_name.contains("..")
+        {
+            return Err(AppError::new("invalidCategory", "分类名不能包含特殊字符"));
         }
 
         let notes_dir = self.notes_dir()?;
@@ -360,6 +378,9 @@ impl NoteStore {
     fn default_config(&self) -> AppConfig {
         AppConfig {
             notes_dir: self.base_dir.join("notes").to_string_lossy().to_string(),
+            #[cfg(target_os = "macos")]
+            global_shortcut: "Option+Space".into(),
+            #[cfg(not(target_os = "macos"))]
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
             autostart: false,

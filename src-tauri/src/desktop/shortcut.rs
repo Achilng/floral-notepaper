@@ -3,7 +3,7 @@ use crate::{
     notes::{AppConfig, AppError},
 };
 use std::error::Error;
-use tauri::AppHandle;
+use tauri::{AppHandle, Emitter};
 
 #[cfg(desktop)]
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
@@ -44,6 +44,7 @@ pub struct ShortcutSpec {
     pub ctrl: bool,
     pub alt: bool,
     pub shift: bool,
+    pub meta: bool,
     pub key: ShortcutKey,
 }
 
@@ -63,17 +64,19 @@ pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
     let mut ctrl = false;
     let mut alt = false;
     let mut shift = false;
+    let mut meta = false;
 
     for modifier in modifier_parts {
         match modifier.to_ascii_lowercase().as_str() {
             "ctrl" | "control" | "cmdorctrl" | "commandorcontrol" => ctrl = true,
             "alt" | "option" => alt = true,
             "shift" => shift = true,
+            "meta" | "cmd" | "command" | "super" => meta = true,
             _ => return None,
         }
     }
 
-    if !ctrl && !alt {
+    if !ctrl && !alt && !meta {
         return None;
     }
 
@@ -83,6 +86,7 @@ pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
         ctrl,
         alt,
         shift,
+        meta,
         key,
     })
 }
@@ -195,10 +199,12 @@ pub(crate) fn register_configured_global_shortcut(app: &AppHandle) {
     };
 
     if let Err(error) = register_global_shortcut(app, &config.global_shortcut) {
-        eprintln!(
+        let message = format!(
             "failed to register global shortcut {}: {error}",
             config.global_shortcut
         );
+        eprintln!("{message}");
+        let _ = app.emit("shortcut-register-failed", &message);
     }
 }
 
@@ -262,6 +268,9 @@ fn to_tauri_shortcut(spec: ShortcutSpec) -> Option<Shortcut> {
     }
     if spec.shift {
         modifiers |= Modifiers::SHIFT;
+    }
+    if spec.meta {
+        modifiers |= Modifiers::META;
     }
 
     let code = shortcut_key_to_code(spec.key)?;

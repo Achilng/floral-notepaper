@@ -101,6 +101,9 @@ fn reads_and_writes_config_json() {
     let store = NoteStore::new(test_root("config"));
 
     let default_config = store.load_config().expect("load default config");
+    #[cfg(target_os = "macos")]
+    assert_eq!(default_config.global_shortcut, "Option+Space");
+    #[cfg(not(target_os = "macos"))]
     assert_eq!(default_config.global_shortcut, "Ctrl+Space");
     assert!(default_config.note_auto_save);
     assert!(default_config.note_surface_auto_save);
@@ -131,6 +134,20 @@ fn reads_and_writes_config_json() {
     let loaded = store.load_config().expect("reload config");
     assert_eq!(loaded, saved);
     assert!(custom_notes_dir.exists());
+}
+
+#[test]
+fn rejects_category_names_with_path_characters() {
+    let store = NoteStore::new(test_root("invalid-category-name"));
+
+    let created = store.create_category("foo/bar").expect_err("reject create category");
+    assert_eq!(created.code, "invalidCategory");
+
+    store.create_category("有效分类").expect("create valid category");
+    let renamed = store
+        .rename_category("有效分类", "..")
+        .expect_err("reject rename category");
+    assert_eq!(renamed.code, "invalidCategory");
 }
 
 #[test]

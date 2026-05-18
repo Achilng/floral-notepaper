@@ -184,6 +184,7 @@ mod tests {
                 ctrl: true,
                 alt: false,
                 shift: false,
+                meta: false,
                 key: shortcut::ShortcutKey::Space,
             })
         );
@@ -193,6 +194,7 @@ mod tests {
                 ctrl: true,
                 alt: false,
                 shift: false,
+                meta: false,
                 key: shortcut::ShortcutKey::Space,
             })
         );
@@ -202,6 +204,7 @@ mod tests {
                 ctrl: false,
                 alt: true,
                 shift: false,
+                meta: false,
                 key: shortcut::ShortcutKey::Space,
             })
         );
@@ -211,6 +214,17 @@ mod tests {
                 ctrl: true,
                 alt: false,
                 shift: true,
+                meta: false,
+                key: shortcut::ShortcutKey::Letter('K'),
+            })
+        );
+        assert_eq!(
+            shortcut::shortcut_from_config("Command+K"),
+            Some(shortcut::ShortcutSpec {
+                ctrl: false,
+                alt: false,
+                shift: false,
+                meta: true,
                 key: shortcut::ShortcutKey::Letter('K'),
             })
         );
@@ -220,6 +234,7 @@ mod tests {
                 ctrl: false,
                 alt: true,
                 shift: false,
+                meta: false,
                 key: shortcut::ShortcutKey::Function(2),
             })
         );
@@ -229,7 +244,18 @@ mod tests {
                 ctrl: true,
                 alt: true,
                 shift: false,
+                meta: false,
                 key: shortcut::ShortcutKey::Digit(3),
+            })
+        );
+        assert_eq!(
+            shortcut::shortcut_from_config("Meta+Shift+P"),
+            Some(shortcut::ShortcutSpec {
+                ctrl: false,
+                alt: false,
+                shift: true,
+                meta: true,
+                key: shortcut::ShortcutKey::Letter('P'),
             })
         );
     }

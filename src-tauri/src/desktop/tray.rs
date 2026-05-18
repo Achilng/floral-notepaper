@@ -122,7 +122,7 @@ pub(crate) fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
         )
         .tooltip("花笺")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| {
             if let Err(error) = handle_tray_menu_event(app, event.id.as_ref()) {
                 eprintln!("failed to handle tray menu event {:?}: {error}", event.id);

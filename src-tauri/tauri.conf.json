@@ -30,7 +30,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "nsis",
+    "targets": ["app", "dmg", "nsis"],
+    "macOS": {
+      "minimumSystemVersion": "15.0"
+    },
     "windows": {
       "nsis": {
         "installMode": "both",
