@@ -32,12 +32,12 @@ jobs:
           macOS 版安装流程请参考视频（Bilibili）：[Mac云课堂 - 在 Mac 上装软件，要学会和苹果斗智斗勇](https://www.bilibili.com/video/BV1tg411t7hN)
           EOF
 
-          if gh release view "$TAG_NAME" >/dev/null 2>&1; then
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --notes-file release-body.md
             echo "created=false" >> "$GITHUB_OUTPUT"
-            gh release edit "$TAG_NAME" --draft --notes-file release-body.md
           else
+            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG_NAME" --notes-file release-body.md --target "$GITHUB_SHA"
             echo "created=true" >> "$GITHUB_OUTPUT"
-            gh release create "$TAG_NAME" --draft --title "$TAG_NAME" --notes-file release-body.md --target "$GITHUB_SHA"
           fi
 
   build-windows:
@@ -96,7 +96,7 @@ jobs:
           if ($files.Count -eq 0) {
             throw "No Windows release assets found."
           }
-          gh release upload $TAG_NAME $files --clobber
+          gh release upload $TAG_NAME $files --clobber --repo $env:GITHUB_REPOSITORY
 
   build-macos-x86_64:
     needs: prepare-release
@@ -151,7 +151,7 @@ jobs:
             echo "No macOS x86_64 release assets found." >&2
             exit 1
           fi
-          gh release upload "$TAG_NAME" "${files[@]}" --clobber
+          gh release upload "$TAG_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
 
   build-macos-aarch64:
     needs: prepare-release
@@ -206,7 +206,7 @@ jobs:
             echo "No macOS aarch64 release assets found." >&2
             exit 1
           fi
-          gh release upload "$TAG_NAME" "${files[@]}" --clobber
+          gh release upload "$TAG_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
 
   cleanup-release:
     needs: [prepare-release, build-windows, build-macos-x86_64, build-macos-aarch64]
@@ -220,4 +220,4 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.event.inputs.version }}
         run: |
-          gh release delete "$TAG_NAME" --cleanup-tag --yes || true
+          gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
