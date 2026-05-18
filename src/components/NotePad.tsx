@@ -132,6 +132,7 @@ export function NotePad({
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
   const [isExiting, setIsExiting] = useState(false);
+  const [tileAlwaysOnTop, setTileAlwaysOnTop] = useState(true);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const isStandby = useRef(
     typeof window !== "undefined" &&
@@ -306,6 +307,7 @@ export function NotePad({
 
     try {
       if (nextMode === "tile") {
+        setTileAlwaysOnTop(true);
         await setCurrentWindowAlwaysOnTop(true);
       }
 
@@ -383,6 +385,17 @@ export function NotePad({
       setErrorMessage(getErrorMessage(error));
     }
   };
+
+  const handleToggleAlwaysOnTop = useCallback(async () => {
+    const next = !tileAlwaysOnTop;
+    setTileAlwaysOnTop(next);
+    try {
+      await setCurrentWindowAlwaysOnTop(next);
+    } catch (error) {
+      setTileAlwaysOnTop(!next);
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, [tileAlwaysOnTop]);
 
   const handleClose = useCallback(() => {
     setIsExiting(true);
@@ -492,6 +505,31 @@ export function NotePad({
           data-note-id={tileNoteId}
           onMouseDown={handleDrag}
         >
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              void handleToggleAlwaysOnTop();
+            }}
+            className={`absolute top-2.5 right-2.5 z-10 w-7 h-7 flex items-center justify-center rounded-md transition-all duration-200 cursor-pointer ${
+              tileAlwaysOnTop
+                ? "text-ink-faint/60 hover:text-ink-faint hover:bg-paper-warm/80"
+                : "text-ink-ghost/40 hover:text-ink-ghost hover:bg-paper-warm/60"
+            }`}
+            title={tileAlwaysOnTop ? "取消置顶" : "窗口置顶"}
+          >
+            <svg
+              width="14"
+              height="14"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+            >
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
+            </svg>
+          </button>
           <SurfaceResizeHandles />
         </Tile>
       ) : (

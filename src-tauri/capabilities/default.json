@@ -19,6 +19,7 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-set-focus",
+    "core:window:allow-set-decorations",
     "dialog:allow-open",
     "dialog:allow-save",
     "opener:default"

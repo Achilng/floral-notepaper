@@ -45,7 +45,7 @@ describe("NotePad surface modes", () => {
     expect(markup).toContain('data-resize-direction="SouthWest"');
     expect(markup).toContain('data-resize-direction="SouthEast"');
     expect(markup).toContain("w-8 h-8");
-    expect(markup).not.toContain("<button");
+    expect(markup.match(/<button/g)).toHaveLength(1);
     expect(markup).toContain("cursor-default");
     expect(markup).not.toContain("cursor-grab");
     expect(markup).not.toContain("cursor-grabbing");

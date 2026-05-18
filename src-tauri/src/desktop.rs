@@ -141,6 +141,47 @@ impl NotepadPool {
     }
 }
 
+/// Remembers the label of the most recently opened notepad window.
+/// Used to position the next notepad relative to its predecessor.
+#[derive(Default)]
+struct LastNotepadLabel {
+    label: Mutex<Option<String>>,
+}
+
+/// Pixels to offset each successive notepad window right and down.
+const CASCADE_OFFSET: f64 = 28.0;
+
+/// Returns bounds for a new notepad window cascaded from the previous one.
+/// When no previous notepad exists (or it was closed), returns `None` and
+/// the OS chooses the default position.
+fn cascade_bounds(app: &AppHandle) -> Option<WindowBounds> {
+    let last_label = app.try_state::<LastNotepadLabel>()?
+        .label
+        .lock()
+        .ok()?
+        .clone()?;
+
+    let window = app.get_webview_window(&last_label)?;
+    let pos = window.outer_position().ok()?;
+    let size = window.outer_size().ok()?;
+    let specs = notepad_window_specs();
+
+    Some(WindowBounds {
+        x: pos.x + CASCADE_OFFSET as i32,
+        y: pos.y + CASCADE_OFFSET as i32,
+        width: size.width.max(specs.width as u32),
+        height: size.height.max(specs.height as u32),
+    })
+}
+
+fn remember_last_notepad(app: &AppHandle, label: &str) {
+    if let Some(state) = app.try_state::<LastNotepadLabel>() {
+        if let Ok(mut last) = state.label.lock() {
+            *last = Some(label.to_string());
+        }
+    }
+}
+
 impl RuntimeState {
     fn allow_exit(&self) {
         self.is_exiting.store(true, Ordering::SeqCst);
@@ -321,6 +362,7 @@ pub fn extract_file_arg(args: &[String]) -> Option<String> {
 pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     app.manage(RuntimeState::default());
     app.manage(NotepadPool::default());
+    app.manage(LastNotepadLabel::default());
     setup_autostart_plugin(app.handle())?;
     setup_global_shortcut_plugin(app.handle())?;
     sync_autostart_to_config(app.handle());
@@ -474,12 +516,18 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
 
 pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        // On Windows, disable native decorations for custom titlebar.
+        // On Linux, keep native decorations (DDE/Dtk style on Deepin).
+        if cfg!(target_os = "windows") {
+            let _ = window.set_decorations(false);
+        }
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
         return Ok(());
     }
 
+    let decorations = !cfg!(target_os = "windows");
     open_or_focus_window(
         app,
         MAIN_WINDOW_LABEL,
@@ -489,9 +537,9 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
         760.0,
         900.0,
         620.0,
+        decorations,
         false,
-        false,
-        true,
+        decorations, // shadow follows decorations
         false,
         None,
     )?;
@@ -503,20 +551,25 @@ fn open_notepad_window_now(
     note_id: Option<&str>,
     bounds: Option<WindowBounds>,
 ) -> Result<String, AppError> {
+    let specs = notepad_window_specs();
+    let effective_bounds = bounds.or_else(|| cascade_bounds(app));
+
     if note_id.is_none() {
-        if let Some(reused) = activate_pooled_notepad(app, bounds) {
+        if let Some(reused) = activate_pooled_notepad(app, effective_bounds) {
+            if bounds.is_none() {
+                remember_last_notepad(app, &reused);
+            }
             return Ok(reused);
         }
     }
 
     let label = notepad_window_label(note_id);
-    let specs = notepad_window_specs();
     let url = match note_id {
         Some(id) => format!("index.html?view=notepad&noteId={id}"),
         None => "index.html?view=notepad".to_string(),
     };
 
-    open_or_focus_window(
+    let result = open_or_focus_window(
         app,
         &label,
         url,
@@ -529,8 +582,14 @@ fn open_notepad_window_now(
         true,
         false,
         true,
-        bounds,
-    )
+        effective_bounds,
+    )?;
+
+    if bounds.is_none() {
+        remember_last_notepad(app, &result);
+    }
+
+    Ok(result)
 }
 
 fn activate_pooled_notepad(

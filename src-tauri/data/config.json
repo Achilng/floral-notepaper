@@ -1,0 +1,14 @@
+{
+  "notesDir": "/home/xduyzy/Documents/floral-notepaper/src-tauri/data/notes",
+  "globalShortcut": "Ctrl+Space",
+  "closeToTray": true,
+  "autostart": false,
+  "defaultViewMode": "split",
+  "noteAutoSave": true,
+  "noteSurfaceAutoSave": true,
+  "tileColor": "#f6f3ec",
+  "tileColorMode": "system",
+  "theme": "system",
+  "fontSize": 14,
+  "surfaceFontSize": 14
+}

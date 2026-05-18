@@ -11,6 +11,13 @@ fn app_name() -> &'static str {
     "花笺"
 }
 
+/// Returns the target OS the app was compiled for.
+/// Used by the frontend to decide whether to render a custom titlebar.
+#[tauri::command]
+fn platform_os() -> &'static str {
+    std::env::consts::OS
+}
+
 #[tauri::command]
 fn notes_list() -> Result<Vec<NoteMetadata>, AppError> {
     default_store()?.list_notes()
@@ -198,6 +205,7 @@ pub fn run() {
         .on_window_event(desktop::handle_window_event)
         .invoke_handler(tauri::generate_handler![
             app_name,
+            platform_os,
             notes_list,
             notes_get,
             notes_create,
