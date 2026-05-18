@@ -60,6 +60,12 @@ interface NoteMenuState {
   noteId: string;
 }
 
+interface CategoryMenuState {
+  x: number;
+  y: number;
+  category: string;
+}
+
 const saveStateLabel: Record<SaveState, string> = {
   idle: "未选择",
   dirty: "未保存",
@@ -267,6 +273,9 @@ export function MainWindow({
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameCategoryValue, setRenameCategoryValue] = useState("");
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
+  const [categoryMenu, setCategoryMenu] = useState<CategoryMenuState | null>(null);
+  const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
+  const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
 
   const selectedNote = useMemo(
@@ -446,18 +455,19 @@ export function MainWindow({
   }, [loadExternalFile]);
 
   useEffect(() => {
-    function closeNoteMenu() {
+    function closeMenus() {
       setNoteMenuClosing(true);
+      setCategoryMenuClosing(true);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") closeNoteMenu();
+      if (event.key === "Escape") closeMenus();
     }
 
-    document.addEventListener("mousedown", closeNoteMenu);
+    document.addEventListener("mousedown", closeMenus);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener("mousedown", closeNoteMenu);
+      document.removeEventListener("mousedown", closeMenus);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
@@ -471,6 +481,16 @@ export function MainWindow({
     }, 150);
     return () => window.clearTimeout(timer);
   }, [noteMenuClosing, noteMenu]);
+
+  useEffect(() => {
+    if (!categoryMenuClosing || !categoryMenu) return;
+    const timer = window.setTimeout(() => {
+      setCategoryMenu(null);
+      setCategoryMenuClosing(false);
+      setCategoryMenuConfirmDelete(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [categoryMenuClosing, categoryMenu]);
 
   const saveCurrentNote = useCallback(async () => {
     if (!selectedId) return null;
@@ -1207,54 +1227,81 @@ export function MainWindow({
 
                 {categoryGroups.map((group: CategoryGroup) => {
                   if (!group.category) {
-                    return group.notes.map((note) => {
-                      const isSelected = note.id === selectedId;
-                      const isHovered = note.id === hoveredId;
-                      return (
-                        <button
-                          key={note.id}
-                          draggable
-                          onDragStart={(e) => e.dataTransfer.setData("text/note-id", note.id)}
-                          onClick={() => void handleSelectNote(note.id)}
-                          onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
-                          onMouseEnter={() => setHoveredId(note.id)}
-                          onMouseLeave={() => setHoveredId(null)}
-                          className={`w-full text-left rounded-xl px-3 py-2.5 transition-all duration-[600ms] cursor-pointer group relative ${
-                            isSelected
-                              ? "bg-bamboo-mist/70"
-                              : isHovered
-                                ? "bg-paper-warm/70"
-                                : "bg-transparent"
-                          }`}
-                        >
-                          <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                            isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                          }`} />
-                          <div className="flex items-baseline justify-between mb-0.5">
-                            <span className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
-                              isSelected ? "text-bamboo" : "text-ink-soft"
-                            }`}>
-                              {getDisplayTitle(note)}
-                            </span>
-                            <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
-                              {formatShortDate(note.updatedAt)}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                            {note.preview || "空白笔记"}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                              {formatTime(note.updatedAt)}
-                            </span>
-                            <span className="text-[10px] text-ink-ghost/40">·</span>
-                            <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                              {note.wordCount} 字
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    });
+                    return (
+                      <div
+                        key="__uncategorized__"
+                        className={`rounded-lg transition-all duration-200 ${
+                          dragOverCategory === ""
+                            ? "bg-bamboo/10 ring-1 ring-bamboo/20"
+                            : ""
+                        }`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          setDragOverCategory("");
+                        }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            setDragOverCategory(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverCategory(null);
+                          const noteId = e.dataTransfer.getData("text/note-id");
+                          if (noteId) void handleMoveNote(noteId, "");
+                        }}
+                      >
+                        {group.notes.map((note) => {
+                          const isSelected = note.id === selectedId;
+                          const isHovered = note.id === hoveredId;
+                          return (
+                            <button
+                              key={note.id}
+                              draggable
+                              onDragStart={(e) => e.dataTransfer.setData("text/note-id", note.id)}
+                              onClick={() => void handleSelectNote(note.id)}
+                              onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
+                              onMouseEnter={() => setHoveredId(note.id)}
+                              onMouseLeave={() => setHoveredId(null)}
+                              className={`w-full text-left rounded-xl px-3 py-2.5 transition-all duration-[600ms] cursor-pointer group relative ${
+                                isSelected
+                                  ? "bg-bamboo-mist/70"
+                                  : isHovered
+                                    ? "bg-paper-warm/70"
+                                    : "bg-transparent"
+                              }`}
+                            >
+                              <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
+                                isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
+                              }`} />
+                              <div className="flex items-baseline justify-between mb-0.5">
+                                <span className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
+                                  isSelected ? "text-bamboo" : "text-ink-soft"
+                                }`}>
+                                  {getDisplayTitle(note)}
+                                </span>
+                                <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
+                                  {formatShortDate(note.updatedAt)}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
+                                {note.preview || "空白笔记"}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
+                                  {formatTime(note.updatedAt)}
+                                </span>
+                                <span className="text-[10px] text-ink-ghost/40">·</span>
+                                <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
+                                  {note.wordCount} 字
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
                   }
 
                   const isCollapsed = collapsedCategories.has(group.category);
@@ -1266,14 +1313,16 @@ export function MainWindow({
                           dragOverCategory === group.category
                             ? "bg-bamboo/15 border border-bamboo/40 ring-1 ring-bamboo/20"
                             : isCollapsed
-                              ? "bg-bamboo/8 border border-bamboo/15"
-                              : "bg-bamboo/5 border border-bamboo/10 rounded-b-none"
+                              ? "bg-transparent border border-bamboo/15"
+                              : "bg-bamboo/8 border border-bamboo/15 rounded-b-none"
                         }`}
                         onClick={() => toggleCategoryCollapse(group.category)}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          setRenamingCategory(group.category);
-                          setRenameCategoryValue(group.category);
+                          e.stopPropagation();
+                          setCategoryMenu({ x: e.clientX, y: e.clientY, category: group.category });
+                          setCategoryMenuClosing(false);
+                          setCategoryMenuConfirmDelete(false);
                         }}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -1337,26 +1386,30 @@ export function MainWindow({
                         <span className="text-[9px] text-bamboo/40 font-mono ml-auto shrink-0">
                           {group.notes.length}
                         </span>
-                        {!renamingCategory && (
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (window.confirm(`删除分类「${group.category}」？\n其中的笔记将移至"未分类"。`)) {
-                                void handleDeleteCategory(group.category);
-                              }
-                            }}
-                            className="opacity-0 group-hover/cat:opacity-100 text-ink-ghost hover:text-red-400 transition-all p-0.5 shrink-0"
-                            title="删除分类"
-                          >
-                            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-                              <path d="M18 6L6 18M6 6l12 12" />
-                            </svg>
-                          </button>
-                        )}
                       </div>
 
-                      {!isCollapsed && (
-                        <div className="bg-bamboo/[0.03] border border-t-0 border-bamboo/10 rounded-b-lg pb-1 pt-1">
+                      <div
+                        className={`category-body ${isCollapsed ? "" : "expanded"}`}
+                      >
+                        <div
+                          className="category-body-inner bg-bamboo/[0.03] border border-t-0 border-bamboo/10 rounded-b-lg pb-1 pt-1"
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = "move";
+                            setDragOverCategory(group.category);
+                          }}
+                          onDragLeave={(e) => {
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              setDragOverCategory(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOverCategory(null);
+                            const noteId = e.dataTransfer.getData("text/note-id");
+                            if (noteId) void handleMoveNote(noteId, group.category);
+                          }}
+                        >
                           {group.notes.length === 0 ? (
                             <div className="px-3 py-3 text-center text-[11px] text-ink-ghost/50">
                               空文件夹
@@ -1417,7 +1470,7 @@ export function MainWindow({
                             );
                           })}
                         </div>
-                      )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1784,6 +1837,56 @@ export function MainWindow({
                   {cat}
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {categoryMenu && (
+        <div
+          className={`fixed z-[9999] min-w-[140px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${categoryMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
+          style={{ left: categoryMenu.x, top: categoryMenu.y }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {categoryMenuConfirmDelete ? (
+            <div className="animate-menu-slide-left">
+              <div className="px-3 py-1.5 text-[11px] font-body text-ink-faint border-b border-paper-deep/20">
+                确认删除「{categoryMenu.category}」？
+              </div>
+              <button
+                onClick={() => {
+                  void handleDeleteCategory(categoryMenu.category);
+                  setCategoryMenuClosing(true);
+                }}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer"
+              >
+                确认删除
+              </button>
+              <button
+                onClick={() => setCategoryMenuConfirmDelete(false)}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <div className="animate-menu-slide-right">
+              <button
+                onClick={() => {
+                  setCategoryMenuClosing(true);
+                  setRenamingCategory(categoryMenu.category);
+                  setRenameCategoryValue(categoryMenu.category);
+                }}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
+              >
+                重命名
+              </button>
+              <button
+                onClick={() => setCategoryMenuConfirmDelete(true)}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer border-t border-paper-deep/20"
+              >
+                删除分类
+              </button>
             </div>
           )}
         </div>
