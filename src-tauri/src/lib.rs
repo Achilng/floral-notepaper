@@ -144,6 +144,108 @@ fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError>
 }
 
 #[tauri::command]
+fn get_system_fonts() -> Result<Vec<String>, AppError> {
+    use std::collections::HashSet;
+    
+    #[cfg(target_os = "windows")]
+    {
+        // 在Windows上获取系统字体
+        let mut fonts = HashSet::new();
+        
+        // 获取Windows字体目录
+        let win_dir = std::env::var("WINDIR").unwrap_or_else(|_| "C:\\Windows".to_string());
+        let font_dir = std::path::Path::new(&win_dir).join("Fonts");
+        
+        if let Ok(entries) = std::fs::read_dir(&font_dir) {
+            for entry in entries.flatten() {
+                if let Some(filename) = entry.file_name().to_str() {
+                    if filename.to_lowercase().ends_with(".ttf") || 
+                       filename.to_lowercase().ends_with(".otf") ||
+                       filename.to_lowercase().ends_with(".ttc") {
+                        // 从字体文件名提取字体名称
+                        let clean_name = extract_font_name_from_filename(filename);
+                        if !clean_name.is_empty() {
+                            fonts.insert(clean_name);
+                        }
+                    }
+                }
+            }
+        }
+        
+        // 添加常见的系统字体
+        fonts.extend(vec![
+            "Arial".to_string(),
+            "Times New Roman".to_string(),
+            "Courier New".to_string(),
+            "Microsoft YaHei".to_string(),
+            "SimSun".to_string(),
+            "SimHei".to_string(),
+            "KaiTi".to_string(),
+            "FangSong".to_string(),
+            "Segoe UI".to_string(),
+            "Consolas".to_string(),
+            "Calibri".to_string(),
+            "Cambria".to_string(),
+            "Georgia".to_string(),
+            "Verdana".to_string(),
+            "Tahoma".to_string(),
+        ]);
+        
+        let mut fonts_vec: Vec<String> = fonts.into_iter().collect();
+        fonts_vec.sort();
+        Ok(fonts_vec)
+    }
+    
+    #[cfg(not(target_os = "windows"))]
+    {
+        // 对于非Windows系统，返回一些常见字体
+        let common_fonts = vec![
+            "Arial".to_string(),
+            "Times New Roman".to_string(),
+            "Courier New".to_string(),
+            "Helvetica".to_string(),
+            "Georgia".to_string(),
+            "Verdana".to_string(),
+            "Tahoma".to_string(),
+            "Palatino".to_string(),
+            "Garamond".to_string(),
+            "Comic Sans MS".to_string(),
+            "Trebuchet MS".to_string(),
+            "Arial Black".to_string(),
+            "Impact".to_string(),
+        ];
+        Ok(common_fonts)
+    }
+}
+
+// 辅助函数：从字体文件名提取字体名称
+fn extract_font_name_from_filename(filename: &str) -> String {
+    let lower_filename = filename.to_lowercase();
+    
+    // 常见字体后缀映射
+    let suffixes = ["bold", "italic", "regular", "light", "medium", "thin", "extra", "semibold", "demibold"];
+    
+    let base_name = if let Some(dot_pos) = lower_filename.rfind('.') {
+        &filename[..dot_pos]
+    } else {
+        filename
+    };
+    
+    // 移除常见的样式后缀
+    let mut clean_name = base_name.replace(['-', '_'], " ");
+    
+    for suffix in &suffixes {
+        if clean_name.to_lowercase().ends_with(suffix) {
+            let end_pos = clean_name.len() - suffix.len();
+            clean_name = clean_name[..end_pos].trim_end().to_string();
+            break;
+        }
+    }
+    
+    clean_name.trim().to_string()
+}
+
+#[tauri::command]
 async fn open_notepad_window(
     app: AppHandle,
     note_id: Option<String>,
@@ -215,6 +317,7 @@ pub fn run() {
             categories_delete,
             config_get,
             config_save,
+            get_system_fonts,
             open_notepad_window,
             recycle_notepad_window,
             open_tile_window,

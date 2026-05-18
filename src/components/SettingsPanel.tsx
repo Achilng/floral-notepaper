@@ -11,7 +11,19 @@ import {
   normalizeTileColor,
 } from "../features/settings/tileColor";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
+import { getSystemFonts } from "../features/settings/api";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
+
+// 安全转义CSS字符串 - 纯函数，组件外部定义
+function escapeCssString(str: string): string {
+  return str
+    .replace(/\\/g, '\\\\')  // 转义反斜杠
+    .replace(/"/g, '\\"')    // 转义双引号
+    .replace(/'/g, "\\'")    // 转义单引号
+    .replace(/\n/g, '\\n')   // 转义换行符
+    .replace(/\r/g, '\\r')   // 转义回车符
+    .replace(/\t/g, '\\t');   // 转义制表符
+}
 
 const tileColorModes: Array<{ value: TileColorMode; label: string }> = [
   { value: "system", label: "跟随主题" },
@@ -43,6 +55,115 @@ export function SettingsPanel({
   onChooseNotesDir,
   onClose,
 }: SettingsPanelProps) {
+  const [systemFonts, setSystemFonts] = useState<string[]>([]);
+  
+  useEffect(() => {
+    // 加载系统字体
+    getSystemFonts()
+      .then((fonts) => {
+        // 中文字体关键词
+        const chineseFontKeywords = [
+          "雅黑", "微软", "宋体", "黑体", "楷体", "仿宋", "新宋体",
+          "宋", "黑", "楷", "仿", "体",
+          "Heiti", "Songti", "Kaiti", "Fangsong",
+          "PingFang", "Hiragino", "Noto",
+          "WenQuanYi", "Source Han", "思源",
+          "SimSun", "SimHei", "Microsoft YaHei", "KaiTi", "FangSong",
+          "MingLiU", "PMingLiU", "DFHei", "STHeiti",
+          "STSong", "STKaiti", "STFangsong"
+        ];
+        
+        const isChineseFont = (fontName: string) => {
+          const lowerName = fontName.toLowerCase();
+          return chineseFontKeywords.some(keyword => 
+            lowerName.includes(keyword.toLowerCase())
+          );
+        };
+        
+        // 将字体分为中文字体和其他字体
+        const chineseFonts = fonts.filter(isChineseFont);
+        const otherFonts = fonts.filter(font => !isChineseFont(font));
+        
+        // 分别排序
+        chineseFonts.sort((a, b) => a.localeCompare(b, 'zh-CN'));
+        otherFonts.sort((a, b) => a.localeCompare(b, 'en-US'));
+        
+        // 中文字体放在前面，然后是其他字体
+        setSystemFonts([...chineseFonts, ...otherFonts]);
+      })
+      .catch((error) => {
+        console.error("Failed to load system fonts:", error);
+        // 如果加载失败，至少提供一些常用字体
+        setSystemFonts([
+          "Microsoft YaHei",
+          "SimSun",
+          "Microsoft YaHei UI",
+          "SimHei",
+          "KaiTi",
+          "FangSong",
+          "Arial",
+          "Times New Roman", 
+          "Courier New",
+          "Segoe UI",
+          "Consolas",
+          "Georgia",
+          "Verdana",
+          "Tahoma"
+        ]);
+      });
+  }, []);
+
+  // 监听字体变化，更新预览字体样式和下拉选项字体
+  useEffect(() => {
+    // 创建或更新预览字体的样式
+    let styleEl = document.getElementById('font-preview-style');
+    if (!styleEl) {
+      styleEl = document.createElement('style');
+      styleEl.id = 'font-preview-style';
+      document.head.appendChild(styleEl);
+    }
+    
+    // 构建CSS规则：预览文本 + 下拉选项字体
+    let cssRules = '';
+    
+    // 预览文本使用当前选中的字体
+    if (config.appFont) {
+      const escapedPreviewFont = escapeCssString(config.appFont);
+      cssRules += `
+        .font-preview-text {
+          font-family: "${escapedPreviewFont}", system-ui, -apple-system, sans-serif;
+        }
+      `;
+    }
+    
+    // 所有字体选项使用自己的字体显示（限制最多100个以优化性能）
+    if (Array.isArray(systemFonts) && systemFonts.length > 0) {
+      const fontsToProcess = systemFonts.slice(0, 100); // 限制处理数量
+      fontsToProcess.forEach(font => {
+        try {
+          const escapedFont = escapeCssString(font);
+          const escapedDataAttr = font.replace(/"/g, '\\"');
+          cssRules += `
+            select option[data-font="${escapedDataAttr}"] {
+              font-family: "${escapedFont}", system-ui, -apple-system, sans-serif;
+            }
+          `;
+        } catch (error) {
+          // 跳过无效的字体名称
+          console.warn(`Skipping invalid font: ${font}`, error);
+        }
+      });
+    }
+    
+    styleEl.textContent = cssRules;
+    
+    return () => {
+      if (styleEl) {
+        styleEl.textContent = '';
+      }
+    };
+  }, [config.appFont, systemFonts]);
+
   const setConfigValue = <Key extends keyof AppConfig>(
     key: Key,
     value: AppConfig[Key],
@@ -79,6 +200,34 @@ export function SettingsPanel({
       <div className="flex-1 overflow-y-auto scrollbar-hidden px-4 py-4 space-y-5">
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
+            应用字体
+          </label>
+          <select
+            value={config.appFont || ""}
+            onChange={(event) => setConfigValue("appFont", event.target.value)}
+            aria-label="应用字体选择"
+            className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[11px] text-ink-soft cursor-pointer"
+          >
+            <option value="">系统默认</option>
+            {Array.isArray(systemFonts) && systemFonts.map((font) => (
+              <option key={font} value={font} data-font={font}>
+                {font}
+              </option>
+            ))}
+          </select>
+          {config.appFont && (
+            <div className="mt-3 p-4 rounded-lg bg-paper-warm/50 border border-paper-deep/30">
+              <div className="text-[10px] text-ink-ghost mb-2">预览：</div>
+              <div className="text-[16px] leading-relaxed font-preview-text">
+                <div className="mb-1">滚滚长江东逝水</div>
+                <div className="text-[14px]">The quick brown fox jumps over the lazy dog</div>
+              </div>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
             主题
           </label>
           <SlidingButtonGroup
@@ -101,6 +250,7 @@ export function SettingsPanel({
               type="text"
               value={config.notesDir}
               readOnly
+              aria-label="笔记目录路径"
               className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[11px] font-mono text-ink-faint truncate"
             />
             <button
@@ -169,6 +319,7 @@ export function SettingsPanel({
               onChange={(event) =>
                 setConfigValue("fontSize", Number(event.target.value))
               }
+              aria-label="编辑器字号"
               className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
             />
             <span className="text-[12px] font-mono text-ink-soft tabular-nums w-8 text-right">
@@ -191,6 +342,7 @@ export function SettingsPanel({
               onChange={(event) =>
                 setConfigValue("surfaceFontSize", Number(event.target.value))
               }
+              aria-label="小窗磁贴字号"
               className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
             />
             <span className="text-[12px] font-mono text-ink-soft tabular-nums w-8 text-right">
@@ -216,6 +368,7 @@ export function SettingsPanel({
                 onChange={(event) =>
                   setConfigValue("tileColor", event.target.value)
                 }
+                aria-label="磁贴颜色选择"
                 className="w-10 h-8 rounded-lg border border-paper-deep/40 bg-paper-warm/70 cursor-pointer"
               />
               <input
@@ -225,6 +378,7 @@ export function SettingsPanel({
                   setConfigValue("tileColor", event.target.value)
                 }
                 placeholder="#f6f3ec"
+                aria-label="磁贴颜色值"
                 spellCheck={false}
                 className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
               />
@@ -269,6 +423,7 @@ function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
         type="checkbox"
         checked={checked}
         onChange={(event) => onChange(event.target.checked)}
+        aria-label={label}
         className="sr-only"
       />
       <div
@@ -277,12 +432,9 @@ function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
         }`}
       >
         <div
-          className="absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.15)]"
-          style={{
-            transform: `translateX(${checked ? 14 : 0}px)`,
-            transition: "transform 250ms cubic-bezier(0.22, 1, 0.36, 1)",
-            willChange: "transform",
-          }}
+          className={`absolute top-[2px] left-[2px] w-[14px] h-[14px] rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.15)] transition-transform duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+            checked ? "translate-x-[12px]" : "translate-x-0"
+          }`}
         />
       </div>
     </label>

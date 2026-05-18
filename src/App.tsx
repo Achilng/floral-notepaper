@@ -5,7 +5,7 @@ import { MainWindow } from "./components/MainWindow";
 import { NotePad } from "./components/NotePad";
 import { TileShowcase } from "./components/TileShowcase";
 import { getConfig } from "./features/settings/api";
-import { applyTheme, watchSystemTheme } from "./features/settings/theme";
+import { applyAppConfig, watchSystemTheme } from "./features/settings/theme";
 import type { AppConfig, ThemeOption } from "./features/settings/types";
 import { getInitialRoute } from "./features/windows/windowRoutes";
 import { listen } from "@tauri-apps/api/event";
@@ -18,9 +18,8 @@ function App() {
     let cleanup = () => {};
     getConfig()
       .then((config) => {
-        const theme = (config.theme || "system") as ThemeOption;
-        applyTheme(theme);
-        cleanup = watchSystemTheme(theme);
+        applyAppConfig(config);
+        cleanup = watchSystemTheme(config.theme as ThemeOption);
       })
       .catch(() => {});
     return () => cleanup();
@@ -28,9 +27,8 @@ function App() {
 
   useEffect(() => {
     const unlisten = listen<AppConfig>("config-changed", (event) => {
-      const theme = (event.payload.theme || "system") as ThemeOption;
-      applyTheme(theme);
-      watchSystemTheme(theme);
+      applyAppConfig(event.payload);
+      watchSystemTheme(event.payload.theme as ThemeOption);
     });
     return () => {
       void unlisten.then((fn) => fn());

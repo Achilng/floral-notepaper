@@ -1,4 +1,4 @@
-import type { ThemeOption } from "./types";
+import type { AppConfig, ThemeOption } from "./types";
 
 function resolveTheme(option: ThemeOption): "light" | "dark" {
   if (option === "system") {
@@ -14,6 +14,20 @@ export function applyTheme(option: ThemeOption): void {
   root.classList.add("theme-transition");
   root.setAttribute("data-theme", resolveTheme(option));
   setTimeout(() => root.classList.remove("theme-transition"), 400);
+}
+
+export function applyFont(fontName: string): void {
+  const root = document.documentElement;
+  
+  if (fontName && fontName.trim() !== "") {
+    // 设置自定义字体
+    root.style.setProperty('--font-body', `"${fontName}", system-ui, sans-serif`);
+    root.style.setProperty('--font-display', `"${fontName}", Georgia, serif`);
+  } else {
+    // 使用默认字体
+    root.style.setProperty('--font-body', '"Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif');
+    root.style.setProperty('--font-display', '"Noto Serif SC", "Source Han Serif SC", Georgia, serif');
+  }
 }
 
 let systemListener: (() => void) | null = null;
@@ -36,4 +50,9 @@ export function watchSystemTheme(option: ThemeOption): () => void {
   };
   systemListener = cleanup;
   return cleanup;
+}
+
+export function applyAppConfig(config: AppConfig): void {
+  applyTheme(config.theme as ThemeOption);
+  applyFont(config.appFont || "");
 }

@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub surface_font_size: u32,
     #[serde(default = "default_external_file_auto_save")]
     pub external_file_auto_save: bool,
+    #[serde(default = "default_app_font")]
+    pub app_font: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -454,6 +456,7 @@ impl NoteStore {
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
             external_file_auto_save: default_external_file_auto_save(),
+            app_font: default_app_font(),
         }
     }
 
@@ -723,6 +726,10 @@ fn default_surface_font_size() -> u32 {
 
 fn default_external_file_auto_save() -> bool {
     true
+}
+
+fn default_app_font() -> String {
+    "".into()  // Empty string means using system default
 }
 
 #[cfg(test)]

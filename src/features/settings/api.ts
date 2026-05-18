@@ -10,6 +10,10 @@ export function saveConfig(config: AppConfig): Promise<AppConfig> {
   return invoke("config_save", { config });
 }
 
+export function getSystemFonts(): Promise<string[]> {
+  return invoke("get_system_fonts");
+}
+
 export async function chooseNotesDirectory(): Promise<string | null> {
   const path = await open({
     directory: true,
