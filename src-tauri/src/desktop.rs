@@ -409,12 +409,18 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
 
 pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        // On Windows, disable native decorations for custom titlebar.
+        // On Linux, keep native decorations (DDE/Dtk style on Deepin).
+        if cfg!(target_os = "windows") {
+            let _ = window.set_decorations(false);
+        }
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
         return Ok(());
     }
 
+    let decorations = !cfg!(target_os = "windows");
     open_or_focus_window(
         app,
         MAIN_WINDOW_LABEL,
@@ -424,9 +430,9 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
         760.0,
         900.0,
         620.0,
+        decorations,
         false,
-        false,
-        true,
+        decorations, // shadow follows decorations
         false,
         None,
     )?;

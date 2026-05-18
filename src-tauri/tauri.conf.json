@@ -1,12 +1,12 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "花笺",
+  "productName": "floral-notepaper",
   "version": "1.0.2",
   "identifier": "com.floral-notepaper.app",
   "build": {
-    "beforeDevCommand": "npm.cmd run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm.cmd run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -18,7 +18,6 @@
         "height": 760,
         "minWidth": 900,
         "minHeight": 620,
-        "decorations": false,
         "visible": false,
         "dragDropEnabled": false
       }
@@ -29,7 +28,16 @@
   },
   "bundle": {
     "active": true,
-    "targets": "nsis",
+    "targets": ["deb", "appimage"],
+    "linux": {
+      "deb": {
+        "depends": [
+          "libwebkit2gtk-4.1-0",
+          "libgtk-3-0",
+          "libayatana-appindicator3-1"
+        ]
+      }
+    },
     "windows": {
       "nsis": {
         "installMode": "both",
@@ -50,6 +58,7 @@
       "icons/32x32.png",
       "icons/128x128.png",
       "icons/128x128@2x.png",
+      "icons/icon.png",
       "icons/icon.icns",
       "icons/icon.ico"
     ]
