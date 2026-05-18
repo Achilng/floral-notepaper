@@ -19,6 +19,10 @@ jobs:
     outputs:
       created: ${{ steps.release.outputs.created }}
     steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
       - name: Create or update draft release
         id: release
         env:
@@ -32,11 +36,18 @@ jobs:
           macOS 版安装流程请参考视频（Bilibili）：[Mac云课堂 - 在 Mac 上装软件，要学会和苹果斗智斗勇](https://www.bilibili.com/video/BV1tg411t7hN)
           EOF
 
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          empty_ref=""
+          git tag -f "$TAG_NAME" "$GITHUB_SHA"
+          git push origin "${empty_ref}:refs/tags/$TAG_NAME" || true
+          git push origin "refs/tags/$TAG_NAME"
+
           if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --notes-file release-body.md
             echo "created=false" >> "$GITHUB_OUTPUT"
           else
-            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG_NAME" --notes-file release-body.md --target "$GITHUB_SHA"
+            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG_NAME" --notes-file release-body.md --verify-tag
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -202,14 +213,14 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.event.inputs.version }}
         run: |
-          $ver = "$TAG_NAME" -replace '^v', ''
+          $ver = $env:TAG_NAME -replace '^v', ''
           $files = @()
           $files += Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -File -Recurse | ForEach-Object { $_.FullName }
           $files += (Resolve-Path "floral-notepaper_$ver.exe").Path
           if ($files.Count -eq 0) {
             throw "No Windows release assets found."
           }
-          gh release upload $TAG_NAME $files --clobber --repo $env:GITHUB_REPOSITORY
+          gh release upload $env:TAG_NAME $files --clobber --repo $env:GITHUB_REPOSITORY
 
   build-macos-x86_64:
     needs: prepare-release
