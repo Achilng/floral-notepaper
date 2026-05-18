@@ -23,3 +23,7 @@ export function openTileWindow(
 ): Promise<string> {
   return invoke("open_tile_window", { noteId, bounds: bounds ?? null });
 }
+
+export function openNoteInEditor(noteId: string): Promise<void> {
+  return invoke("open_note_in_editor", { noteId });
+}

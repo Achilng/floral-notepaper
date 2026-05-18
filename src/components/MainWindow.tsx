@@ -455,6 +455,15 @@ export function MainWindow({
   }, [loadExternalFile]);
 
   useEffect(() => {
+    const unlisten = listen<string>("open-note", (event) => {
+      void loadNote(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [loadNote]);
+
+  useEffect(() => {
     function closeMenus() {
       setNoteMenuClosing(true);
       setCategoryMenuClosing(true);
