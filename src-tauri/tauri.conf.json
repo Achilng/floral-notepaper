@@ -4,12 +4,13 @@
   "version": "1.0.2",
   "identifier": "com.floral-notepaper.app",
   "build": {
-    "beforeDevCommand": "npm.cmd run dev",
+    "beforeDevCommand": "pnpm run dev",
+    "beforeBuildCommand": "pnpm run build",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm.cmd run build",
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
