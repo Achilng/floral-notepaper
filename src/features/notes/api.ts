@@ -49,6 +49,10 @@ export function saveExternalFile(path: string, content: string): Promise<void> {
   return invoke("save_external_file", { path, content });
 }
 
+export function getFileModifiedTime(path: string): Promise<number> {
+  return invoke("get_file_modified_time", { path });
+}
+
 export function getErrorMessage(error: unknown): string {
   if (typeof error === "string") return error;
   if (error && typeof error === "object" && "message" in error) {

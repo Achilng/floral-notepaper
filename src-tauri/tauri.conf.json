@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -28,7 +29,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "deb", "appimage"],
+    "targets": ["app", "dmg", "nsis", "deb", "appimage"],
     "linux": {
       "deb": {
         "depends": [
@@ -37,6 +38,9 @@
           "libayatana-appindicator3-1"
         ]
       }
+    },
+    "macOS": {
+      "minimumSystemVersion": "15.0"
     },
     "windows": {
       "nsis": {

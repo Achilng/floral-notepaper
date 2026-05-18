@@ -45,14 +45,24 @@ pub struct TrayMenuSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShortcutModifier {
-    Control,
-    Alt,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShortcutKey {
+    Letter(char),
+    Digit(u8),
+    Function(u8),
     Space,
+    Tab,
+    Enter,
+    Backspace,
+    Delete,
+    Escape,
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    Home,
+    End,
+    PageUp,
+    PageDown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,7 +73,10 @@ pub struct RuntimeConfigChanges {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShortcutSpec {
-    pub modifier: ShortcutModifier,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
+    pub meta: bool,
     pub key: ShortcutKey,
 }
 
@@ -110,6 +123,17 @@ struct WindowSizeSpec {
     height: f64,
     min_width: f64,
     min_height: f64,
+}
+
+struct WindowOpenOptions {
+    url: String,
+    title: String,
+    specs: WindowSizeSpec,
+    decorations: bool,
+    always_on_top: bool,
+    shadow: bool,
+    skip_taskbar: bool,
+    bounds: Option<WindowBounds>,
 }
 
 #[derive(Default)]
@@ -240,26 +264,82 @@ pub fn tray_menu_specs(close_to_tray: bool, autostart: bool) -> Vec<TrayMenuSpec
 pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
     let parts: Vec<_> = value
         .split('+')
-        .map(|part| part.trim().to_ascii_lowercase())
+        .map(|part| part.trim())
         .filter(|part| !part.is_empty())
         .collect();
 
-    if parts.len() != 2 {
+    if parts.len() < 2 {
         return None;
     }
 
-    let modifier = match parts[0].as_str() {
-        "ctrl" | "control" | "cmdorctrl" | "commandorcontrol" => ShortcutModifier::Control,
-        "alt" | "option" => ShortcutModifier::Alt,
-        _ => return None,
-    };
+    let (modifier_parts, key_part) = parts.split_at(parts.len() - 1);
 
-    let key = match parts[1].as_str() {
-        "space" => ShortcutKey::Space,
-        _ => return None,
-    };
+    let mut ctrl = false;
+    let mut alt = false;
+    let mut shift = false;
+    let mut meta = false;
 
-    Some(ShortcutSpec { modifier, key })
+    for m in modifier_parts {
+        match m.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" | "cmdorctrl" | "commandorcontrol" => ctrl = true,
+            "alt" | "option" => alt = true,
+            "shift" => shift = true,
+            "meta" | "cmd" | "command" | "super" => meta = true,
+            _ => return None,
+        }
+    }
+
+    if !ctrl && !alt && !meta {
+        return None;
+    }
+
+    let key = parse_shortcut_key(key_part[0])?;
+
+    Some(ShortcutSpec {
+        ctrl,
+        alt,
+        shift,
+        meta,
+        key,
+    })
+}
+
+fn parse_shortcut_key(key: &str) -> Option<ShortcutKey> {
+    if key.len() == 1 {
+        let c = key.chars().next()?;
+        if c.is_ascii_alphabetic() {
+            return Some(ShortcutKey::Letter(c.to_ascii_uppercase()));
+        }
+        if c.is_ascii_digit() {
+            return Some(ShortcutKey::Digit(c.to_digit(10)? as u8));
+        }
+    }
+
+    if let Some(rest) = key.strip_prefix('F').or_else(|| key.strip_prefix('f')) {
+        if let Ok(num) = rest.parse::<u8>() {
+            if (1..=12).contains(&num) {
+                return Some(ShortcutKey::Function(num));
+            }
+        }
+    }
+
+    match key.to_ascii_lowercase().as_str() {
+        "space" => Some(ShortcutKey::Space),
+        "tab" => Some(ShortcutKey::Tab),
+        "enter" => Some(ShortcutKey::Enter),
+        "backspace" => Some(ShortcutKey::Backspace),
+        "delete" => Some(ShortcutKey::Delete),
+        "escape" => Some(ShortcutKey::Escape),
+        "arrowup" => Some(ShortcutKey::ArrowUp),
+        "arrowdown" => Some(ShortcutKey::ArrowDown),
+        "arrowleft" => Some(ShortcutKey::ArrowLeft),
+        "arrowright" => Some(ShortcutKey::ArrowRight),
+        "home" => Some(ShortcutKey::Home),
+        "end" => Some(ShortcutKey::End),
+        "pageup" => Some(ShortcutKey::PageUp),
+        "pagedown" => Some(ShortcutKey::PageDown),
+        _ => None,
+    }
 }
 
 pub fn runtime_config_changes(previous: &AppConfig, next: &AppConfig) -> RuntimeConfigChanges {
@@ -304,10 +384,12 @@ pub async fn open_tile_window(
 }
 
 pub fn extract_file_arg(args: &[String]) -> Option<String> {
-    args.iter().find(|arg| {
-        let lower = arg.to_lowercase();
-        lower.ends_with(".md") || lower.ends_with(".markdown")
-    }).cloned()
+    args.iter()
+        .find(|arg| {
+            let lower = arg.to_lowercase();
+            lower.ends_with(".md") || lower.ends_with(".markdown")
+        })
+        .cloned()
 }
 
 pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
@@ -419,7 +501,7 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
         )
         .tooltip("花笺")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| {
             if let Err(error) = handle_tray_menu_event(app, event.id.as_ref()) {
                 eprintln!("failed to handle tray menu event {:?}: {error}", event.id);
@@ -480,17 +562,21 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     open_or_focus_window(
         app,
         MAIN_WINDOW_LABEL,
-        "index.html".to_string(),
-        "花笺",
-        1180.0,
-        760.0,
-        900.0,
-        620.0,
-        decorations,
-        false,
-        decorations, // shadow follows decorations
-        false,
-        None,
+        WindowOpenOptions {
+            url: "index.html".to_string(),
+            title: "花笺".to_string(),
+            specs: WindowSizeSpec {
+                width: 1180.0,
+                height: 760.0,
+                min_width: 900.0,
+                min_height: 620.0,
+            },
+            decorations,
+            always_on_top: false,
+            shadow: decorations,
+            skip_taskbar: false,
+            bounds: None,
+        },
     )?;
     Ok(())
 }
@@ -588,17 +674,16 @@ fn open_notepad_window_now(
     let result = open_or_focus_window(
         app,
         &label,
-        url,
-        "花笺便签",
-        specs.width,
-        specs.height,
-        specs.min_width,
-        specs.min_height,
-        false,
-        true,
-        false,
-        true,
-        effective_bounds,
+        WindowOpenOptions {
+            url,
+            title: "花笺便签".to_string(),
+            specs,
+            decorations: false,
+            always_on_top: true,
+            shadow: false,
+            skip_taskbar: true,
+            bounds: effective_bounds,
+        },
     )?;
 
     if bounds.is_none() {
@@ -608,10 +693,7 @@ fn open_notepad_window_now(
     Ok(result)
 }
 
-fn activate_pooled_notepad(
-    app: &AppHandle,
-    bounds: Option<WindowBounds>,
-) -> Option<String> {
+fn activate_pooled_notepad(app: &AppHandle, bounds: Option<WindowBounds>) -> Option<String> {
     let pool = app.try_state::<NotepadPool>()?;
     let label = pool.take()?;
     let window = app.get_webview_window(&label)?;
@@ -668,12 +750,10 @@ fn schedule_notepad_replenish(app: &AppHandle, delay_ms: u64) {
 }
 
 fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
-    let pool = app
-        .try_state::<NotepadPool>()
-        .ok_or_else(|| AppError {
-            code: "noPool".into(),
-            message: "notepad pool not initialized".into(),
-        })?;
+    let pool = app.try_state::<NotepadPool>().ok_or_else(|| AppError {
+        code: "noPool".into(),
+        message: "notepad pool not initialized".into(),
+    })?;
 
     if !pool.is_below_capacity() {
         return Ok(());
@@ -728,59 +808,48 @@ fn open_tile_window_now(
     open_or_focus_window(
         app,
         &label,
-        url,
-        "花笺磁贴",
-        specs.width,
-        specs.height,
-        specs.min_width,
-        specs.min_height,
-        false,
-        true,
-        false,
-        true,
-        bounds,
+        WindowOpenOptions {
+            url,
+            title: "花笺磁贴".to_string(),
+            specs,
+            decorations: false,
+            always_on_top: true,
+            shadow: false,
+            skip_taskbar: true,
+            bounds,
+        },
     )
 }
 
 fn open_or_focus_window(
     app: &AppHandle,
     label: &str,
-    url: String,
-    title: &str,
-    width: f64,
-    height: f64,
-    min_width: f64,
-    min_height: f64,
-    decorations: bool,
-    always_on_top: bool,
-    shadow: bool,
-    skip_taskbar: bool,
-    bounds: Option<WindowBounds>,
+    opts: WindowOpenOptions,
 ) -> Result<String, AppError> {
     let visual_options = dynamic_window_visual_options(label);
 
     if let Some(window) = app.get_webview_window(label) {
-        apply_window_bounds(&window, bounds)?;
-        window.set_shadow(shadow)?;
+        apply_window_bounds(&window, opts.bounds)?;
+        window.set_shadow(opts.shadow)?;
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
         return Ok(label.to_string());
     }
 
-    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
-        .title(title)
-        .inner_size(width, height)
-        .min_inner_size(min_width, min_height)
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(opts.url.into()))
+        .title(opts.title)
+        .inner_size(opts.specs.width, opts.specs.height)
+        .min_inner_size(opts.specs.min_width, opts.specs.min_height)
         .resizable(true)
-        .decorations(decorations)
+        .decorations(opts.decorations)
         .transparent(visual_options.transparent)
-        .always_on_top(always_on_top)
-        .shadow(shadow)
-        .skip_taskbar(skip_taskbar)
+        .always_on_top(opts.always_on_top)
+        .shadow(opts.shadow)
+        .skip_taskbar(opts.skip_taskbar)
         .visible(false);
 
-    if let Some(bounds) = bounds {
+    if let Some(bounds) = opts.bounds {
         builder = builder
             .position(bounds.x as f64, bounds.y as f64)
             .inner_size(bounds.width as f64, bounds.height as f64);
@@ -904,10 +973,12 @@ fn register_configured_global_shortcut(app: &AppHandle) {
     };
 
     if let Err(error) = register_global_shortcut(app, &config.global_shortcut) {
-        eprintln!(
+        let msg = format!(
             "failed to register global shortcut {}: {error}",
             config.global_shortcut
         );
+        eprintln!("{msg}");
+        let _ = app.emit("shortcut-register-failed", &msg);
     }
 }
 
@@ -962,15 +1033,104 @@ fn apply_global_shortcut_config(
 
 #[cfg(desktop)]
 fn to_tauri_shortcut(spec: ShortcutSpec) -> Option<Shortcut> {
-    let modifier = match spec.modifier {
-        ShortcutModifier::Control => Modifiers::CONTROL,
-        ShortcutModifier::Alt => Modifiers::ALT,
-    };
-    let key = match spec.key {
-        ShortcutKey::Space => Code::Space,
-    };
+    let mut modifiers = Modifiers::empty();
+    if spec.ctrl {
+        modifiers |= Modifiers::CONTROL;
+    }
+    if spec.alt {
+        modifiers |= Modifiers::ALT;
+    }
+    if spec.shift {
+        modifiers |= Modifiers::SHIFT;
+    }
+    if spec.meta {
+        modifiers |= Modifiers::META;
+    }
 
-    Some(Shortcut::new(Some(modifier), key))
+    let code = shortcut_key_to_code(spec.key)?;
+    let mod_opt = if modifiers.is_empty() {
+        None
+    } else {
+        Some(modifiers)
+    };
+    Some(Shortcut::new(mod_opt, code))
+}
+
+#[cfg(desktop)]
+fn shortcut_key_to_code(key: ShortcutKey) -> Option<Code> {
+    Some(match key {
+        ShortcutKey::Letter(c) => match c {
+            'A' => Code::KeyA,
+            'B' => Code::KeyB,
+            'C' => Code::KeyC,
+            'D' => Code::KeyD,
+            'E' => Code::KeyE,
+            'F' => Code::KeyF,
+            'G' => Code::KeyG,
+            'H' => Code::KeyH,
+            'I' => Code::KeyI,
+            'J' => Code::KeyJ,
+            'K' => Code::KeyK,
+            'L' => Code::KeyL,
+            'M' => Code::KeyM,
+            'N' => Code::KeyN,
+            'O' => Code::KeyO,
+            'P' => Code::KeyP,
+            'Q' => Code::KeyQ,
+            'R' => Code::KeyR,
+            'S' => Code::KeyS,
+            'T' => Code::KeyT,
+            'U' => Code::KeyU,
+            'V' => Code::KeyV,
+            'W' => Code::KeyW,
+            'X' => Code::KeyX,
+            'Y' => Code::KeyY,
+            'Z' => Code::KeyZ,
+            _ => return None,
+        },
+        ShortcutKey::Digit(d) => match d {
+            0 => Code::Digit0,
+            1 => Code::Digit1,
+            2 => Code::Digit2,
+            3 => Code::Digit3,
+            4 => Code::Digit4,
+            5 => Code::Digit5,
+            6 => Code::Digit6,
+            7 => Code::Digit7,
+            8 => Code::Digit8,
+            9 => Code::Digit9,
+            _ => return None,
+        },
+        ShortcutKey::Function(n) => match n {
+            1 => Code::F1,
+            2 => Code::F2,
+            3 => Code::F3,
+            4 => Code::F4,
+            5 => Code::F5,
+            6 => Code::F6,
+            7 => Code::F7,
+            8 => Code::F8,
+            9 => Code::F9,
+            10 => Code::F10,
+            11 => Code::F11,
+            12 => Code::F12,
+            _ => return None,
+        },
+        ShortcutKey::Space => Code::Space,
+        ShortcutKey::Tab => Code::Tab,
+        ShortcutKey::Enter => Code::Enter,
+        ShortcutKey::Backspace => Code::Backspace,
+        ShortcutKey::Delete => Code::Delete,
+        ShortcutKey::Escape => Code::Escape,
+        ShortcutKey::ArrowUp => Code::ArrowUp,
+        ShortcutKey::ArrowDown => Code::ArrowDown,
+        ShortcutKey::ArrowLeft => Code::ArrowLeft,
+        ShortcutKey::ArrowRight => Code::ArrowRight,
+        ShortcutKey::Home => Code::Home,
+        ShortcutKey::End => Code::End,
+        ShortcutKey::PageUp => Code::PageUp,
+        ShortcutKey::PageDown => Code::PageDown,
+    })
 }
 
 #[cfg(desktop)]
@@ -1069,35 +1229,95 @@ mod tests {
     }
 
     #[test]
-    fn parses_supported_shortcut_config_values() {
+    fn parses_shortcut_config_values() {
         assert_eq!(
             shortcut_from_config("Ctrl+Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Control,
+                ctrl: true,
+                alt: false,
+                shift: false,
+                meta: false,
                 key: ShortcutKey::Space,
             })
         );
         assert_eq!(
             shortcut_from_config("CommandOrControl + Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Control,
+                ctrl: true,
+                alt: false,
+                shift: false,
+                meta: false,
                 key: ShortcutKey::Space,
             })
         );
         assert_eq!(
             shortcut_from_config("Alt+Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Alt,
+                ctrl: false,
+                alt: true,
+                shift: false,
+                meta: false,
                 key: ShortcutKey::Space,
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Ctrl+Shift+K"),
+            Some(ShortcutSpec {
+                ctrl: true,
+                alt: false,
+                shift: true,
+                meta: false,
+                key: ShortcutKey::Letter('K'),
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Alt+F2"),
+            Some(ShortcutSpec {
+                ctrl: false,
+                alt: true,
+                shift: false,
+                meta: false,
+                key: ShortcutKey::Function(2),
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Ctrl+Alt+3"),
+            Some(ShortcutSpec {
+                ctrl: true,
+                alt: true,
+                shift: false,
+                meta: false,
+                key: ShortcutKey::Digit(3),
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Command+K"),
+            Some(ShortcutSpec {
+                ctrl: false,
+                alt: false,
+                shift: false,
+                meta: true,
+                key: ShortcutKey::Letter('K'),
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Meta+Shift+P"),
+            Some(ShortcutSpec {
+                ctrl: false,
+                alt: false,
+                shift: true,
+                meta: true,
+                key: ShortcutKey::Letter('P'),
             })
         );
     }
 
     #[test]
-    fn rejects_unsupported_shortcut_config_values() {
+    fn rejects_invalid_shortcut_config_values() {
         assert_eq!(shortcut_from_config(""), None);
-        assert_eq!(shortcut_from_config("Ctrl+Shift+Space"), None);
-        assert_eq!(shortcut_from_config("Ctrl+K"), None);
+        assert_eq!(shortcut_from_config("Space"), None);
+        assert_eq!(shortcut_from_config("Shift+K"), None);
+        assert_eq!(shortcut_from_config("Ctrl+Unknown"), None);
     }
 
     #[test]
@@ -1123,6 +1343,7 @@ mod tests {
             theme: "light".into(),
             font_size: 14,
             surface_font_size: 14,
+            external_file_auto_save: true,
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -1137,6 +1358,7 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            external_file_auto_save: true,
         };
 
         assert_eq!(
@@ -1184,9 +1406,7 @@ mod tests {
         );
         assert_eq!(
             dynamic_window_visual_options("main"),
-            DynamicWindowVisualOptions {
-                transparent: false,
-            }
+            DynamicWindowVisualOptions { transparent: false }
         );
     }
 

@@ -6,7 +6,6 @@ import {
   getConfig,
   normalizeViewMode,
   saveConfig,
-  supportedShortcuts,
 } from "./api";
 import type { AppConfig } from "./types";
 
@@ -41,6 +40,7 @@ describe("settings api", () => {
       theme: "light",
       fontSize: 14,
       surfaceFontSize: 14,
+      externalFileAutoSave: true,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -63,6 +63,7 @@ describe("settings api", () => {
       theme: "dark",
       fontSize: 16,
       surfaceFontSize: 16,
+      externalFileAutoSave: true,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -76,10 +77,6 @@ describe("settings api", () => {
     expect(normalizeViewMode("split")).toBe("split");
     expect(normalizeViewMode("preview")).toBe("preview");
     expect(normalizeViewMode("unknown")).toBe("split");
-  });
-
-  test("lists supported global shortcuts", () => {
-    expect(supportedShortcuts).toEqual(["Ctrl+Space", "Alt+Space"]);
   });
 
   test("chooses a notes directory through the folder picker", async () => {

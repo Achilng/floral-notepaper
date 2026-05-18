@@ -1,0 +1,370 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（例如 v1.0.3）'
+        required: true
+        type: string
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      created: ${{ steps.release.outputs.created }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Create or update draft release
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.version }}
+        run: |
+          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
+          cat > release-body.md << EOF
+          建议下载安装版本 \`floral-notepaper_${ver}_x64-setup.exe\`，无法正常安装再下载可运行文件 \`floral-notepaper_${ver}.exe\`
+
+          macOS Apple Silicon 版：\`floral-notepaper_${ver}_aarch64.dmg\`；macOS Intel 版：\`floral-notepaper_${ver}_x64.dmg\`。
+
+          macOS 版安装流程请参考视频（Bilibili）：[Mac云课堂 - 在 Mac 上装软件，要学会和苹果斗智斗勇](https://www.bilibili.com/video/BV1tg411t7hN)
+          EOF
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          empty_ref=""
+          git tag -f "$TAG_NAME" "$GITHUB_SHA"
+          git push origin "${empty_ref}:refs/tags/$TAG_NAME" || true
+          git push origin "refs/tags/$TAG_NAME"
+
+          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --notes-file release-body.md
+            echo "created=false" >> "$GITHUB_OUTPUT"
+          else
+            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG_NAME" --notes-file release-body.md --verify-tag
+            echo "created=true" >> "$GITHUB_OUTPUT"
+          fi
+
+          # Remove stale auxiliary files and old sanitized asset names from older workflow versions.
+          for asset in \
+            icon.icns \
+            bundle_dmg.sh \
+            "_${ver}_aarch64.dmg" \
+            "_${ver}_x64.dmg" \
+            "_${ver}_x64-setup.exe" \
+            "花笺_${ver}_aarch64.dmg" \
+            "花笺_${ver}_x64.dmg" \
+            "花笺_${ver}_x64-setup.exe"; do
+            gh release delete-asset "$TAG_NAME" "$asset" --repo "$GITHUB_REPOSITORY" --yes >/dev/null 2>&1 || true
+          done
+
+  build-windows:
+    needs: prepare-release
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version
+        shell: pwsh
+        run: |
+          $ver = "${{ github.event.inputs.version }}" -replace '^v', ''
+          @'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          '@ | Out-File -Encoding utf8 set-version.cjs
+          node set-version.cjs $ver
+
+      - name: Preload Tauri NSIS toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-FileWithRetry {
+            param(
+              [Parameter(Mandatory = $true)][string]$Uri,
+              [Parameter(Mandatory = $true)][string]$OutFile,
+              [Parameter(Mandatory = $true)][string]$Sha1
+            )
+
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+              try {
+                if (Test-Path $OutFile) {
+                  Remove-Item $OutFile -Force
+                }
+
+                Write-Host "Downloading $Uri (attempt $attempt/5)"
+                Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 180
+
+                $actual = (Get-FileHash -Path $OutFile -Algorithm SHA1).Hash.ToUpperInvariant()
+                if ($actual -ne $Sha1.ToUpperInvariant()) {
+                  throw "SHA1 mismatch for $OutFile. Expected $Sha1, got $actual."
+                }
+
+                return
+              } catch {
+                Write-Warning $_
+                if ($attempt -eq 5) {
+                  throw
+                }
+                Start-Sleep -Seconds (10 * $attempt)
+              }
+            }
+          }
+
+          $tauriTools = Join-Path $env:LOCALAPPDATA 'tauri'
+          $nsisPath = Join-Path $tauriTools 'NSIS'
+          New-Item -ItemType Directory -Path $tauriTools -Force | Out-Null
+
+          $requiredFiles = @(
+            'makensis.exe',
+            'Bin/makensis.exe',
+            'Stubs/lzma-x86-unicode',
+            'Stubs/lzma_solid-x86-unicode',
+            'Plugins/x86-unicode/additional/nsis_tauri_utils.dll',
+            'Include/MUI2.nsh',
+            'Include/FileFunc.nsh',
+            'Include/x64.nsh',
+            'Include/nsDialogs.nsh',
+            'Include/WinMessages.nsh',
+            'Include/Win/COM.nsh',
+            'Include/Win/Propkey.nsh',
+            'Include/Win/RestartManager.nsh'
+          )
+
+          $missingRequiredFile = $false
+          if (-not (Test-Path $nsisPath)) {
+            $missingRequiredFile = $true
+          } else {
+            foreach ($file in $requiredFiles) {
+              if (-not (Test-Path (Join-Path $nsisPath $file))) {
+                $missingRequiredFile = $true
+                break
+              }
+            }
+          }
+
+          if ($missingRequiredFile) {
+            if (Test-Path $nsisPath) {
+              Remove-Item $nsisPath -Recurse -Force
+            }
+
+            $zipPath = Join-Path $env:RUNNER_TEMP 'nsis-3.11.zip'
+            Get-FileWithRetry `
+              -Uri 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip' `
+              -OutFile $zipPath `
+              -Sha1 'EF7FF767E5CBD9EDD22ADD3A32C9B8F4500BB10D'
+
+            $extractedPath = Join-Path $tauriTools 'nsis-3.11'
+            if (Test-Path $extractedPath) {
+              Remove-Item $extractedPath -Recurse -Force
+            }
+
+            Expand-Archive -Path $zipPath -DestinationPath $tauriTools -Force
+            Rename-Item -Path $extractedPath -NewName 'NSIS'
+          }
+
+          $pluginDir = Join-Path $nsisPath 'Plugins/x86-unicode/additional'
+          $pluginPath = Join-Path $pluginDir 'nsis_tauri_utils.dll'
+          New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
+
+          $pluginNeedsDownload = -not (Test-Path $pluginPath)
+          if (-not $pluginNeedsDownload) {
+            $actualPluginSha1 = (Get-FileHash -Path $pluginPath -Algorithm SHA1).Hash.ToUpperInvariant()
+            $pluginNeedsDownload = $actualPluginSha1 -ne '75197FEE3C6A814FE035788D1C34EAD39349B860'
+          }
+
+          if ($pluginNeedsDownload) {
+            Get-FileWithRetry `
+              -Uri 'https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll' `
+              -OutFile $pluginPath `
+              -Sha1 '75197FEE3C6A814FE035788D1C34EAD39349B860'
+          }
+
+          Write-Host "Tauri NSIS toolchain is ready at $nsisPath"
+
+      - name: Build
+        run: npm run tauri build
+
+      - name: Rename portable binary
+        shell: pwsh
+        run: |
+          $ver = "${{ github.event.inputs.version }}" -replace '^v', ''
+          Copy-Item src-tauri/target/release/floral-notepaper.exe "floral-notepaper_$ver.exe"
+
+      - name: Upload release assets
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.version }}
+        run: |
+          $ver = $env:TAG_NAME -replace '^v', ''
+          $releaseDir = 'release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+          $setupSource = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -File -Recurse -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $setupSource) {
+            throw 'No Windows NSIS installer found.'
+          }
+
+          $setupAsset = Join-Path $releaseDir "floral-notepaper_${ver}_x64-setup.exe"
+          $portableAsset = Join-Path $releaseDir "floral-notepaper_${ver}.exe"
+          Copy-Item $setupSource.FullName $setupAsset -Force
+          Copy-Item "floral-notepaper_$ver.exe" $portableAsset -Force
+
+          $files = @(
+            (Resolve-Path $setupAsset).Path,
+            (Resolve-Path $portableAsset).Path
+          )
+          gh release upload $env:TAG_NAME $files --clobber --repo $env:GITHUB_REPOSITORY
+
+  build-macos-x86_64:
+    needs: prepare-release
+    runs-on: macos-15-intel
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version & disable signing
+        run: |
+          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
+          cat > set-version.cjs << 'SCRIPT'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          conf.bundle.macOS = conf.bundle.macOS || {};
+          conf.bundle.macOS.signingIdentity = null;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          SCRIPT
+          node set-version.cjs "$ver"
+
+      - name: Build
+        run: npm run tauri build -- --target x86_64-apple-darwin
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.version }}
+        run: |
+          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
+          mkdir -p release-assets
+          dmg_source="$(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
+          if [ -z "$dmg_source" ]; then
+            echo "No macOS x86_64 DMG release asset found." >&2
+            exit 1
+          fi
+          dmg_asset="release-assets/floral-notepaper_${ver}_x64.dmg"
+          cp "$dmg_source" "$dmg_asset"
+          gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
+
+  build-macos-aarch64:
+    needs: prepare-release
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version & disable signing
+        run: |
+          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
+          cat > set-version.cjs << 'SCRIPT'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          conf.bundle.macOS = conf.bundle.macOS || {};
+          conf.bundle.macOS.signingIdentity = null;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          SCRIPT
+          node set-version.cjs "$ver"
+
+      - name: Build
+        run: npm run tauri build -- --target aarch64-apple-darwin
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.version }}
+        run: |
+          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
+          mkdir -p release-assets
+          dmg_source="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
+          if [ -z "$dmg_source" ]; then
+            echo "No macOS aarch64 DMG release asset found." >&2
+            exit 1
+          fi
+          dmg_asset="release-assets/floral-notepaper_${ver}_aarch64.dmg"
+          cp "$dmg_source" "$dmg_asset"
+          gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
+
+  cleanup-release:
+    needs: [prepare-release, build-windows, build-macos-x86_64, build-macos-aarch64]
+    if: failure() && needs.prepare-release.outputs.created == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Delete draft release after failed build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.version }}
+        run: |
+          gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true

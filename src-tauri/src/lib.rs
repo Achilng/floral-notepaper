@@ -3,8 +3,7 @@ pub mod services;
 
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, Manager};
-
+use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
 fn app_name() -> &'static str {
@@ -55,8 +54,13 @@ fn notes_delete(app: AppHandle, id: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_import_markdown(app: AppHandle, path: String, category: Option<String>) -> Result<Note, AppError> {
-    let note = default_store()?.import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
+fn notes_import_markdown(
+    app: AppHandle,
+    path: String,
+    category: Option<String>,
+) -> Result<Note, AppError> {
+    let note = default_store()?
+        .import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
     let _ = app.emit("notes-changed", ());
     Ok(note)
 }
@@ -72,6 +76,22 @@ fn read_external_file(path: String) -> Result<String, AppError> {
         code: "io".into(),
         message: e.to_string(),
     })
+}
+
+#[tauri::command]
+fn get_file_modified_time(path: String) -> Result<f64, AppError> {
+    let metadata = std::fs::metadata(&path).map_err(|e| AppError {
+        code: "io".into(),
+        message: e.to_string(),
+    })?;
+    let modified = metadata.modified().map_err(|e| AppError {
+        code: "io".into(),
+        message: e.to_string(),
+    })?;
+    let duration = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    Ok(duration.as_secs_f64() * 1000.0)
 }
 
 #[tauri::command]
@@ -115,7 +135,11 @@ fn categories_delete(app: AppHandle, name: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_move_category(app: AppHandle, id: String, category: String) -> Result<NoteMetadata, AppError> {
+fn notes_move_category(
+    app: AppHandle,
+    id: String,
+    category: String,
+) -> Result<NoteMetadata, AppError> {
     let result = default_store()?.move_note_to_category(&id, &category)?;
     let _ = app.emit("notes-changed", ());
     Ok(result)
@@ -162,16 +186,16 @@ async fn open_tile_window(
     desktop::open_tile_window(app, note_id, bounds).await
 }
 
+#[tauri::command]
+async fn open_note_in_editor(app: AppHandle, note_id: String) -> Result<(), AppError> {
+    desktop::show_main_window(&app)?;
+    let _ = app.emit("open-note", &note_id);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
@@ -199,6 +223,7 @@ pub fn run() {
             notes_move_category,
             read_external_file,
             save_external_file,
+            get_file_modified_time,
             categories_list,
             categories_create,
             categories_rename,
@@ -207,7 +232,8 @@ pub fn run() {
             config_save,
             open_notepad_window,
             recycle_notepad_window,
-            open_tile_window
+            open_tile_window,
+            open_note_in_editor
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
