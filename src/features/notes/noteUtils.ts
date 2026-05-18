@@ -72,11 +72,13 @@ export function groupNotesByCategory(
   }
 
   result.sort((a, b) => {
+    if (!a.category) return 1;
+    if (!b.category) return -1;
     const aEmpty = a.notes.length === 0;
     const bEmpty = b.notes.length === 0;
     if (aEmpty && !bEmpty) return -1;
     if (!aEmpty && bEmpty) return 1;
-    return b.latestUpdatedAt.localeCompare(a.latestUpdatedAt);
+    return a.category.localeCompare(b.category);
   });
   return result;
 }

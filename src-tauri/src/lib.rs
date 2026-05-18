@@ -68,6 +68,22 @@ fn read_external_file(path: String) -> Result<String, AppError> {
 }
 
 #[tauri::command]
+fn get_file_modified_time(path: String) -> Result<f64, AppError> {
+    let metadata = std::fs::metadata(&path).map_err(|e| AppError {
+        code: "io".into(),
+        message: e.to_string(),
+    })?;
+    let modified = metadata.modified().map_err(|e| AppError {
+        code: "io".into(),
+        message: e.to_string(),
+    })?;
+    let duration = modified
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default();
+    Ok(duration.as_secs_f64() * 1000.0)
+}
+
+#[tauri::command]
 fn save_external_file(path: String, content: String) -> Result<(), AppError> {
     if let Some(parent) = PathBuf::from(&path).parent() {
         std::fs::create_dir_all(parent).map_err(|e| AppError {
@@ -155,6 +171,13 @@ async fn open_tile_window(
     desktop::open_tile_window(app, note_id, bounds).await
 }
 
+#[tauri::command]
+async fn open_note_in_editor(app: AppHandle, note_id: String) -> Result<(), AppError> {
+    desktop::show_main_window(&app)?;
+    let _ = app.emit("open-note", &note_id);
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -190,6 +213,7 @@ pub fn run() {
             notes_move_category,
             read_external_file,
             save_external_file,
+            get_file_modified_time,
             categories_list,
             categories_create,
             categories_rename,
@@ -198,7 +222,8 @@ pub fn run() {
             config_save,
             open_notepad_window,
             recycle_notepad_window,
-            open_tile_window
+            open_tile_window,
+            open_note_in_editor
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

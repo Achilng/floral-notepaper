@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useState, useCallback } from "react";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkFootnotes from "remark-footnotes";
@@ -30,6 +30,42 @@ const sanitizeSchema: Schema = {
     input: ["checked", "disabled", "type"],
   },
 };
+
+function CodeBlock({ children }: { children: React.ReactNode }) {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = useCallback(() => {
+    const text = extractText(children);
+    void navigator.clipboard.writeText(text).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  }, [children]);
+
+  return (
+    <pre className="my-3 px-4 py-3 rounded bg-paper-warm/80 overflow-x-auto relative group">
+      <button
+        type="button"
+        onClick={handleCopy}
+        className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-paper-deep/30 text-ink-ghost opacity-0 group-hover:opacity-100 hover:bg-paper-deep/50 hover:text-ink-soft transition-all cursor-pointer"
+      >
+        {copied ? "已复制" : "复制"}
+      </button>
+      {children}
+    </pre>
+  );
+}
+
+function extractText(node: React.ReactNode): string {
+  if (typeof node === "string") return node;
+  if (typeof node === "number") return String(node);
+  if (node == null || typeof node === "boolean") return "";
+  if (Array.isArray(node)) return node.map(extractText).join("");
+  if (typeof node === "object" && "props" in node) {
+    return extractText((node as React.ReactElement<{ children?: React.ReactNode }>).props.children);
+  }
+  return "";
+}
 
 interface MarkdownPreviewProps {
   content: string;
@@ -112,11 +148,7 @@ function useMarkdownComponents(tileMode = false): Components {
               </code>
             );
           },
-          pre: ({ children }) => (
-            <pre className="my-2 px-3 py-2 rounded bg-current/5 overflow-x-auto">
-              {children}
-            </pre>
-          ),
+          pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
           a: ({ href, children }) => (
             <a
               href={href}
@@ -280,11 +312,7 @@ function useMarkdownComponents(tileMode = false): Components {
             </code>
           );
         },
-        pre: ({ children }) => (
-          <pre className="my-3 px-4 py-3 rounded bg-paper-warm/80 overflow-x-auto">
-            {children}
-          </pre>
-        ),
+        pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
         a: ({ href, children }) => (
           <a
             href={href}

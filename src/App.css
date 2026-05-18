@@ -195,6 +195,21 @@ textarea::placeholder, input::placeholder {
   animation: view-fade 0.72s ease-out forwards;
 }
 
+/* Category folder expand/collapse */
+.category-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition: grid-template-rows 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+}
+.category-body.expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.category-body > .category-body-inner {
+  overflow: hidden;
+}
+
 /* Delete confirm inline pop */
 @keyframes delete-confirm-enter {
   from { opacity: 0; transform: scale(0.9); }

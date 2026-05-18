@@ -21,6 +21,7 @@ import {
   deleteCategory,
   deleteNote,
   getErrorMessage,
+  getFileModifiedTime,
   getNote,
   listCategories,
   listNotes,
@@ -285,7 +286,14 @@ export function MainWindow({
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameCategoryValue, setRenameCategoryValue] = useState("");
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
+  const [categoryMenu, setCategoryMenu] = useState<CategoryMenuState | null>(null);
+  const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
+  const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const externalFileMtimeRef = useRef<number>(0);
+  const lastExternalSaveRef = useRef<number>(0);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -373,7 +381,10 @@ export function MainWindow({
   const loadExternalFile = useCallback(async (filePath: string) => {
     setErrorMessage(null);
     try {
-      const fileContent = await readExternalFile(filePath);
+      const [fileContent, mtime] = await Promise.all([
+        readExternalFile(filePath),
+        getFileModifiedTime(filePath),
+      ]);
       const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
       const displayTitle = fileName.replace(/\.md$/i, "");
 
@@ -396,6 +407,7 @@ export function MainWindow({
       setContent(fileContent);
       setSaveState("saved");
       setNoteTransitionKey((k) => k + 1);
+      externalFileMtimeRef.current = mtime;
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -418,6 +430,7 @@ export function MainWindow({
         setViewMode(normalizeViewMode(loadedConfig.defaultViewMode));
         setNotes(loadedNotes);
         setCategories(loadedCategories);
+        setCollapsedCategories(new Set(loadedCategories));
         if (loadedNotes[0]) {
           const note = await getNote(loadedNotes[0].id);
           if (!cancelled) applyNote(note);
@@ -464,18 +477,49 @@ export function MainWindow({
   }, [loadExternalFile]);
 
   useEffect(() => {
-    function closeNoteMenu() {
+    const unlisten = listen<string>("open-note", (event) => {
+      void loadNote(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [loadNote]);
+
+  useEffect(() => {
+    if (!selectedExternalFile) return;
+
+    const interval = window.setInterval(async () => {
+      if (Date.now() - lastExternalSaveRef.current < 2000) return;
+      try {
+        const mtime = await getFileModifiedTime(selectedExternalFile.filePath);
+        if (mtime !== externalFileMtimeRef.current) {
+          externalFileMtimeRef.current = mtime;
+          const fileContent = await readExternalFile(selectedExternalFile.filePath);
+          setContent(fileContent);
+          setSaveState("saved");
+        }
+      } catch {
+        // file may have been deleted or become inaccessible
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [selectedExternalFile]);
+
+  useEffect(() => {
+    function closeMenus() {
       setNoteMenuClosing(true);
+      setCategoryMenuClosing(true);
     }
 
     function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") closeNoteMenu();
+      if (event.key === "Escape") closeMenus();
     }
 
-    document.addEventListener("mousedown", closeNoteMenu);
+    document.addEventListener("mousedown", closeMenus);
     document.addEventListener("keydown", handleKeyDown);
     return () => {
-      document.removeEventListener("mousedown", closeNoteMenu);
+      document.removeEventListener("mousedown", closeMenus);
       document.removeEventListener("keydown", handleKeyDown);
     };
   }, []);
@@ -490,6 +534,16 @@ export function MainWindow({
     return () => window.clearTimeout(timer);
   }, [noteMenuClosing, noteMenu]);
 
+  useEffect(() => {
+    if (!categoryMenuClosing || !categoryMenu) return;
+    const timer = window.setTimeout(() => {
+      setCategoryMenu(null);
+      setCategoryMenuClosing(false);
+      setCategoryMenuConfirmDelete(false);
+    }, 150);
+    return () => window.clearTimeout(timer);
+  }, [categoryMenuClosing, categoryMenu]);
+
   const saveCurrentNote = useCallback(async () => {
     if (!selectedId) return null;
 
@@ -497,6 +551,9 @@ export function MainWindow({
       setSaveState("saving");
       try {
         await saveExternalFile(selectedExternalFile.filePath, content);
+        lastExternalSaveRef.current = Date.now();
+        const mtime = await getFileModifiedTime(selectedExternalFile.filePath);
+        externalFileMtimeRef.current = mtime;
         setSaveState("saved");
         setErrorMessage(null);
         return { id: selectedId, title, content } as Note;
@@ -536,15 +593,18 @@ export function MainWindow({
 
   useEffect(() => {
     if (!selectedId || saveState !== "dirty") return undefined;
-    if (isExternal) return undefined;
-    if (!settingsConfig?.noteAutoSave) return undefined;
+    if (isExternal) {
+      if (!settingsConfig?.externalFileAutoSave) return undefined;
+    } else {
+      if (!settingsConfig?.noteAutoSave) return undefined;
+    }
 
     const timer = window.setTimeout(() => {
       void saveCurrentNote();
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [isExternal, saveCurrentNote, saveState, selectedId, settingsConfig?.noteAutoSave]);
+  }, [isExternal, saveCurrentNote, saveState, selectedId, settingsConfig?.noteAutoSave, settingsConfig?.externalFileAutoSave]);
 
   const handleNewNote = async () => {
     setErrorMessage(null);
@@ -685,13 +745,17 @@ export function MainWindow({
 
     setIsLoading(true);
     try {
-      const fileContent = await readExternalFile(file.filePath);
+      const [fileContent, mtime] = await Promise.all([
+        readExternalFile(file.filePath),
+        getFileModifiedTime(file.filePath),
+      ]);
       setSelectedId(id);
       setTitle(file.title);
       setContent(fileContent);
       setSaveState("saved");
       setErrorMessage(null);
       setNoteTransitionKey((k) => k + 1);
+      externalFileMtimeRef.current = mtime;
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -888,6 +952,28 @@ export function MainWindow({
     void isCurrentWindowMaximized().then(setIsMaximized);
   }, []);
 
+  useEffect(() => {
+    if (!isResizingSidebar) return;
+
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    const onMouseMove = (e: globalThis.MouseEvent) => {
+      const newWidth = Math.min(Math.max(e.clientX, 180), 500);
+      setSidebarWidth(newWidth);
+    };
+    const onMouseUp = () => setIsResizingSidebar(false);
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isResizingSidebar]);
+
   const handlePinEntry = async () => {
     if (!selectedId) return;
     if (saveState === "dirty") {
@@ -1033,9 +1119,10 @@ export function MainWindow({
 
         <div className="flex flex-1 min-h-0">
           <div
-            className={`border-r border-paper-deep/30 bg-paper/40 flex flex-col shrink-0 transition-all duration-[600ms] ${
-              sidebarCollapsed ? "w-0 overflow-hidden" : "w-[280px]"
+            className={`border-r border-paper-deep/30 bg-paper/40 flex flex-col shrink-0 ${
+              sidebarCollapsed ? "w-0 overflow-hidden transition-all duration-[600ms]" : ""
             }`}
+            style={sidebarCollapsed ? undefined : { width: `${sidebarWidth}px` }}
           >
             <div className="px-3 pt-3 pb-2 shrink-0">
               <div className="flex items-center gap-2 px-2.5 h-8 rounded-lg bg-paper-warm/80 border border-paper-deep/40 focus-within:border-bamboo/30 focus-within:bg-cloud transition-all">
@@ -1114,9 +1201,9 @@ export function MainWindow({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M12 3v12" />
-                  <path d="m7 8 5-5 5 5" />
-                  <path d="M5 21h14" />
+                  <path d="M12 21V9" />
+                  <path d="m7 16 5 5 5-5" />
+                  <path d="M5 3h14" />
                 </svg>
                 <span>{t("main.importMarkdown")}</span>
               </button>
@@ -1225,54 +1312,84 @@ export function MainWindow({
 
                 {categoryGroups.map((group: CategoryGroup) => {
                   if (!group.category) {
-                    return group.notes.map((note) => {
-                      const isSelected = note.id === selectedId;
-                      const isHovered = note.id === hoveredId;
-                      return (
-                        <button
-                          key={note.id}
-                          draggable
-                          onDragStart={(e) => e.dataTransfer.setData("text/note-id", note.id)}
-                          onClick={() => void handleSelectNote(note.id)}
-                          onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
-                          onMouseEnter={() => setHoveredId(note.id)}
-                          onMouseLeave={() => setHoveredId(null)}
-                          className={`w-full text-left rounded-xl px-3 py-2.5 transition-all duration-[600ms] cursor-pointer group relative ${
-                            isSelected
-                              ? "bg-bamboo-mist/70"
-                              : isHovered
-                                ? "bg-paper-warm/70"
-                                : "bg-transparent"
-                          }`}
-                        >
-                          <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                            isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                          }`} />
-                          <div className="flex items-baseline justify-between mb-0.5">
-                            <span className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
-                              isSelected ? "text-bamboo" : "text-ink-soft"
-                            }`}>
-                              {getDisplayTitle(note)}
-                            </span>
-                            <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
-                              {formatShortDate(note.updatedAt)}
-                            </span>
-                          </div>
-                          <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                            {note.preview || t("main.blankNote")}
-                          </p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                              {formatTime(note.updatedAt)}
-                            </span>
-                            <span className="text-[10px] text-ink-ghost/40">·</span>
-                            <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                              {t("main.charCount", { count: note.wordCount })}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    });
+                    return (
+                      <div
+                        key="__uncategorized__"
+                        className={`rounded-lg transition-all duration-200 ${
+                          dragOverCategory === ""
+                            ? "bg-bamboo/10 ring-1 ring-bamboo/20"
+                            : ""
+                        }`}
+                        onDragOver={(e) => {
+                          e.preventDefault();
+                          e.dataTransfer.dropEffect = "move";
+                          setDragOverCategory("");
+                        }}
+                        onDragLeave={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                            setDragOverCategory(null);
+                          }
+                        }}
+                        onDrop={(e) => {
+                          e.preventDefault();
+                          setDragOverCategory(null);
+                          const noteId = e.dataTransfer.getData("text/plain");
+                          if (noteId) void handleMoveNote(noteId, "");
+                        }}
+                      >
+                        {group.notes.map((note) => {
+                          const isSelected = note.id === selectedId;
+                          const isHovered = note.id === hoveredId;
+                          return (
+                            <button
+                              key={note.id}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.setData("text/plain", note.id);
+                                e.dataTransfer.effectAllowed = "move";
+                              }}
+                              onClick={() => void handleSelectNote(note.id)}
+                              onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
+                              onMouseEnter={() => setHoveredId(note.id)}
+                              onMouseLeave={() => setHoveredId(null)}
+                              className={`w-full text-left rounded-xl px-3 py-2.5 transition-all duration-[600ms] cursor-pointer group relative ${
+                                isSelected
+                                  ? "bg-bamboo-mist/70"
+                                  : isHovered
+                                    ? "bg-paper-warm/70"
+                                    : "bg-transparent"
+                              }`}
+                            >
+                              <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
+                                isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
+                              }`} />
+                              <div className="flex items-baseline justify-between mb-0.5">
+                                <span className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
+                                  isSelected ? "text-bamboo" : "text-ink-soft"
+                                }`}>
+                                  {getDisplayTitle(note)}
+                                </span>
+                                <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
+                                  {formatShortDate(note.updatedAt)}
+                                </span>
+                              </div>
+                              <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
+                                {note.preview || t("main.blankNote")}
+                              </p>
+                              <div className="flex items-center gap-2 mt-1">
+                                <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
+                                  {formatTime(note.updatedAt)}
+                                </span>
+                                <span className="text-[10px] text-ink-ghost/40">·</span>
+                                <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
+                                  {t("main.charCount", { count: note.wordCount })}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    );
                   }
 
                   const isCollapsed = collapsedCategories.has(group.category);
@@ -1284,14 +1401,16 @@ export function MainWindow({
                           dragOverCategory === group.category
                             ? "bg-bamboo/15 border border-bamboo/40 ring-1 ring-bamboo/20"
                             : isCollapsed
-                              ? "bg-bamboo/8 border border-bamboo/15"
-                              : "bg-bamboo/5 border border-bamboo/10 rounded-b-none"
+                              ? "bg-transparent border border-bamboo/15"
+                              : "bg-bamboo/8 border border-bamboo/15 rounded-b-none"
                         }`}
                         onClick={() => toggleCategoryCollapse(group.category)}
                         onContextMenu={(e) => {
                           e.preventDefault();
-                          setRenamingCategory(group.category);
-                          setRenameCategoryValue(group.category);
+                          e.stopPropagation();
+                          setCategoryMenu({ x: e.clientX, y: e.clientY, category: group.category });
+                          setCategoryMenuClosing(false);
+                          setCategoryMenuConfirmDelete(false);
                         }}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -1302,7 +1421,7 @@ export function MainWindow({
                         onDrop={(e) => {
                           e.preventDefault();
                           setDragOverCategory(null);
-                          const noteId = e.dataTransfer.getData("text/note-id");
+                          const noteId = e.dataTransfer.getData("text/plain");
                           if (noteId) void handleMoveNote(noteId, group.category);
                         }}
                       >
@@ -1373,8 +1492,26 @@ export function MainWindow({
                         )}
                       </div>
 
-                      {!isCollapsed && (
-                        <div className="bg-bamboo/[0.03] border border-t-0 border-bamboo/10 rounded-b-lg pb-1 pt-1">
+                      <div className={`category-body ${isCollapsed ? "" : "expanded"}`}>
+                        <div
+                          className="category-body-inner bg-bamboo/[0.03] border border-t-0 border-bamboo/10 rounded-b-lg pb-1 pt-1"
+                          onDragOver={(e) => {
+                            e.preventDefault();
+                            e.dataTransfer.dropEffect = "move";
+                            setDragOverCategory(group.category);
+                          }}
+                          onDragLeave={(e) => {
+                            if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                              setDragOverCategory(null);
+                            }
+                          }}
+                          onDrop={(e) => {
+                            e.preventDefault();
+                            setDragOverCategory(null);
+                            const noteId = e.dataTransfer.getData("text/plain");
+                            if (noteId) void handleMoveNote(noteId, group.category);
+                          }}
+                        >
                           {group.notes.length === 0 ? (
                             <div className="px-3 py-3 text-center text-[11px] text-ink-ghost/50">
                               {t("main.emptyFolder")}
@@ -1384,10 +1521,13 @@ export function MainWindow({
                             const isHovered = note.id === hoveredId;
 
                             return (
-                              <button
+                              <div
                                 key={note.id}
                                 draggable
-                                onDragStart={(e) => e.dataTransfer.setData("text/note-id", note.id)}
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData("text/plain", note.id);
+                                  e.dataTransfer.effectAllowed = "move";
+                                }}
                                 onClick={() => void handleSelectNote(note.id)}
                                 onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
                                 onMouseEnter={() => setHoveredId(note.id)}
@@ -1431,11 +1571,11 @@ export function MainWindow({
                                     {t("main.charCount", { count: note.wordCount })}
                                   </span>
                                 </div>
-                              </button>
+                              </div>
                             );
                           })}
                         </div>
-                      )}
+                      </div>
                     </div>
                   );
                 })}
@@ -1448,6 +1588,18 @@ export function MainWindow({
               </div>
             </div>
           </div>
+
+          {!sidebarCollapsed && (
+            <div
+              className={`w-1 shrink-0 cursor-col-resize group relative ${isResizingSidebar ? "bg-bamboo/30" : "hover:bg-bamboo/20"} transition-colors`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsResizingSidebar(true);
+              }}
+            >
+              <div className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSidebar ? "" : "group-hover:bg-bamboo/5"}`} />
+            </div>
+          )}
 
           <div className="flex-1 flex flex-col min-w-0">
             <div className="flex items-center justify-between px-4 h-10 border-b border-paper-deep/20 shrink-0 bg-paper/20">
@@ -1802,6 +1954,56 @@ export function MainWindow({
                   {cat}
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {categoryMenu && (
+        <div
+          className={`fixed z-[9999] min-w-[140px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${categoryMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
+          style={{ left: categoryMenu.x, top: categoryMenu.y }}
+          onMouseDown={(event) => event.stopPropagation()}
+        >
+          {categoryMenuConfirmDelete ? (
+            <div className="animate-menu-slide-left">
+              <div className="px-3 py-1.5 text-[11px] font-body text-ink-faint border-b border-paper-deep/20">
+                确认删除「{categoryMenu.category}」？
+              </div>
+              <button
+                onClick={() => {
+                  void handleDeleteCategory(categoryMenu.category);
+                  setCategoryMenuClosing(true);
+                }}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer"
+              >
+                确认删除
+              </button>
+              <button
+                onClick={() => setCategoryMenuConfirmDelete(false)}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
+              >
+                取消
+              </button>
+            </div>
+          ) : (
+            <div className="animate-menu-slide-right">
+              <button
+                onClick={() => {
+                  setCategoryMenuClosing(true);
+                  setRenamingCategory(categoryMenu.category);
+                  setRenameCategoryValue(categoryMenu.category);
+                }}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
+              >
+                重命名
+              </button>
+              <button
+                onClick={() => setCategoryMenuConfirmDelete(true)}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer border-t border-paper-deep/20"
+              >
+                删除分类
+              </button>
             </div>
           )}
         </div>

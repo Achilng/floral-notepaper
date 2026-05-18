@@ -30,6 +30,8 @@ pub struct AppConfig {
     pub surface_font_size: u32,
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default = "default_external_file_auto_save")]
+    pub external_file_auto_save: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -454,6 +456,7 @@ impl NoteStore {
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
             language: default_language(),
+            external_file_auto_save: default_external_file_auto_save(),
         }
     }
 
@@ -725,6 +728,10 @@ fn default_language() -> String {
     "zh-CN".into()
 }
 
+fn default_external_file_auto_save() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,6 +860,7 @@ mod tests {
             font_size: 16,
             surface_font_size: 16,
             language: "en".into(),
+            external_file_auto_save: true,
         };
 
         store.save_config(saved.clone()).expect("save config");

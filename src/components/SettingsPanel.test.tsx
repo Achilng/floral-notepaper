@@ -18,6 +18,7 @@ const config = {
   fontSize: 14,
   surfaceFontSize: 14,
   language: "zh-CN" as const,
+  externalFileAutoSave: true,
 };
 
 describe("SettingsPanel", () => {
@@ -43,7 +44,6 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("D:\\Notes\\花笺");
     expect(markup).toContain("选择文件夹");
     expect(markup).toContain("Ctrl+Space");
-    expect(markup).toContain("Alt+Space");
     expect(markup).toContain("关闭到托盘");
     expect(markup).toContain("开机自启");
     expect(markup).toContain("自动保存笔记");

@@ -2,8 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { AppConfig, ViewMode } from "./types";
 
-export const supportedShortcuts = ["Ctrl+Space", "Alt+Space"] as const;
-
 export function getConfig(): Promise<AppConfig> {
   return invoke("config_get");
 }

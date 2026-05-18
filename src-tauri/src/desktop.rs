@@ -46,14 +46,24 @@ pub struct TrayMenuSpec {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShortcutModifier {
-    Control,
-    Alt,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShortcutKey {
+    Letter(char),
+    Digit(u8),
+    Function(u8),
     Space,
+    Tab,
+    Enter,
+    Backspace,
+    Delete,
+    Escape,
+    ArrowUp,
+    ArrowDown,
+    ArrowLeft,
+    ArrowRight,
+    Home,
+    End,
+    PageUp,
+    PageDown,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,13 +74,22 @@ pub struct RuntimeConfigChanges {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ShortcutSpec {
-    pub modifier: ShortcutModifier,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub shift: bool,
     pub key: ShortcutKey,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DynamicWindowVisualOptions {
     pub transparent: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum MainWindowCloseAction {
+    AllowClose,
+    HideToTray,
+    ExitApp,
 }
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
@@ -177,26 +196,79 @@ pub fn tray_menu_specs(close_to_tray: bool, autostart: bool, lang_code: &str) ->
 pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
     let parts: Vec<_> = value
         .split('+')
-        .map(|part| part.trim().to_ascii_lowercase())
+        .map(|part| part.trim())
         .filter(|part| !part.is_empty())
         .collect();
 
-    if parts.len() != 2 {
+    if parts.len() < 2 {
         return None;
     }
 
-    let modifier = match parts[0].as_str() {
-        "ctrl" | "control" | "cmdorctrl" | "commandorcontrol" => ShortcutModifier::Control,
-        "alt" | "option" => ShortcutModifier::Alt,
-        _ => return None,
-    };
+    let (modifier_parts, key_part) = parts.split_at(parts.len() - 1);
 
-    let key = match parts[1].as_str() {
-        "space" => ShortcutKey::Space,
-        _ => return None,
-    };
+    let mut ctrl = false;
+    let mut alt = false;
+    let mut shift = false;
 
-    Some(ShortcutSpec { modifier, key })
+    for m in modifier_parts {
+        match m.to_ascii_lowercase().as_str() {
+            "ctrl" | "control" | "cmdorctrl" | "commandorcontrol" => ctrl = true,
+            "alt" | "option" => alt = true,
+            "shift" => shift = true,
+            _ => return None,
+        }
+    }
+
+    if !ctrl && !alt {
+        return None;
+    }
+
+    let key = parse_shortcut_key(key_part[0])?;
+
+    Some(ShortcutSpec {
+        ctrl,
+        alt,
+        shift,
+        key,
+    })
+}
+
+fn parse_shortcut_key(key: &str) -> Option<ShortcutKey> {
+    if key.len() == 1 {
+        let c = key.chars().next()?;
+        if c.is_ascii_alphabetic() {
+            return Some(ShortcutKey::Letter(c.to_ascii_uppercase()));
+        }
+        if c.is_ascii_digit() {
+            return Some(ShortcutKey::Digit(c.to_digit(10)? as u8));
+        }
+    }
+
+    if let Some(rest) = key.strip_prefix('F').or_else(|| key.strip_prefix('f')) {
+        if let Ok(num) = rest.parse::<u8>() {
+            if (1..=12).contains(&num) {
+                return Some(ShortcutKey::Function(num));
+            }
+        }
+    }
+
+    match key.to_ascii_lowercase().as_str() {
+        "space" => Some(ShortcutKey::Space),
+        "tab" => Some(ShortcutKey::Tab),
+        "enter" => Some(ShortcutKey::Enter),
+        "backspace" => Some(ShortcutKey::Backspace),
+        "delete" => Some(ShortcutKey::Delete),
+        "escape" => Some(ShortcutKey::Escape),
+        "arrowup" => Some(ShortcutKey::ArrowUp),
+        "arrowdown" => Some(ShortcutKey::ArrowDown),
+        "arrowleft" => Some(ShortcutKey::ArrowLeft),
+        "arrowright" => Some(ShortcutKey::ArrowRight),
+        "home" => Some(ShortcutKey::Home),
+        "end" => Some(ShortcutKey::End),
+        "pageup" => Some(ShortcutKey::PageUp),
+        "pagedown" => Some(ShortcutKey::PageDown),
+        _ => None,
+    }
 }
 
 pub fn runtime_config_changes(previous: &AppConfig, next: &AppConfig) -> RuntimeConfigChanges {
@@ -332,13 +404,29 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         return;
     };
 
-    if app_is_exiting(window.app_handle()) || !close_to_tray_enabled() {
-        return;
+    match main_window_close_action(app_is_exiting(window.app_handle()), close_to_tray_enabled()) {
+        MainWindowCloseAction::AllowClose => {}
+        MainWindowCloseAction::HideToTray => {
+            api.prevent_close();
+            if let Err(error) = window.hide() {
+                eprintln!("failed to hide main window to tray: {error}");
+            }
+        }
+        MainWindowCloseAction::ExitApp => {
+            api.prevent_close();
+            mark_app_exiting(window.app_handle());
+            window.app_handle().exit(0);
+        }
     }
+}
 
-    api.prevent_close();
-    if let Err(error) = window.hide() {
-        eprintln!("failed to hide main window to tray: {error}");
+fn main_window_close_action(app_is_exiting: bool, close_to_tray: bool) -> MainWindowCloseAction {
+    if app_is_exiting {
+        MainWindowCloseAction::AllowClose
+    } else if close_to_tray {
+        MainWindowCloseAction::HideToTray
+    } else {
+        MainWindowCloseAction::ExitApp
     }
 }
 
@@ -857,15 +945,101 @@ fn apply_global_shortcut_config(
 
 #[cfg(desktop)]
 fn to_tauri_shortcut(spec: ShortcutSpec) -> Option<Shortcut> {
-    let modifier = match spec.modifier {
-        ShortcutModifier::Control => Modifiers::CONTROL,
-        ShortcutModifier::Alt => Modifiers::ALT,
-    };
-    let key = match spec.key {
-        ShortcutKey::Space => Code::Space,
-    };
+    let mut modifiers = Modifiers::empty();
+    if spec.ctrl {
+        modifiers |= Modifiers::CONTROL;
+    }
+    if spec.alt {
+        modifiers |= Modifiers::ALT;
+    }
+    if spec.shift {
+        modifiers |= Modifiers::SHIFT;
+    }
 
-    Some(Shortcut::new(Some(modifier), key))
+    let code = shortcut_key_to_code(spec.key)?;
+    let mod_opt = if modifiers.is_empty() {
+        None
+    } else {
+        Some(modifiers)
+    };
+    Some(Shortcut::new(mod_opt, code))
+}
+
+#[cfg(desktop)]
+fn shortcut_key_to_code(key: ShortcutKey) -> Option<Code> {
+    Some(match key {
+        ShortcutKey::Letter(c) => match c {
+            'A' => Code::KeyA,
+            'B' => Code::KeyB,
+            'C' => Code::KeyC,
+            'D' => Code::KeyD,
+            'E' => Code::KeyE,
+            'F' => Code::KeyF,
+            'G' => Code::KeyG,
+            'H' => Code::KeyH,
+            'I' => Code::KeyI,
+            'J' => Code::KeyJ,
+            'K' => Code::KeyK,
+            'L' => Code::KeyL,
+            'M' => Code::KeyM,
+            'N' => Code::KeyN,
+            'O' => Code::KeyO,
+            'P' => Code::KeyP,
+            'Q' => Code::KeyQ,
+            'R' => Code::KeyR,
+            'S' => Code::KeyS,
+            'T' => Code::KeyT,
+            'U' => Code::KeyU,
+            'V' => Code::KeyV,
+            'W' => Code::KeyW,
+            'X' => Code::KeyX,
+            'Y' => Code::KeyY,
+            'Z' => Code::KeyZ,
+            _ => return None,
+        },
+        ShortcutKey::Digit(d) => match d {
+            0 => Code::Digit0,
+            1 => Code::Digit1,
+            2 => Code::Digit2,
+            3 => Code::Digit3,
+            4 => Code::Digit4,
+            5 => Code::Digit5,
+            6 => Code::Digit6,
+            7 => Code::Digit7,
+            8 => Code::Digit8,
+            9 => Code::Digit9,
+            _ => return None,
+        },
+        ShortcutKey::Function(n) => match n {
+            1 => Code::F1,
+            2 => Code::F2,
+            3 => Code::F3,
+            4 => Code::F4,
+            5 => Code::F5,
+            6 => Code::F6,
+            7 => Code::F7,
+            8 => Code::F8,
+            9 => Code::F9,
+            10 => Code::F10,
+            11 => Code::F11,
+            12 => Code::F12,
+            _ => return None,
+        },
+        ShortcutKey::Space => Code::Space,
+        ShortcutKey::Tab => Code::Tab,
+        ShortcutKey::Enter => Code::Enter,
+        ShortcutKey::Backspace => Code::Backspace,
+        ShortcutKey::Delete => Code::Delete,
+        ShortcutKey::Escape => Code::Escape,
+        ShortcutKey::ArrowUp => Code::ArrowUp,
+        ShortcutKey::ArrowDown => Code::ArrowDown,
+        ShortcutKey::ArrowLeft => Code::ArrowLeft,
+        ShortcutKey::ArrowRight => Code::ArrowRight,
+        ShortcutKey::Home => Code::Home,
+        ShortcutKey::End => Code::End,
+        ShortcutKey::PageUp => Code::PageUp,
+        ShortcutKey::PageDown => Code::PageDown,
+    })
 }
 
 #[cfg(desktop)]
@@ -964,35 +1138,77 @@ mod tests {
     }
 
     #[test]
-    fn parses_supported_shortcut_config_values() {
+    fn parses_shortcut_config_values() {
         assert_eq!(
             shortcut_from_config("Ctrl+Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Control,
+                ctrl: true,
+                alt: false,
+                shift: false,
                 key: ShortcutKey::Space,
             })
         );
         assert_eq!(
             shortcut_from_config("CommandOrControl + Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Control,
+                ctrl: true,
+                alt: false,
+                shift: false,
                 key: ShortcutKey::Space,
             })
         );
         assert_eq!(
             shortcut_from_config("Alt+Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Alt,
+                ctrl: false,
+                alt: true,
+                shift: false,
                 key: ShortcutKey::Space,
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Ctrl+Shift+K"),
+            Some(ShortcutSpec {
+                ctrl: true,
+                alt: false,
+                shift: true,
+                key: ShortcutKey::Letter('K'),
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Alt+F2"),
+            Some(ShortcutSpec {
+                ctrl: false,
+                alt: true,
+                shift: false,
+                key: ShortcutKey::Function(2),
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Ctrl+Alt+3"),
+            Some(ShortcutSpec {
+                ctrl: true,
+                alt: true,
+                shift: false,
+                key: ShortcutKey::Digit(3),
             })
         );
     }
 
     #[test]
-    fn rejects_unsupported_shortcut_config_values() {
+    fn rejects_invalid_shortcut_config_values() {
         assert_eq!(shortcut_from_config(""), None);
-        assert_eq!(shortcut_from_config("Ctrl+Shift+Space"), None);
-        assert_eq!(shortcut_from_config("Ctrl+K"), None);
+        assert_eq!(shortcut_from_config("Space"), None);
+        assert_eq!(shortcut_from_config("Shift+K"), None);
+        assert_eq!(shortcut_from_config("Ctrl+Unknown"), None);
+    }
+
+    #[test]
+    fn chooses_exit_when_main_window_closes_without_close_to_tray() {
+        assert_eq!(
+            main_window_close_action(false, false),
+            MainWindowCloseAction::ExitApp
+        );
     }
 
     #[test]
@@ -1011,6 +1227,7 @@ mod tests {
             font_size: 14,
             surface_font_size: 14,
             language: "zh-CN".into(),
+            external_file_auto_save: true,
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -1026,6 +1243,7 @@ mod tests {
             font_size: 16,
             surface_font_size: 16,
             language: "en".into(),
+            external_file_auto_save: true,
         };
 
         assert_eq!(

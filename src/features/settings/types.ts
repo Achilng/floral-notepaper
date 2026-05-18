@@ -20,4 +20,5 @@ export interface AppConfig {
   fontSize: number;
   surfaceFontSize: number;
   language: Language;
+  externalFileAutoSave: boolean;
 }
