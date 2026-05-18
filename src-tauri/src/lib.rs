@@ -3,8 +3,7 @@ pub mod services;
 
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
 use std::path::PathBuf;
-use tauri::{AppHandle, Emitter, Manager};
-
+use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
 fn app_name() -> &'static str {
@@ -43,8 +42,13 @@ fn notes_delete(app: AppHandle, id: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_import_markdown(app: AppHandle, path: String, category: Option<String>) -> Result<Note, AppError> {
-    let note = default_store()?.import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
+fn notes_import_markdown(
+    app: AppHandle,
+    path: String,
+    category: Option<String>,
+) -> Result<Note, AppError> {
+    let note = default_store()?
+        .import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
     let _ = app.emit("notes-changed", ());
     Ok(note)
 }
@@ -119,7 +123,11 @@ fn categories_delete(app: AppHandle, name: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_move_category(app: AppHandle, id: String, category: String) -> Result<NoteMetadata, AppError> {
+fn notes_move_category(
+    app: AppHandle,
+    id: String,
+    category: String,
+) -> Result<NoteMetadata, AppError> {
     let result = default_store()?.move_note_to_category(&id, &category)?;
     let _ = app.emit("notes-changed", ());
     Ok(result)
@@ -176,13 +184,6 @@ async fn open_note_in_editor(app: AppHandle, note_id: String) -> Result<(), AppE
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.unminimize();
-                let _ = window.show();
-                let _ = window.set_focus();
-            }
-        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {

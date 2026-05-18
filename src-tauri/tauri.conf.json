@@ -4,12 +4,13 @@
   "version": "1.0.2",
   "identifier": "com.floral-notepaper.app",
   "build": {
-    "beforeDevCommand": "npm.cmd run dev",
+    "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm.cmd run build",
+    "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -29,7 +30,10 @@
   },
   "bundle": {
     "active": true,
-    "targets": "nsis",
+    "targets": ["app", "dmg", "nsis"],
+    "macOS": {
+      "minimumSystemVersion": "15.0"
+    },
     "windows": {
       "nsis": {
         "installMode": "both",

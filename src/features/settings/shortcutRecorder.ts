@@ -2,7 +2,7 @@ import { parseHotkey, type Hotkey } from "@tanstack/react-hotkeys";
 
 const KEY_DISPLAY_NAMES: Record<string, string> = {
   Control: "Ctrl",
-  Meta: "Win",
+  Meta: "Meta",
   Backspace: "←",
   ArrowUp: "↑",
   ArrowDown: "↓",
@@ -16,13 +16,14 @@ export function hotkeyToConfigString(hotkey: Hotkey): string {
   if (parsed.ctrl) parts.push("Ctrl");
   if (parsed.alt) parts.push("Alt");
   if (parsed.shift) parts.push("Shift");
+  if (parsed.meta) parts.push("Meta");
   parts.push(parsed.key);
   return parts.join("+");
 }
 
 export function isValidGlobalShortcut(hotkey: Hotkey): boolean {
   const parsed = parseHotkey(hotkey, "windows");
-  return parsed.ctrl || parsed.alt;
+  return parsed.ctrl || parsed.alt || parsed.meta;
 }
 
 export function formatHeldKeys(keys: string[]): string {
