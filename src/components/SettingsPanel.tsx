@@ -1,6 +1,11 @@
 import { useEffect, useRef, useState } from "react";
+import { useHotkeyRecorder } from "@tanstack/react-hotkeys";
 import type { AppConfig, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
-import { supportedShortcuts } from "../features/settings/api";
+import {
+  formatHeldKeys,
+  hotkeyToConfigString,
+  isValidGlobalShortcut,
+} from "../features/settings/shortcutRecorder";
 import {
   DEFAULT_TILE_COLOR,
   normalizeTileColor,
@@ -112,9 +117,8 @@ export function SettingsPanel({
           <label className="block text-[11px] font-body text-ink-faint">
             快捷键
           </label>
-          <ShortcutDropdown
+          <ShortcutRecorder
             value={config.globalShortcut}
-            options={[...supportedShortcuts]}
             onChange={(v) => setConfigValue("globalShortcut", v)}
           />
         </section>
@@ -278,74 +282,109 @@ function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
   );
 }
 
-interface ShortcutDropdownProps {
+interface ShortcutRecorderProps {
   value: string;
-  options: string[];
   onChange: (value: string) => void;
 }
 
-function ShortcutDropdown({ value, options, onChange }: ShortcutDropdownProps) {
-  const [open, setOpen] = useState(false);
+function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
+  const [heldKeys, setHeldKeys] = useState<string[]>([]);
+  const recorder = useHotkeyRecorder({
+    onRecord: (hotkey) => {
+      if (isValidGlobalShortcut(hotkey)) {
+        onChange(hotkeyToConfigString(hotkey));
+      }
+    },
+  });
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!recorder.isRecording) {
+      setHeldKeys([]);
+      return;
+    }
+
+    const pressed = new Set<string>();
+
+    const toLabel = (e: KeyboardEvent): string => {
+      if (e.key === "Control") return "Control";
+      if (e.key === "Alt") return "Alt";
+      if (e.key === "Shift") return "Shift";
+      if (e.key === "Meta") return "Meta";
+      return e.key.length === 1 ? e.key.toUpperCase() : e.key;
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      pressed.add(toLabel(e));
+      setHeldKeys([...pressed]);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      pressed.delete(toLabel(e));
+      setHeldKeys([...pressed]);
+    };
+    const onBlur = () => {
+      pressed.clear();
+      setHeldKeys([]);
+    };
+
+    document.addEventListener("keydown", onKeyDown, true);
+    document.addEventListener("keyup", onKeyUp, true);
+    window.addEventListener("blur", onBlur);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown, true);
+      document.removeEventListener("keyup", onKeyUp, true);
+      window.removeEventListener("blur", onBlur);
+    };
+  }, [recorder.isRecording]);
+
+  useEffect(() => {
+    if (!recorder.isRecording) return;
     const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+      if (
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        recorder.cancelRecording();
       }
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
+  }, [recorder.isRecording, recorder.cancelRecording]);
+
+  const liveDisplay =
+    recorder.isRecording && heldKeys.length > 0
+      ? formatHeldKeys(heldKeys)
+      : null;
 
   return (
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] text-ink-soft flex items-center justify-between cursor-pointer hover:border-paper-deep/60 transition-colors"
+        onClick={() => recorder.startRecording()}
+        className={`w-full h-8 px-2.5 rounded-lg border text-[12px] flex items-center gap-2 cursor-pointer transition-colors ${
+          recorder.isRecording
+            ? "bg-bamboo-mist/40 border-bamboo"
+            : "bg-paper-warm/70 border-paper-deep/40 hover:border-paper-deep/60"
+        }`}
       >
-        <span>{value}</span>
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`text-ink-ghost transition-transform duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] ${open ? "rotate-180" : ""}`}
-        >
-          <path d="M2 3.5l3 3 3-3" />
-        </svg>
+        {recorder.isRecording ? (
+          <>
+            <span className="flex-1 text-left text-bamboo">
+              {liveDisplay || "按下快捷键..."}
+            </span>
+            <span className="text-[10px] text-ink-faint shrink-0">
+              Esc 取消
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="flex-1 text-left text-ink-soft">{value}</span>
+            <span className="text-[10px] text-ink-ghost shrink-0">
+              点击录制
+            </span>
+          </>
+        )}
       </button>
-      <ul
-        className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-paper-deep/30 bg-cloud/95 backdrop-blur-sm shadow-[0_4px_12px_rgba(0,0,0,0.06)] overflow-hidden z-10"
-        style={{
-          opacity: open ? 1 : 0,
-          transform: open ? "translateY(0)" : "translateY(-4px)",
-          transition: "opacity 200ms cubic-bezier(0.22, 1, 0.36, 1), transform 200ms cubic-bezier(0.22, 1, 0.36, 1)",
-          pointerEvents: open ? "auto" : "none",
-        }}
-      >
-        {options.map((opt) => (
-          <li key={opt} className="list-none">
-            <button
-              type="button"
-              onClick={() => { onChange(opt); setOpen(false); }}
-              className={`w-full h-8 px-2.5 text-left text-[12px] transition-colors cursor-pointer ${
-                opt === value
-                  ? "text-bamboo bg-bamboo-mist/40 font-medium"
-                  : "text-ink-soft hover:bg-paper-warm/60"
-              }`}
-            >
-              {opt}
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

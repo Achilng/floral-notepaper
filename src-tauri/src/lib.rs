@@ -5,7 +5,6 @@ use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, Sa
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
 
-
 #[tauri::command]
 fn app_name() -> &'static str {
     "花笺"
@@ -43,8 +42,13 @@ fn notes_delete(app: AppHandle, id: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_import_markdown(app: AppHandle, path: String, category: Option<String>) -> Result<Note, AppError> {
-    let note = default_store()?.import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
+fn notes_import_markdown(
+    app: AppHandle,
+    path: String,
+    category: Option<String>,
+) -> Result<Note, AppError> {
+    let note = default_store()?
+        .import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
     let _ = app.emit("notes-changed", ());
     Ok(note)
 }
@@ -103,7 +107,11 @@ fn categories_delete(app: AppHandle, name: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_move_category(app: AppHandle, id: String, category: String) -> Result<NoteMetadata, AppError> {
+fn notes_move_category(
+    app: AppHandle,
+    id: String,
+    category: String,
+) -> Result<NoteMetadata, AppError> {
     let result = default_store()?.move_note_to_category(&id, &category)?;
     let _ = app.emit("notes-changed", ());
     Ok(result)

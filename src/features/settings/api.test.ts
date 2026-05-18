@@ -6,7 +6,6 @@ import {
   getConfig,
   normalizeViewMode,
   saveConfig,
-  supportedShortcuts,
 } from "./api";
 import type { AppConfig } from "./types";
 
@@ -76,10 +75,6 @@ describe("settings api", () => {
     expect(normalizeViewMode("split")).toBe("split");
     expect(normalizeViewMode("preview")).toBe("preview");
     expect(normalizeViewMode("unknown")).toBe("split");
-  });
-
-  test("lists supported global shortcuts", () => {
-    expect(supportedShortcuts).toEqual(["Ctrl+Space", "Alt+Space"]);
   });
 
   test("chooses a notes directory through the folder picker", async () => {

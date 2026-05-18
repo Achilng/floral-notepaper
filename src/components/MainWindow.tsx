@@ -1116,9 +1116,9 @@ export function MainWindow({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M12 3v12" />
-                  <path d="m7 8 5-5 5 5" />
-                  <path d="M5 21h14" />
+                  <path d="M12 21V9" />
+                  <path d="m7 16 5 5 5-5" />
+                  <path d="M5 3h14" />
                 </svg>
                 <span>导入 Markdown</span>
               </button>

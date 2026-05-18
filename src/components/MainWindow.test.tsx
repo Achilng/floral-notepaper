@@ -35,6 +35,15 @@ describe("MainWindow settings", () => {
     expect(markup).not.toContain("cursor-grab");
     expect(markup).not.toContain("cursor-grabbing");
   });
+
+  test("renders the import Markdown icon as a down arrow", () => {
+    const markup = renderToStaticMarkup(<MainWindow />);
+
+    expect(markup).toContain('d="M12 21V9"');
+    expect(markup).toContain('d="m7 16 5 5 5-5"');
+    expect(markup).toContain('d="M5 3h14"');
+    expect(markup).not.toContain('d="m7 8 5-5 5 5"');
+  });
 });
 
 describe("MainWindow editor undo", () => {

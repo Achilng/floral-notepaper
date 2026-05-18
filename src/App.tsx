@@ -37,6 +37,17 @@ function App() {
     };
   }, []);
 
+  useEffect(() => {
+    const preventSystemMenu = (e: KeyboardEvent) => {
+      if (e.altKey && e.code === "Space") {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", preventSystemMenu, true);
+    return () =>
+      document.removeEventListener("keydown", preventSystemMenu, true);
+  }, []);
+
   return (
     <ContextMenuProvider>
       <div className="h-screen font-body text-ink overflow-hidden">

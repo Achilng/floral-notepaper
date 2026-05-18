@@ -191,7 +191,10 @@ impl NoteStore {
     pub fn list_notes(&self) -> Result<Vec<NoteMetadata>, AppError> {
         self.ensure_storage()?;
         let mut metadata = self.load_metadata()?.notes;
-        metadata.retain(|note| self.note_path_in_category(&note.file_name, &note.category).exists());
+        metadata.retain(|note| {
+            self.note_path_in_category(&note.file_name, &note.category)
+                .exists()
+        });
         metadata.sort_by_key(|note| std::cmp::Reverse(note.updated_at));
         Ok(metadata)
     }
@@ -199,7 +202,9 @@ impl NoteStore {
     pub fn read_note(&self, id: &str) -> Result<Note, AppError> {
         self.ensure_storage()?;
         let metadata = self.find_metadata(id)?;
-        let content = fs::read_to_string(self.note_path_in_category(&metadata.file_name, &metadata.category))?;
+        let content = fs::read_to_string(
+            self.note_path_in_category(&metadata.file_name, &metadata.category),
+        )?;
         Ok(Note {
             id: metadata.id,
             title: metadata.title,
@@ -325,7 +330,11 @@ impl NoteStore {
 
         let content = fs::read_to_string(path)?;
         let title = imported_markdown_title(path, &content);
-        self.create_note(SaveNoteRequest { title, content, category: category.to_string() })
+        self.create_note(SaveNoteRequest {
+            title,
+            content,
+            category: category.to_string(),
+        })
     }
 
     pub fn export_markdown_file(&self, id: &str, path: &Path) -> Result<(), AppError> {
@@ -370,7 +379,11 @@ impl NoteStore {
         if new_name.is_empty() {
             return Err(AppError::new("invalidCategory", "分类名不能为空"));
         }
-        if new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') || new_name.contains("..") {
+        if new_name.contains('/')
+            || new_name.contains('\\')
+            || new_name.contains(':')
+            || new_name.contains("..")
+        {
             return Err(AppError::new("invalidCategory", "分类名不能包含特殊字符"));
         }
         let notes_dir = self.notes_dir()?;
@@ -380,7 +393,10 @@ impl NoteStore {
             return Err(AppError::not_found(format!("分类「{old_name}」不存在")));
         }
         if new_path.exists() {
-            return Err(AppError::new("conflict", format!("分类「{new_name}」已存在")));
+            return Err(AppError::new(
+                "conflict",
+                format!("分类「{new_name}」已存在"),
+            ));
         }
         fs::rename(&old_path, &new_path)?;
 
@@ -422,7 +438,11 @@ impl NoteStore {
         Ok(())
     }
 
-    pub fn move_note_to_category(&self, id: &str, new_category: &str) -> Result<NoteMetadata, AppError> {
+    pub fn move_note_to_category(
+        &self,
+        id: &str,
+        new_category: &str,
+    ) -> Result<NoteMetadata, AppError> {
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let note = metadata_file
@@ -567,7 +587,12 @@ impl NoteStore {
         Ok(MetadataFile { notes })
     }
 
-    fn scan_dir_for_notes(&self, dir: &Path, category: &str, notes: &mut Vec<NoteMetadata>) -> Result<(), AppError> {
+    fn scan_dir_for_notes(
+        &self,
+        dir: &Path,
+        category: &str,
+        notes: &mut Vec<NoteMetadata>,
+    ) -> Result<(), AppError> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -919,7 +944,13 @@ mod tests {
 
         assert_eq!(imported.title, "导入标题");
         assert_eq!(imported.content, source_content);
-        assert_eq!(store.read_note(&imported.id).expect("read imported").content, source_content);
+        assert_eq!(
+            store
+                .read_note(&imported.id)
+                .expect("read imported")
+                .content,
+            source_content
+        );
     }
 
     #[test]
