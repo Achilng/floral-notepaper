@@ -136,6 +136,14 @@ fn default_base_dir() -> Result<PathBuf, AppError> {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    if let Ok(home) = env::var("HOME") {
+        return Ok(PathBuf::from(home)
+            .join("Library")
+            .join("Application Support")
+            .join("花笺"));
+    }
+
     if let Ok(user_profile) = env::var("USERPROFILE") {
         return Ok(PathBuf::from(user_profile).join("Documents").join("花笺"));
     }
@@ -348,6 +356,9 @@ impl NoteStore {
         if name.is_empty() {
             return Err(AppError::new("invalidCategory", "分类名不能为空"));
         }
+        if name.contains('/') || name.contains('\\') || name.contains(':') || name.contains("..") {
+            return Err(AppError::new("invalidCategory", "分类名不能包含特殊字符"));
+        }
         let notes_dir = self.notes_dir()?;
         let path = notes_dir.join(name);
         fs::create_dir_all(&path)?;
@@ -358,6 +369,9 @@ impl NoteStore {
         let new_name = new_name.trim();
         if new_name.is_empty() {
             return Err(AppError::new("invalidCategory", "分类名不能为空"));
+        }
+        if new_name.contains('/') || new_name.contains('\\') || new_name.contains(':') || new_name.contains("..") {
+            return Err(AppError::new("invalidCategory", "分类名不能包含特殊字符"));
         }
         let notes_dir = self.notes_dir()?;
         let old_path = notes_dir.join(old_name);
@@ -440,6 +454,9 @@ impl NoteStore {
     fn default_config(&self) -> AppConfig {
         AppConfig {
             notes_dir: self.base_dir.join("notes").to_string_lossy().to_string(),
+            #[cfg(target_os = "macos")]
+            global_shortcut: "Option+Space".into(),
+            #[cfg(not(target_os = "macos"))]
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
             autostart: false,
@@ -823,13 +840,16 @@ mod tests {
         let store = NoteStore::new(test_root("config"));
 
         let default_config = store.load_config().expect("load default config");
+        #[cfg(target_os = "macos")]
+        assert_eq!(default_config.global_shortcut, "Option+Space");
+        #[cfg(not(target_os = "macos"))]
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
         assert!(default_config.note_auto_save);
         assert!(default_config.note_surface_auto_save);
         assert_eq!(default_config.tile_color, "#f6f3ec");
         assert_eq!(default_config.tile_color_mode, "system");
         assert_eq!(default_config.theme, "system");
-        assert!(default_config.notes_dir.ends_with(r"\notes"));
+        assert!(default_config.notes_dir.ends_with("notes"));
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
         let saved = AppConfig {

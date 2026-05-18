@@ -48,6 +48,7 @@ pub struct TrayMenuSpec {
 pub enum ShortcutModifier {
     Control,
     Alt,
+    Meta,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -205,6 +206,7 @@ pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
     let modifier = match parts[0].as_str() {
         "ctrl" | "control" | "cmdorctrl" | "commandorcontrol" => ShortcutModifier::Control,
         "alt" | "option" => ShortcutModifier::Alt,
+        "meta" | "cmd" | "command" | "super" => ShortcutModifier::Meta,
         _ => return None,
     };
 
@@ -372,7 +374,7 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
         )
         .tooltip("花笺")
         .menu(&menu)
-        .show_menu_on_left_click(false)
+        .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| {
             if let Err(error) = handle_tray_menu_event(app, event.id.as_ref()) {
                 eprintln!("failed to handle tray menu event {:?}: {error}", event.id);
@@ -767,10 +769,12 @@ fn register_configured_global_shortcut(app: &AppHandle) {
     };
 
     if let Err(error) = register_global_shortcut(app, &config.global_shortcut) {
-        eprintln!(
+        let msg = format!(
             "failed to register global shortcut {}: {error}",
             config.global_shortcut
         );
+        eprintln!("{msg}");
+        let _ = app.emit("shortcut-register-failed", &msg);
     }
 }
 
@@ -828,6 +832,7 @@ fn to_tauri_shortcut(spec: ShortcutSpec) -> Option<Shortcut> {
     let modifier = match spec.modifier {
         ShortcutModifier::Control => Modifiers::CONTROL,
         ShortcutModifier::Alt => Modifiers::ALT,
+        ShortcutModifier::Meta => Modifiers::META,
     };
     let key = match spec.key {
         ShortcutKey::Space => Code::Space,
