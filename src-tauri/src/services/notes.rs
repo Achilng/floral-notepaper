@@ -184,7 +184,7 @@ impl NoteStore {
         self.ensure_storage()?;
         let mut metadata = self.load_metadata()?.notes;
         metadata.retain(|note| self.note_path_in_category(&note.file_name, &note.category).exists());
-        metadata.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
+        metadata.sort_by_key(|note| std::cmp::Reverse(note.updated_at));
         Ok(metadata)
     }
 

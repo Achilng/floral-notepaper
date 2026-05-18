@@ -96,6 +96,17 @@ struct WindowSizeSpec {
     min_height: f64,
 }
 
+struct WindowOpenOptions {
+    url: String,
+    title: String,
+    specs: WindowSizeSpec,
+    decorations: bool,
+    always_on_top: bool,
+    shadow: bool,
+    skip_taskbar: bool,
+    bounds: Option<WindowBounds>,
+}
+
 #[derive(Default)]
 struct RuntimeState {
     is_exiting: AtomicBool,
@@ -418,17 +429,21 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     open_or_focus_window(
         app,
         MAIN_WINDOW_LABEL,
-        "index.html".to_string(),
-        "花笺",
-        1180.0,
-        760.0,
-        900.0,
-        620.0,
-        false,
-        false,
-        true,
-        false,
-        None,
+        WindowOpenOptions {
+            url: "index.html".to_string(),
+            title: "花笺".to_string(),
+            specs: WindowSizeSpec {
+                width: 1180.0,
+                height: 760.0,
+                min_width: 900.0,
+                min_height: 620.0,
+            },
+            decorations: false,
+            always_on_top: false,
+            shadow: true,
+            skip_taskbar: false,
+            bounds: None,
+        },
     )?;
     Ok(())
 }
@@ -454,17 +469,16 @@ fn open_notepad_window_now(
     open_or_focus_window(
         app,
         &label,
-        url,
-        "花笺便签",
-        specs.width,
-        specs.height,
-        specs.min_width,
-        specs.min_height,
-        false,
-        true,
-        false,
-        true,
-        bounds,
+        WindowOpenOptions {
+            url,
+            title: "花笺便签".to_string(),
+            specs,
+            decorations: false,
+            always_on_top: true,
+            shadow: false,
+            skip_taskbar: true,
+            bounds,
+        },
     )
 }
 
@@ -588,59 +602,48 @@ fn open_tile_window_now(
     open_or_focus_window(
         app,
         &label,
-        url,
-        "花笺磁贴",
-        specs.width,
-        specs.height,
-        specs.min_width,
-        specs.min_height,
-        false,
-        true,
-        false,
-        true,
-        bounds,
+        WindowOpenOptions {
+            url,
+            title: "花笺磁贴".to_string(),
+            specs,
+            decorations: false,
+            always_on_top: true,
+            shadow: false,
+            skip_taskbar: true,
+            bounds,
+        },
     )
 }
 
 fn open_or_focus_window(
     app: &AppHandle,
     label: &str,
-    url: String,
-    title: &str,
-    width: f64,
-    height: f64,
-    min_width: f64,
-    min_height: f64,
-    decorations: bool,
-    always_on_top: bool,
-    shadow: bool,
-    skip_taskbar: bool,
-    bounds: Option<WindowBounds>,
+    opts: WindowOpenOptions,
 ) -> Result<String, AppError> {
     let visual_options = dynamic_window_visual_options(label);
 
     if let Some(window) = app.get_webview_window(label) {
-        apply_window_bounds(&window, bounds)?;
-        window.set_shadow(shadow)?;
+        apply_window_bounds(&window, opts.bounds)?;
+        window.set_shadow(opts.shadow)?;
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
         return Ok(label.to_string());
     }
 
-    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(url.into()))
-        .title(title)
-        .inner_size(width, height)
-        .min_inner_size(min_width, min_height)
+    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(opts.url.into()))
+        .title(opts.title)
+        .inner_size(opts.specs.width, opts.specs.height)
+        .min_inner_size(opts.specs.min_width, opts.specs.min_height)
         .resizable(true)
-        .decorations(decorations)
+        .decorations(opts.decorations)
         .transparent(visual_options.transparent)
-        .always_on_top(always_on_top)
-        .shadow(shadow)
-        .skip_taskbar(skip_taskbar)
+        .always_on_top(opts.always_on_top)
+        .shadow(opts.shadow)
+        .skip_taskbar(opts.skip_taskbar)
         .visible(false);
 
-    if let Some(bounds) = bounds {
+    if let Some(bounds) = opts.bounds {
         builder = builder
             .position(bounds.x as f64, bounds.y as f64)
             .inner_size(bounds.width as f64, bounds.height as f64);
