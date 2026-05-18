@@ -117,10 +117,20 @@ export function SettingsPanel({
           <label className="block text-[11px] font-body text-ink-faint">
             快捷键
           </label>
-          <ShortcutRecorder
-            value={config.globalShortcut}
-            onChange={(v) => setConfigValue("globalShortcut", v)}
-          />
+          <div className="space-y-1.5">
+            <div className="text-[10px] text-ink-ghost">快速记录</div>
+            <ShortcutRecorder
+              value={config.globalShortcut}
+              onChange={(v) => setConfigValue("globalShortcut", v)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="text-[10px] text-ink-ghost">小窗 ↔ 磁贴</div>
+            <ShortcutRecorder
+              value={config.toggleSurfaceShortcut}
+              onChange={(v) => setConfigValue("toggleSurfaceShortcut", v)}
+            />
+          </div>
         </section>
 
         <section className="space-y-2">

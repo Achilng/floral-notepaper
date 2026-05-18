@@ -69,6 +69,7 @@ pub enum ShortcutKey {
 pub struct RuntimeConfigChanges {
     pub autostart_changed: bool,
     pub global_shortcut_changed: bool,
+    pub toggle_surface_shortcut_changed: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -218,7 +219,7 @@ pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
         }
     }
 
-    if !ctrl && !alt {
+    if !ctrl && !alt && !shift {
         return None;
     }
 
@@ -274,6 +275,7 @@ pub fn runtime_config_changes(previous: &AppConfig, next: &AppConfig) -> Runtime
     RuntimeConfigChanges {
         autostart_changed: previous.autostart != next.autostart,
         global_shortcut_changed: previous.global_shortcut != next.global_shortcut,
+        toggle_surface_shortcut_changed: previous.toggle_surface_shortcut != next.toggle_surface_shortcut,
     }
 }
 
@@ -284,8 +286,8 @@ pub fn apply_runtime_config(
 ) -> Result<(), Box<dyn Error>> {
     let changes = runtime_config_changes(previous, next);
 
-    if changes.global_shortcut_changed {
-        apply_global_shortcut_config(app, &next.global_shortcut)?;
+    if changes.global_shortcut_changed || changes.toggle_surface_shortcut_changed {
+        apply_global_shortcut_config(app, &next.global_shortcut, &next.toggle_surface_shortcut)?;
     }
 
     if changes.autostart_changed {
@@ -453,7 +455,7 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
     match tray_menu_action(id) {
         Some(TrayMenuAction::ShowMain) => show_main_window(app)?,
         Some(TrayMenuAction::QuickNote) => {
-            open_notepad_window_now(app, None, None)?;
+            open_notepad_window_now(app, None, load_last_notepad_bounds())?;
         }
         Some(TrayMenuAction::ToggleCloseToTray) => {
             let store = default_store()?;
@@ -557,6 +559,24 @@ pub fn recycle_notepad_window(app: &AppHandle, label: &str) -> Result<(), AppErr
     let Some(window) = app.get_webview_window(label) else {
         return Ok(());
     };
+
+    // Save window position before hiding
+    if let Ok(pos) = window.outer_position() {
+        if let Ok(size) = window.inner_size() {
+            let bounds = crate::services::notes::WindowBoundsConfig {
+                x: pos.x,
+                y: pos.y,
+                width: size.width,
+                height: size.height,
+            };
+            if let Ok(store) = default_store() {
+                if let Ok(mut config) = store.load_config() {
+                    config.last_notepad_bounds = Some(bounds);
+                    let _ = store.save_config(config);
+                }
+            }
+        }
+    }
 
     window.hide()?;
 
@@ -766,6 +786,18 @@ fn load_config() -> Result<AppConfig, AppError> {
     default_store()?.load_config()
 }
 
+fn load_last_notepad_bounds() -> Option<WindowBounds> {
+    load_config()
+        .ok()
+        .and_then(|config| config.last_notepad_bounds)
+        .map(|b| WindowBounds {
+            x: b.x,
+            y: b.y,
+            width: b.width,
+            height: b.height,
+        })
+}
+
 fn close_to_tray_enabled() -> bool {
     load_config()
         .map(|config| config.close_to_tray)
@@ -801,16 +833,28 @@ fn setup_autostart_plugin(_app: &AppHandle) -> tauri::Result<()> {
 fn setup_global_shortcut_plugin(app: &AppHandle) -> tauri::Result<()> {
     app.plugin(
         tauri_plugin_global_shortcut::Builder::new()
-            .with_handler(|app, _shortcut, event| {
-                if event.state() == ShortcutState::Pressed {
-                    let app_for_closure = app.clone();
-                    if let Err(error) = app.run_on_main_thread(move || {
-                        if let Err(error) = open_notepad_window_now(&app_for_closure, None, None) {
+            .with_handler(|app, shortcut, event| {
+                if event.state() != ShortcutState::Pressed {
+                    return;
+                }
+                // Convert shortcut to string outside the move closure to avoid lifetime issues
+                let shortcut_str = shortcut_to_string(&shortcut);
+                let app_for_closure = app.clone();
+                if let Err(error) = app.run_on_main_thread(move || {
+                    let config = match load_config() {
+                        Ok(c) => c,
+                        Err(_) => return,
+                    };
+
+                    if shortcut_str == config.global_shortcut {
+                        if let Err(error) = open_notepad_window_now(&app_for_closure, None, load_last_notepad_bounds()) {
                             eprintln!("failed to open notepad from global shortcut: {error}");
                         }
-                    }) {
-                        eprintln!("failed to dispatch global shortcut action: {error}");
+                    } else if shortcut_str == config.toggle_surface_shortcut {
+                        let _ = app_for_closure.emit("surface:toggle", ());
                     }
+                }) {
+                    eprintln!("failed to dispatch global shortcut action: {error}");
                 }
             })
             .build(),
@@ -832,6 +876,12 @@ fn register_configured_global_shortcut(app: &AppHandle) {
         eprintln!(
             "failed to register global shortcut {}: {error}",
             config.global_shortcut
+        );
+    }
+    if let Err(error) = register_global_shortcut(app, &config.toggle_surface_shortcut) {
+        eprintln!(
+            "failed to register toggle surface shortcut {}: {error}",
+            config.toggle_surface_shortcut
         );
     }
 }
@@ -864,16 +914,17 @@ fn register_global_shortcut(
 fn apply_global_shortcut_config(
     app: &AppHandle,
     shortcut_config: &str,
+    toggle_shortcut_config: &str,
 ) -> Result<(), Box<dyn Error>> {
-    let Some(shortcut) = shortcut_from_config(shortcut_config).and_then(to_tauri_shortcut) else {
-        return Err(Box::new(AppError {
-            code: "unsupportedShortcut".into(),
-            message: format!("unsupported global shortcut config: {shortcut_config}"),
-        }));
-    };
-
     app.global_shortcut().unregister_all()?;
-    app.global_shortcut().register(shortcut)?;
+
+    if let Err(error) = register_global_shortcut(app, shortcut_config) {
+        eprintln!("failed to re-register global shortcut: {error}");
+    }
+    if let Err(error) = register_global_shortcut(app, toggle_shortcut_config) {
+        eprintln!("failed to re-register toggle surface shortcut: {error}");
+    }
+
     Ok(())
 }
 
@@ -881,8 +932,90 @@ fn apply_global_shortcut_config(
 fn apply_global_shortcut_config(
     _app: &AppHandle,
     _shortcut_config: &str,
+    _toggle_shortcut_config: &str,
 ) -> Result<(), Box<dyn Error>> {
     Ok(())
+}
+
+#[cfg(desktop)]
+fn shortcut_to_string(shortcut: &Shortcut) -> String {
+    let mut parts = Vec::new();
+    if shortcut.mods.contains(Modifiers::CONTROL) {
+        parts.push("Ctrl".to_string());
+    }
+    if shortcut.mods.contains(Modifiers::ALT) {
+        parts.push("Alt".to_string());
+    }
+    if shortcut.mods.contains(Modifiers::SHIFT) {
+        parts.push("Shift".to_string());
+    }
+    let key_name = match shortcut.key {
+        Code::Space => "Space".to_string(),
+        Code::KeyA => "A".to_string(),
+        Code::KeyB => "B".to_string(),
+        Code::KeyC => "C".to_string(),
+        Code::KeyD => "D".to_string(),
+        Code::KeyE => "E".to_string(),
+        Code::KeyF => "F".to_string(),
+        Code::KeyG => "G".to_string(),
+        Code::KeyH => "H".to_string(),
+        Code::KeyI => "I".to_string(),
+        Code::KeyJ => "J".to_string(),
+        Code::KeyK => "K".to_string(),
+        Code::KeyL => "L".to_string(),
+        Code::KeyM => "M".to_string(),
+        Code::KeyN => "N".to_string(),
+        Code::KeyO => "O".to_string(),
+        Code::KeyP => "P".to_string(),
+        Code::KeyQ => "Q".to_string(),
+        Code::KeyR => "R".to_string(),
+        Code::KeyS => "S".to_string(),
+        Code::KeyT => "T".to_string(),
+        Code::KeyU => "U".to_string(),
+        Code::KeyV => "V".to_string(),
+        Code::KeyW => "W".to_string(),
+        Code::KeyX => "X".to_string(),
+        Code::KeyY => "Y".to_string(),
+        Code::KeyZ => "Z".to_string(),
+        Code::Digit0 => "0".to_string(),
+        Code::Digit1 => "1".to_string(),
+        Code::Digit2 => "2".to_string(),
+        Code::Digit3 => "3".to_string(),
+        Code::Digit4 => "4".to_string(),
+        Code::Digit5 => "5".to_string(),
+        Code::Digit6 => "6".to_string(),
+        Code::Digit7 => "7".to_string(),
+        Code::Digit8 => "8".to_string(),
+        Code::Digit9 => "9".to_string(),
+        Code::F1 => "F1".to_string(),
+        Code::F2 => "F2".to_string(),
+        Code::F3 => "F3".to_string(),
+        Code::F4 => "F4".to_string(),
+        Code::F5 => "F5".to_string(),
+        Code::F6 => "F6".to_string(),
+        Code::F7 => "F7".to_string(),
+        Code::F8 => "F8".to_string(),
+        Code::F9 => "F9".to_string(),
+        Code::F10 => "F10".to_string(),
+        Code::F11 => "F11".to_string(),
+        Code::F12 => "F12".to_string(),
+        Code::Tab => "Tab".to_string(),
+        Code::Enter => "Enter".to_string(),
+        Code::Backspace => "Backspace".to_string(),
+        Code::Delete => "Delete".to_string(),
+        Code::Escape => "Escape".to_string(),
+        Code::ArrowUp => "ArrowUp".to_string(),
+        Code::ArrowDown => "ArrowDown".to_string(),
+        Code::ArrowLeft => "ArrowLeft".to_string(),
+        Code::ArrowRight => "ArrowRight".to_string(),
+        Code::Home => "Home".to_string(),
+        Code::End => "End".to_string(),
+        Code::PageUp => "PageUp".to_string(),
+        Code::PageDown => "PageDown".to_string(),
+        _ => return String::new(),
+    };
+    parts.push(key_name);
+    parts.join("+")
 }
 
 #[cfg(desktop)]
@@ -1141,7 +1274,12 @@ mod tests {
     fn rejects_invalid_shortcut_config_values() {
         assert_eq!(shortcut_from_config(""), None);
         assert_eq!(shortcut_from_config("Space"), None);
-        assert_eq!(shortcut_from_config("Shift+K"), None);
+        assert_eq!(shortcut_from_config("Shift+K"), Some(ShortcutSpec {
+            ctrl: false,
+            alt: false,
+            shift: true,
+            key: ShortcutKey::Letter('K'),
+        }));
         assert_eq!(shortcut_from_config("Ctrl+Unknown"), None);
     }
 
@@ -1169,6 +1307,8 @@ mod tests {
             font_size: 14,
             surface_font_size: 14,
             external_file_auto_save: true,
+            last_notepad_bounds: None,
+            toggle_surface_shortcut: "Shift+Space".into(),
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -1184,6 +1324,8 @@ mod tests {
             font_size: 16,
             surface_font_size: 16,
             external_file_auto_save: true,
+            last_notepad_bounds: None,
+            toggle_surface_shortcut: "Shift+Space".into(),
         };
 
         assert_eq!(
@@ -1191,6 +1333,7 @@ mod tests {
             RuntimeConfigChanges {
                 autostart_changed: true,
                 global_shortcut_changed: true,
+                toggle_surface_shortcut_changed: false,
             }
         );
         assert_eq!(
@@ -1198,6 +1341,7 @@ mod tests {
             RuntimeConfigChanges {
                 autostart_changed: false,
                 global_shortcut_changed: false,
+                toggle_surface_shortcut_changed: false,
             }
         );
     }

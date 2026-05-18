@@ -1,4 +1,4 @@
-import { renderToStaticMarkup } from "react-dom/server";
+﻿import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { MainWindow, runEditorUndo } from "./MainWindow";
 
@@ -21,6 +21,7 @@ describe("MainWindow settings", () => {
           fontSize: 14,
           surfaceFontSize: 14,
           externalFileAutoSave: true,
+          toggleSurfaceShortcut: "Shift+Space",
         }}
       />,
     );

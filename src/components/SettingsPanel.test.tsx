@@ -1,4 +1,4 @@
-import { renderToStaticMarkup } from "react-dom/server";
+﻿import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
 
@@ -16,6 +16,7 @@ const config = {
   fontSize: 14,
   surfaceFontSize: 14,
   externalFileAutoSave: true,
+  toggleSurfaceShortcut: "Shift+Space",
 };
 
 describe("SettingsPanel", () => {

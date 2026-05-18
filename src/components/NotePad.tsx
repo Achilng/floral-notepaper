@@ -274,6 +274,7 @@ export function NotePad({
     };
   }, [refreshNotes]);
 
+
   const saveNote = useCallback(async () => {
     const existingCategory = notes.find((n) => n.id === editingNoteId)?.category ?? "";
     const request = { title, content, category: existingCategory };
@@ -317,6 +318,17 @@ export function NotePad({
       setErrorMessage(getErrorMessage(error));
     }
   }, []);
+
+  useEffect(() => {
+    const unlisten = listen("surface:toggle", () => {
+      const nextMode: NoteSurfaceMode = surfaceMode === "pad" ? "tile" : "pad";
+      void switchSurfaceMode(nextMode);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [surfaceMode, switchSurfaceMode]);
+
 
   useEffect(() => {
     function handleSurfaceModeRequest(event: Event) {

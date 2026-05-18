@@ -8,6 +8,15 @@ use uuid::Uuid;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct WindowBoundsConfig {
+    pub x: i32,
+    pub y: i32,
+    pub width: u32,
+    pub height: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     pub notes_dir: String,
     pub global_shortcut: String,
@@ -30,6 +39,10 @@ pub struct AppConfig {
     pub surface_font_size: u32,
     #[serde(default = "default_external_file_auto_save")]
     pub external_file_auto_save: bool,
+    #[serde(default)]
+    pub last_notepad_bounds: Option<WindowBoundsConfig>,
+    #[serde(default = "default_toggle_surface_shortcut")]
+    pub toggle_surface_shortcut: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -454,6 +467,8 @@ impl NoteStore {
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
             external_file_auto_save: default_external_file_auto_save(),
+            last_notepad_bounds: None,
+            toggle_surface_shortcut: "Shift+Space".into(),
         }
     }
 
@@ -725,6 +740,10 @@ fn default_external_file_auto_save() -> bool {
     true
 }
 
+fn default_toggle_surface_shortcut() -> String {
+    "Shift+Space".into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -853,6 +872,8 @@ mod tests {
             font_size: 16,
             surface_font_size: 16,
             external_file_auto_save: true,
+            last_notepad_bounds: None,
+            toggle_surface_shortcut: "Shift+Space".into(),
         };
 
         store.save_config(saved.clone()).expect("save config");

@@ -41,6 +41,7 @@ describe("settings api", () => {
       fontSize: 14,
       surfaceFontSize: 14,
       externalFileAutoSave: true,
+      toggleSurfaceShortcut: "Shift+Space",
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -64,6 +65,7 @@ describe("settings api", () => {
       fontSize: 16,
       surfaceFontSize: 16,
       externalFileAutoSave: true,
+      toggleSurfaceShortcut: "Shift+Space",
     };
     mockedInvoke.mockResolvedValue(config);
 
