@@ -25,6 +25,7 @@ import {
   startCurrentWindowDrag,
   startCurrentWindowResize,
 } from "../features/windows/controls";
+import { openNoteInEditor } from "../features/windows/api";
 import type { ResizeDirection } from "../features/windows/controls";
 import { getConfig } from "../features/settings/api";
 import {
@@ -632,13 +633,38 @@ export function NotePad({
                       onMouseLeave={() => setHoveredNote(null)}
                       className="w-full text-left px-3.5 py-3 rounded-xl transition-all duration-200 cursor-pointer group hover:bg-paper-warm/70"
                     >
-                      <div className="flex items-baseline justify-between mb-0.5">
-                        <span className="text-[13px] font-display font-medium text-ink-soft group-hover:text-ink transition-colors truncate pr-3">
+                      <div className="flex items-center justify-between mb-0.5">
+                        <span className="text-[13px] font-display font-medium text-ink-soft group-hover:text-ink transition-colors truncate pr-2">
                           {getDisplayTitle(note)}
                         </span>
-                        <span className="text-[11px] text-ink-ghost font-mono tabular-nums">
-                          {formatShortDate(note.updatedAt)}
-                        </span>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              void openNoteInEditor(note.id);
+                            }}
+                            className="w-6 h-6 flex items-center justify-center rounded-md text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all duration-200 opacity-0 group-hover:opacity-100 cursor-pointer"
+                            title="在编辑器中打开"
+                          >
+                            <svg
+                              width="13"
+                              height="13"
+                              viewBox="0 0 24 24"
+                              fill="none"
+                              stroke="currentColor"
+                              strokeWidth="2"
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                            >
+                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                              <polyline points="15 3 21 3 21 9" />
+                              <line x1="10" y1="14" x2="21" y2="3" />
+                            </svg>
+                          </button>
+                          <span className="text-[11px] text-ink-ghost font-mono tabular-nums">
+                            {formatShortDate(note.updatedAt)}
+                          </span>
+                        </div>
                       </div>
                       <p className="text-[12px] text-ink-ghost leading-relaxed line-clamp-1 group-hover:text-ink-faint transition-colors">
                         {note.preview || "空白笔记"}

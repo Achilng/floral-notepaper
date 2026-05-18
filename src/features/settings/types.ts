@@ -17,4 +17,5 @@ export interface AppConfig {
   theme: ThemeOption;
   fontSize: number;
   surfaceFontSize: number;
+  externalFileAutoSave: boolean;
 }

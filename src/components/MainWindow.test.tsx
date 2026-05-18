@@ -20,6 +20,7 @@ describe("MainWindow settings", () => {
           theme: "light",
           fontSize: 14,
           surfaceFontSize: 14,
+          externalFileAutoSave: true,
         }}
       />,
     );

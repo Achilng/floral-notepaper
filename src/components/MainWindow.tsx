@@ -19,6 +19,7 @@ import {
   deleteCategory,
   deleteNote,
   getErrorMessage,
+  getFileModifiedTime,
   getNote,
   listCategories,
   listNotes,
@@ -273,10 +274,14 @@ export function MainWindow({
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameCategoryValue, setRenameCategoryValue] = useState("");
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
+  const [sidebarWidth, setSidebarWidth] = useState(280);
+  const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [categoryMenu, setCategoryMenu] = useState<CategoryMenuState | null>(null);
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const externalFileMtimeRef = useRef<number>(0);
+  const lastExternalSaveRef = useRef<number>(0);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -364,7 +369,10 @@ export function MainWindow({
   const loadExternalFile = useCallback(async (filePath: string) => {
     setErrorMessage(null);
     try {
-      const fileContent = await readExternalFile(filePath);
+      const [fileContent, mtime] = await Promise.all([
+        readExternalFile(filePath),
+        getFileModifiedTime(filePath),
+      ]);
       const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
       const displayTitle = fileName.replace(/\.md$/i, "");
 
@@ -387,6 +395,7 @@ export function MainWindow({
       setContent(fileContent);
       setSaveState("saved");
       setNoteTransitionKey((k) => k + 1);
+      externalFileMtimeRef.current = mtime;
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -409,6 +418,7 @@ export function MainWindow({
         setViewMode(normalizeViewMode(loadedConfig.defaultViewMode));
         setNotes(loadedNotes);
         setCategories(loadedCategories);
+        setCollapsedCategories(new Set(loadedCategories));
         if (loadedNotes[0]) {
           const note = await getNote(loadedNotes[0].id);
           if (!cancelled) applyNote(note);
@@ -455,6 +465,36 @@ export function MainWindow({
   }, [loadExternalFile]);
 
   useEffect(() => {
+    const unlisten = listen<string>("open-note", (event) => {
+      void loadNote(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [loadNote]);
+
+  useEffect(() => {
+    if (!selectedExternalFile) return;
+
+    const interval = window.setInterval(async () => {
+      if (Date.now() - lastExternalSaveRef.current < 2000) return;
+      try {
+        const mtime = await getFileModifiedTime(selectedExternalFile.filePath);
+        if (mtime !== externalFileMtimeRef.current) {
+          externalFileMtimeRef.current = mtime;
+          const fileContent = await readExternalFile(selectedExternalFile.filePath);
+          setContent(fileContent);
+          setSaveState("saved");
+        }
+      } catch {
+        // file may have been deleted or become inaccessible
+      }
+    }, 1000);
+
+    return () => window.clearInterval(interval);
+  }, [selectedExternalFile]);
+
+  useEffect(() => {
     function closeMenus() {
       setNoteMenuClosing(true);
       setCategoryMenuClosing(true);
@@ -499,6 +539,9 @@ export function MainWindow({
       setSaveState("saving");
       try {
         await saveExternalFile(selectedExternalFile.filePath, content);
+        lastExternalSaveRef.current = Date.now();
+        const mtime = await getFileModifiedTime(selectedExternalFile.filePath);
+        externalFileMtimeRef.current = mtime;
         setSaveState("saved");
         setErrorMessage(null);
         return { id: selectedId, title, content } as Note;
@@ -538,15 +581,18 @@ export function MainWindow({
 
   useEffect(() => {
     if (!selectedId || saveState !== "dirty") return undefined;
-    if (isExternal) return undefined;
-    if (!settingsConfig?.noteAutoSave) return undefined;
+    if (isExternal) {
+      if (!settingsConfig?.externalFileAutoSave) return undefined;
+    } else {
+      if (!settingsConfig?.noteAutoSave) return undefined;
+    }
 
     const timer = window.setTimeout(() => {
       void saveCurrentNote();
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [isExternal, saveCurrentNote, saveState, selectedId, settingsConfig?.noteAutoSave]);
+  }, [isExternal, saveCurrentNote, saveState, selectedId, settingsConfig?.noteAutoSave, settingsConfig?.externalFileAutoSave]);
 
   const handleNewNote = async () => {
     setErrorMessage(null);
@@ -687,13 +733,17 @@ export function MainWindow({
 
     setIsLoading(true);
     try {
-      const fileContent = await readExternalFile(file.filePath);
+      const [fileContent, mtime] = await Promise.all([
+        readExternalFile(file.filePath),
+        getFileModifiedTime(file.filePath),
+      ]);
       setSelectedId(id);
       setTitle(file.title);
       setContent(fileContent);
       setSaveState("saved");
       setErrorMessage(null);
       setNoteTransitionKey((k) => k + 1);
+      externalFileMtimeRef.current = mtime;
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     } finally {
@@ -890,6 +940,28 @@ export function MainWindow({
     void isCurrentWindowMaximized().then(setIsMaximized);
   }, []);
 
+  useEffect(() => {
+    if (!isResizingSidebar) return;
+
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+
+    const onMouseMove = (e: globalThis.MouseEvent) => {
+      const newWidth = Math.min(Math.max(e.clientX, 180), 500);
+      setSidebarWidth(newWidth);
+    };
+    const onMouseUp = () => setIsResizingSidebar(false);
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isResizingSidebar]);
+
   const handlePinEntry = async () => {
     if (!selectedId) return;
     if (saveState === "dirty") {
@@ -1035,9 +1107,10 @@ export function MainWindow({
 
         <div className="flex flex-1 min-h-0">
           <div
-            className={`border-r border-paper-deep/30 bg-paper/40 flex flex-col shrink-0 transition-all duration-[600ms] ${
-              sidebarCollapsed ? "w-0 overflow-hidden" : "w-[280px]"
+            className={`border-r border-paper-deep/30 bg-paper/40 flex flex-col shrink-0 ${
+              sidebarCollapsed ? "w-0 overflow-hidden transition-all duration-[600ms]" : ""
             }`}
+            style={sidebarCollapsed ? undefined : { width: `${sidebarWidth}px` }}
           >
             <div className="px-3 pt-3 pb-2 shrink-0">
               <div className="flex items-center gap-2 px-2.5 h-8 rounded-lg bg-paper-warm/80 border border-paper-deep/40 focus-within:border-bamboo/30 focus-within:bg-cloud transition-all">
@@ -1487,6 +1560,18 @@ export function MainWindow({
               </div>
             </div>
           </div>
+
+          {!sidebarCollapsed && (
+            <div
+              className={`w-1 shrink-0 cursor-col-resize group relative ${isResizingSidebar ? "bg-bamboo/30" : "hover:bg-bamboo/20"} transition-colors`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                setIsResizingSidebar(true);
+              }}
+            >
+              <div className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSidebar ? "" : "group-hover:bg-bamboo/5"}`} />
+            </div>
+          )}
 
           <div className="flex-1 flex flex-col min-w-0">
             <div className="flex items-center justify-between px-4 h-10 border-b border-paper-deep/20 shrink-0 bg-paper/20">

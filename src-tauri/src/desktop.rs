@@ -1203,6 +1203,7 @@ mod tests {
             theme: "light".into(),
             font_size: 14,
             surface_font_size: 14,
+            external_file_auto_save: true,
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -1217,6 +1218,7 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            external_file_auto_save: true,
         };
 
         assert_eq!(

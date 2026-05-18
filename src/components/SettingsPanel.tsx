@@ -146,6 +146,13 @@ export function SettingsPanel({
               setConfigValue("noteSurfaceAutoSave", checked)
             }
           />
+          <ToggleRow
+            label="外部文件自动保存"
+            checked={config.externalFileAutoSave}
+            onChange={(checked) =>
+              setConfigValue("externalFileAutoSave", checked)
+            }
+          />
         </section>
 
         <section className="space-y-2">

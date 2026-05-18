@@ -28,6 +28,8 @@ pub struct AppConfig {
     pub font_size: u32,
     #[serde(default = "default_surface_font_size")]
     pub surface_font_size: u32,
+    #[serde(default = "default_external_file_auto_save")]
+    pub external_file_auto_save: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -488,6 +490,7 @@ impl NoteStore {
             theme: default_theme(),
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
+            external_file_auto_save: default_external_file_auto_save(),
         }
     }
 
@@ -760,6 +763,10 @@ fn default_surface_font_size() -> u32 {
     14
 }
 
+fn default_external_file_auto_save() -> bool {
+    true
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -890,6 +897,7 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            external_file_auto_save: true,
         };
 
         store.save_config(saved.clone()).expect("save config");
