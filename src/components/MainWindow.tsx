@@ -44,7 +44,10 @@ import {
   type NoteContextMenuAction,
 } from "../features/notes/noteContextMenu";
 import { openNotepadWindow, openTileWindow } from "../features/windows/api";
-import { isLinuxSync } from "../features/windows/platform";
+import {
+  isLinuxSync,
+  isLinuxTilingWindowManager,
+} from "../features/windows/platform";
 import {
   closeCurrentWindow,
   minimizeCurrentWindow,
@@ -240,6 +243,7 @@ export function MainWindow({
   initialConfig = undefined,
 }: MainWindowProps = {}) {
   const isLinux = isLinuxSync();
+  const [isLinuxTilingWm, setIsLinuxTilingWm] = useState(false);
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
   const [externalFiles, setExternalFiles] = useState<ExternalFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -393,6 +397,23 @@ export function MainWindow({
       setErrorMessage(getErrorMessage(error));
     }
   }, []);
+
+  useEffect(() => {
+    if (!isLinux) return;
+
+    let cancelled = false;
+    void isLinuxTilingWindowManager()
+      .then((value) => {
+        if (!cancelled) setIsLinuxTilingWm(value);
+      })
+      .catch(() => {
+        if (!cancelled) setIsLinuxTilingWm(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [isLinux]);
 
   useEffect(() => {
     let cancelled = false;
@@ -887,6 +908,7 @@ export function MainWindow({
   };
 
   const [isMaximized, setIsMaximized] = useState(false);
+  const shouldUseClientTitlebar = !isLinux || isLinuxTilingWm;
 
   useEffect(() => {
     void isCurrentWindowMaximized().then(setIsMaximized);
@@ -939,8 +961,8 @@ export function MainWindow({
       <div className="noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
         <div
           className="flex items-center justify-between pl-5 pr-0 h-11 bg-paper/60 border-b border-paper-deep/30 shrink-0 select-none cursor-default"
-          onMouseDown={isLinux ? undefined : handleTitleBarDrag}
-          onDoubleClick={isLinux ? undefined : handleTitleBarDoubleClick}
+          onMouseDown={shouldUseClientTitlebar ? handleTitleBarDrag : undefined}
+          onDoubleClick={shouldUseClientTitlebar ? handleTitleBarDoubleClick : undefined}
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-[13px] font-display font-medium text-ink-soft tracking-wide">

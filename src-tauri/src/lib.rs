@@ -19,6 +19,11 @@ fn platform_os() -> &'static str {
 }
 
 #[tauri::command]
+fn linux_window_environment() -> desktop::LinuxWindowEnvironment {
+    desktop::linux_window_environment()
+}
+
+#[tauri::command]
 fn notes_list() -> Result<Vec<NoteMetadata>, AppError> {
     default_store()?.list_notes()
 }
@@ -183,6 +188,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             app_name,
             platform_os,
+            linux_window_environment,
             notes_list,
             notes_get,
             notes_create,

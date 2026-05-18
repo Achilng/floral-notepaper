@@ -1,5 +1,5 @@
 use crate::services::notes::{default_store, AppConfig, AppError};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     sync::{
@@ -70,6 +70,22 @@ pub struct ShortcutSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DynamicWindowVisualOptions {
     pub transparent: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct LinuxWindowEnvironment {
+    pub os: String,
+    pub xdg_current_desktop: Option<String>,
+    pub desktop_session: Option<String>,
+    pub x_session_desktop: Option<String>,
+    pub wayland_display: Option<String>,
+    pub display: Option<String>,
+    pub i3sock: Option<String>,
+    pub swaysock: Option<String>,
+    pub hyprland_instance_signature: Option<String>,
+    pub niri_socket: Option<String>,
+    pub is_tiling_wm: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -450,19 +466,17 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
 }
 
 pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
+    let decorations = main_window_decorations_enabled();
+
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
-        // On Windows, disable native decorations for custom titlebar.
-        // On Linux, keep native decorations (DDE/Dtk style on Deepin).
-        if cfg!(target_os = "windows") {
-            let _ = window.set_decorations(false);
-        }
+        let _ = window.set_decorations(decorations);
+        let _ = window.set_shadow(decorations);
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
         return Ok(());
     }
 
-    let decorations = !cfg!(target_os = "windows");
     open_or_focus_window(
         app,
         MAIN_WINDOW_LABEL,
@@ -479,6 +493,73 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
         None,
     )?;
     Ok(())
+}
+
+pub fn linux_window_environment() -> LinuxWindowEnvironment {
+    let xdg_current_desktop = env_var("XDG_CURRENT_DESKTOP");
+    let desktop_session = env_var("DESKTOP_SESSION");
+    let x_session_desktop = env_var("X_SESSION_DESKTOP");
+    let wayland_display = env_var("WAYLAND_DISPLAY");
+    let display = env_var("DISPLAY");
+    let i3sock = env_var("I3SOCK");
+    let swaysock = env_var("SWAYSOCK");
+    let hyprland_instance_signature = env_var("HYPRLAND_INSTANCE_SIGNATURE");
+    let niri_socket = env_var("NIRI_SOCKET").or_else(|| env_var("NIRI_SOCKET_PATH"));
+
+    let is_tiling_wm = cfg!(target_os = "linux")
+        && (i3sock.is_some()
+            || swaysock.is_some()
+            || hyprland_instance_signature.is_some()
+            || niri_socket.is_some()
+            || session_name_matches_tiling_wm([
+                xdg_current_desktop.as_deref(),
+                desktop_session.as_deref(),
+                x_session_desktop.as_deref(),
+            ]));
+
+    LinuxWindowEnvironment {
+        os: std::env::consts::OS.to_string(),
+        xdg_current_desktop,
+        desktop_session,
+        x_session_desktop,
+        wayland_display,
+        display,
+        i3sock,
+        swaysock,
+        hyprland_instance_signature,
+        niri_socket,
+        is_tiling_wm,
+    }
+}
+
+pub fn main_window_decorations_enabled() -> bool {
+    if cfg!(target_os = "windows") {
+        return false;
+    }
+
+    if cfg!(target_os = "linux") {
+        return !linux_window_environment().is_tiling_wm;
+    }
+
+    true
+}
+
+fn env_var(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+fn session_name_matches_tiling_wm<'a>(names: impl IntoIterator<Item = Option<&'a str>>) -> bool {
+    const TILING_WM_MARKERS: &[&str] = &["i3", "sway", "niri", "hyprland"];
+
+    names.into_iter().flatten().any(|name| {
+        let normalized = name.to_ascii_lowercase();
+        TILING_WM_MARKERS
+            .iter()
+            .any(|marker| normalized.contains(marker))
+    })
 }
 
 fn open_notepad_window_now(
