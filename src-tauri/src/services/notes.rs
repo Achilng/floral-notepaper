@@ -140,6 +140,13 @@ fn default_base_dir() -> Result<PathBuf, AppError> {
         return Ok(PathBuf::from(user_profile).join("Documents").join("花笺"));
     }
 
+    if let Ok(home) = env::var("HOME") {
+        let data_home = env::var("XDG_DATA_HOME")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from(&home).join(".local").join("share"));
+        return Ok(data_home.join("floral-notepaper"));
+    }
+
     Ok(env::current_dir()?.join("data"))
 }
 

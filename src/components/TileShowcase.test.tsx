@@ -6,7 +6,7 @@ describe("TileShowcase", () => {
   test("renders the tile as a read-only surface without editing controls", () => {
     const markup = renderToStaticMarkup(<TileShowcase noteId="note-1" />);
 
-    expect(markup).not.toContain("<button");
+    expect(markup.match(/<button/g)).toHaveLength(1);
     expect(markup).not.toContain("<input");
     expect(markup).not.toContain("<textarea");
     expect(markup).not.toContain(">保存<");
@@ -18,7 +18,7 @@ describe("TileShowcase", () => {
     expect(markup).not.toContain("无标题磁贴");
     expect(markup).not.toContain("加载中");
     expect(markup).not.toContain("字");
-    expect(markup).not.toContain("置顶");
+    expect(markup).toContain('title="取消置顶"');
     expect(markup).not.toContain("关闭");
     expect(markup).not.toContain("调整大小");
     expect(markup).toContain('data-tile-corner-mark="true"');
