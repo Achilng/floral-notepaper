@@ -1,13 +1,7 @@
 use crate::{commands, desktop};
-use tauri::{Emitter, Manager};
+use tauri::Emitter;
 
 fn handle_second_instance(app: &tauri::AppHandle, args: Vec<String>) {
-    if let Some(window) = app.get_webview_window("main") {
-        let _ = window.unminimize();
-        let _ = window.show();
-        let _ = window.set_focus();
-    }
-
     if let Some(file_path) = desktop::extract_file_arg(&args) {
         let _ = app.emit("open-external-file", file_path);
     }

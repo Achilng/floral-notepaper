@@ -1,5 +1,5 @@
 {
-  "notesDir": "/Users/zhaojisen/Desktop/floral-notepaper/src-tauri/data/notes",
+  "notesDir": "src-tauri/data/notes",
   "globalShortcut": "Ctrl+Space",
   "closeToTray": true,
   "autostart": false,
