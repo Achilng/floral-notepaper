@@ -37,8 +37,8 @@ jobs:
           let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
           toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
           fs.writeFileSync("src-tauri/Cargo.toml", toml);
-          '@ | Out-File -Encoding utf8 set-version.js
-          node set-version.js $ver
+          '@ | Out-File -Encoding utf8 set-version.cjs
+          node set-version.cjs $ver
 
       - name: Build
         run: npm run tauri build
@@ -79,7 +79,7 @@ jobs:
       - name: Set version & disable signing
         run: |
           ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
-          cat > set-version.js << 'SCRIPT'
+          cat > set-version.cjs << 'SCRIPT'
           const fs = require("fs");
           const ver = process.argv[2];
           const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
@@ -91,7 +91,7 @@ jobs:
           toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
           fs.writeFileSync("src-tauri/Cargo.toml", toml);
           SCRIPT
-          node set-version.js "$ver"
+          node set-version.cjs "$ver"
 
       - name: Build
         run: npm run tauri build -- --target x86_64-apple-darwin
@@ -121,7 +121,7 @@ jobs:
       - name: Set version & disable signing
         run: |
           ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
-          cat > set-version.js << 'SCRIPT'
+          cat > set-version.cjs << 'SCRIPT'
           const fs = require("fs");
           const ver = process.argv[2];
           const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
@@ -133,7 +133,7 @@ jobs:
           toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
           fs.writeFileSync("src-tauri/Cargo.toml", toml);
           SCRIPT
-          node set-version.js "$ver"
+          node set-version.cjs "$ver"
 
       - name: Build
         run: npm run tauri build -- --target aarch64-apple-darwin
