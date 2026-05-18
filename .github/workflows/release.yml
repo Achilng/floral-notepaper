@@ -33,6 +33,8 @@ jobs:
           cat > release-body.md << EOF
           建议下载安装版本 \`floral-notepaper_${ver}_x64-setup.exe\`，无法正常安装再下载可运行文件 \`floral-notepaper_${ver}.exe\`
 
+          macOS Apple Silicon 版：\`floral-notepaper_${ver}_aarch64.dmg\`；macOS Intel 版：\`floral-notepaper_${ver}_x64.dmg\`。
+
           macOS 版安装流程请参考视频（Bilibili）：[Mac云课堂 - 在 Mac 上装软件，要学会和苹果斗智斗勇](https://www.bilibili.com/video/BV1tg411t7hN)
           EOF
 
@@ -51,8 +53,16 @@ jobs:
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
 
-          # Remove stale auxiliary files that were accidentally uploaded by older workflow versions.
-          for asset in icon.icns bundle_dmg.sh; do
+          # Remove stale auxiliary files and old sanitized asset names from older workflow versions.
+          for asset in \
+            icon.icns \
+            bundle_dmg.sh \
+            "_${ver}_aarch64.dmg" \
+            "_${ver}_x64.dmg" \
+            "_${ver}_x64-setup.exe" \
+            "花笺_${ver}_aarch64.dmg" \
+            "花笺_${ver}_x64.dmg" \
+            "花笺_${ver}_x64-setup.exe"; do
             gh release delete-asset "$TAG_NAME" "$asset" --repo "$GITHUB_REPOSITORY" --yes >/dev/null 2>&1 || true
           done
 
@@ -214,12 +224,23 @@ jobs:
           TAG_NAME: ${{ github.event.inputs.version }}
         run: |
           $ver = $env:TAG_NAME -replace '^v', ''
-          $files = @()
-          $files += Get-ChildItem -Path "src-tauri/target/release/bundle/nsis" -File -Recurse | ForEach-Object { $_.FullName }
-          $files += (Resolve-Path "floral-notepaper_$ver.exe").Path
-          if ($files.Count -eq 0) {
-            throw "No Windows release assets found."
+          $releaseDir = 'release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+          $setupSource = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -File -Recurse -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $setupSource) {
+            throw 'No Windows NSIS installer found.'
           }
+
+          $setupAsset = Join-Path $releaseDir "floral-notepaper_${ver}_x64-setup.exe"
+          $portableAsset = Join-Path $releaseDir "floral-notepaper_${ver}.exe"
+          Copy-Item $setupSource.FullName $setupAsset -Force
+          Copy-Item "floral-notepaper_$ver.exe" $portableAsset -Force
+
+          $files = @(
+            (Resolve-Path $setupAsset).Path,
+            (Resolve-Path $portableAsset).Path
+          )
           gh release upload $env:TAG_NAME $files --clobber --repo $env:GITHUB_REPOSITORY
 
   build-macos-x86_64:
@@ -267,15 +288,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.event.inputs.version }}
         run: |
-          files=()
-          while IFS= read -r file; do
-            files+=("$file")
-          done < <(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f -name '*.dmg')
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No macOS x86_64 DMG release assets found." >&2
+          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
+          mkdir -p release-assets
+          dmg_source="$(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
+          if [ -z "$dmg_source" ]; then
+            echo "No macOS x86_64 DMG release asset found." >&2
             exit 1
           fi
-          gh release upload "$TAG_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          dmg_asset="release-assets/floral-notepaper_${ver}_x64.dmg"
+          cp "$dmg_source" "$dmg_asset"
+          gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
 
   build-macos-aarch64:
     needs: prepare-release
@@ -322,15 +344,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           TAG_NAME: ${{ github.event.inputs.version }}
         run: |
-          files=()
-          while IFS= read -r file; do
-            files+=("$file")
-          done < <(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg')
-          if [ ${#files[@]} -eq 0 ]; then
-            echo "No macOS aarch64 DMG release assets found." >&2
+          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
+          mkdir -p release-assets
+          dmg_source="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
+          if [ -z "$dmg_source" ]; then
+            echo "No macOS aarch64 DMG release asset found." >&2
             exit 1
           fi
-          gh release upload "$TAG_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
+          dmg_asset="release-assets/floral-notepaper_${ver}_aarch64.dmg"
+          cp "$dmg_source" "$dmg_asset"
+          gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
 
   cleanup-release:
     needs: [prepare-release, build-windows, build-macos-x86_64, build-macos-aarch64]
