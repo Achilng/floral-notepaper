@@ -28,6 +28,13 @@ const sanitizeSchema: Schema = {
     span: ["className"],
     sup: ["id"],
     input: ["checked", "disabled", "type"],
+    a: [...(defaultSchema.attributes?.a || []), "href"],
+    img: [...(defaultSchema.attributes?.img || []), "src", "alt"],
+  },
+  protocols: {
+    ...defaultSchema.protocols,
+    href: ["http", "https", "mailto", "tel"],
+    src: ["http", "https", "data"],
   },
 };
 
