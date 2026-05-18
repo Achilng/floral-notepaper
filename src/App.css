@@ -235,3 +235,38 @@ textarea::placeholder, input::placeholder {
 .animate-status-fade {
   animation: status-fade 0.25s ease-out forwards;
 }
+
+/* KaTeX math rendering */
+.katex-display {
+  margin: 1em 0 !important;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 0.5em 0;
+}
+.katex-display > .katex {
+  white-space: normal;
+}
+.katex {
+  font-size: 1.1em;
+  color: var(--color-ink-soft);
+}
+.katex .mord,
+.katex .mbin,
+.katex .mrel,
+.katex .mopen,
+.katex .mclose,
+.katex .mpunct,
+.katex .mop {
+  color: var(--color-ink-soft);
+}
+.katex .mop {
+  color: var(--color-bamboo);
+}
+.katex .katex-html .newline {
+  height: 0.5em;
+}
+.katex .katex-error {
+  color: #ef4444;
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+}

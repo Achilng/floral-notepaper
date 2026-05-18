@@ -75,7 +75,7 @@ const saveStateLabel: Record<SaveState, string> = {
   error: "保存失败",
 };
 
-type FormatAction = "bold" | "italic" | "heading" | "hr" | "ul" | "ol" | "code" | "quote";
+type FormatAction = "bold" | "italic" | "heading" | "hr" | "ul" | "ol" | "code" | "quote" | "inlineMath" | "blockMath";
 
 const toolbarButtons: { label: string; title: string; style: string; action: FormatAction }[] = [
   { label: "B", title: "粗体", style: "font-bold", action: "bold" },
@@ -86,6 +86,8 @@ const toolbarButtons: { label: string; title: string; style: string; action: For
   { label: "1.", title: "有序列表", style: "font-mono text-[9px]", action: "ol" },
   { label: "<>", title: "代码", style: "font-mono text-[9px]", action: "code" },
   { label: "❝", title: "引用", style: "", action: "quote" },
+  { label: "∑", title: "行内公式", style: "font-mono text-[11px]", action: "inlineMath" },
+  { label: "∫", title: "块级公式", style: "font-mono text-[11px]", action: "blockMath" },
 ];
 
 function applyFormat(
@@ -207,6 +209,20 @@ function applyFormat(
         cursorStart = start + 2;
         cursorEnd = cursorStart + (selected || "引用文本").length;
       }
+      break;
+    }
+    case "inlineMath": {
+      const wrapped = `$${selected || "E=mc^2"}$`;
+      result = before + wrapped + after;
+      cursorStart = start + 1;
+      cursorEnd = cursorStart + (selected || "E=mc^2").length;
+      break;
+    }
+    case "blockMath": {
+      const wrapped = `\n$$\n${selected || "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}"}\n$$\n`;
+      result = before + wrapped + after;
+      cursorStart = start + 4;
+      cursorEnd = cursorStart + (selected || "\\int_{-\\infty}^{\\infty} e^{-x^2} dx = \\sqrt{\\pi}").length;
       break;
     }
   }
@@ -1848,7 +1864,7 @@ export function MainWindow({
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">|</span>
                 <span className="text-[10px] text-ink-ghost font-mono">
-                  Markdown
+                  Markdown + LaTeX
                 </span>
               </div>
               <div className="flex items-center gap-3">
