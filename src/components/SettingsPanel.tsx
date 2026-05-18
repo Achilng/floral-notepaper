@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AppConfig, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
+import type { AppConfig, EditorFontMode, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
 import { supportedShortcuts } from "../features/settings/api";
 import {
   DEFAULT_TILE_COLOR,
@@ -31,6 +31,13 @@ const viewModes: Array<{ value: ViewMode; label: string }> = [
   { value: "split", label: "分栏" },
   { value: "preview", label: "预览" },
 ];
+
+const editorFontModes: Array<{ value: EditorFontMode; label: string }> = [
+  { value: "system", label: "系统默认" },
+  { value: "custom", label: "自定义" },
+];
+
+const EDITOR_FONT_PLACEHOLDER = "\"@HarmonyOS Sans SC\", \"Inter\"";
 
 export function SettingsPanel({
   config,
@@ -168,6 +175,38 @@ export function SettingsPanel({
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
+            编辑器字体
+          </label>
+          <SlidingButtonGroup
+            options={editorFontModes}
+            value={config.editorFontMode ?? "system"}
+            onChange={(v: EditorFontMode) => setConfigValue("editorFontMode", v)}
+          />
+          {config.editorFontMode === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={config.editorFontFamily ?? ""}
+                onChange={(event) =>
+                  setConfigValue("editorFontFamily", event.target.value)
+                }
+                placeholder={EDITOR_FONT_PLACEHOLDER}
+                spellCheck={false}
+                className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => onChange({ ...config })}
+                className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                应用
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
             小窗/磁贴字号
           </label>
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
@@ -278,15 +317,27 @@ function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
   );
 }
 
+interface ShortcutOption {
+  value: string;
+  label: string;
+}
+
 interface ShortcutDropdownProps {
   value: string;
-  options: string[];
+  options: string[] | ShortcutOption[];
   onChange: (value: string) => void;
 }
 
 function ShortcutDropdown({ value, options, onChange }: ShortcutDropdownProps) {
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const resolved = options.map((opt) =>
+    typeof opt === "string" ? { value: opt, label: opt } : opt,
+  );
+
+  const currentLabel =
+    resolved.find((r) => r.value === value)?.label ?? value;
 
   useEffect(() => {
     if (!open) return;
@@ -306,7 +357,7 @@ function ShortcutDropdown({ value, options, onChange }: ShortcutDropdownProps) {
         onClick={() => setOpen((v) => !v)}
         className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] text-ink-soft flex items-center justify-between cursor-pointer hover:border-paper-deep/60 transition-colors"
       >
-        <span>{value}</span>
+        <span className="truncate">{currentLabel}</span>
         <svg
           width="10"
           height="10"
@@ -316,7 +367,7 @@ function ShortcutDropdown({ value, options, onChange }: ShortcutDropdownProps) {
           strokeWidth="1.5"
           strokeLinecap="round"
           strokeLinejoin="round"
-          className={`text-ink-ghost transition-transform duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] ${open ? "rotate-180" : ""}`}
+          className={`shrink-0 text-ink-ghost transition-transform duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] ${open ? "rotate-180" : ""}`}
         >
           <path d="M2 3.5l3 3 3-3" />
         </svg>
@@ -330,18 +381,18 @@ function ShortcutDropdown({ value, options, onChange }: ShortcutDropdownProps) {
           pointerEvents: open ? "auto" : "none",
         }}
       >
-        {options.map((opt) => (
-          <li key={opt} className="list-none">
+        {resolved.map((opt) => (
+          <li key={opt.value} className="list-none">
             <button
               type="button"
-              onClick={() => { onChange(opt); setOpen(false); }}
+              onClick={() => { onChange(opt.value); setOpen(false); }}
               className={`w-full h-8 px-2.5 text-left text-[12px] transition-colors cursor-pointer ${
-                opt === value
+                opt.value === value
                   ? "text-bamboo bg-bamboo-mist/40 font-medium"
                   : "text-ink-soft hover:bg-paper-warm/60"
               }`}
             >
-              {opt}
+              {opt.label}
             </button>
           </li>
         ))}

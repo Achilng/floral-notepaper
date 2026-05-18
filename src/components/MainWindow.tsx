@@ -1721,7 +1721,7 @@ export function MainWindow({
                             markDirty();
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-mono placeholder:text-ink-ghost/40"
-                          style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
+                          style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px`, fontFamily: settingsConfig?.editorFontMode === "custom" ? settingsConfig?.editorFontFamily ?? undefined : undefined }}
                           placeholder="开始写作……"
                           spellCheck={false}
                           disabled={!selectedId}

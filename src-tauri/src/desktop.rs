@@ -886,6 +886,7 @@ fn apply_autostart(_app: &AppHandle, _enabled: bool) -> Result<(), Box<dyn Error
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::services::notes::{default_editor_font_family, default_editor_font_mode};
 
     #[test]
     fn maps_tray_menu_ids_to_actions() {
@@ -983,6 +984,8 @@ mod tests {
             theme: "light".into(),
             font_size: 14,
             surface_font_size: 14,
+            editor_font_mode: default_editor_font_mode(),
+            editor_font_family: default_editor_font_family(),
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -997,6 +1000,8 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            editor_font_mode: default_editor_font_mode(),
+            editor_font_family: default_editor_font_family(),
         };
 
         assert_eq!(

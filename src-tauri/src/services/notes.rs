@@ -28,6 +28,10 @@ pub struct AppConfig {
     pub font_size: u32,
     #[serde(default = "default_surface_font_size")]
     pub surface_font_size: u32,
+    #[serde(default = "default_editor_font_mode")]
+    pub editor_font_mode: String,
+    #[serde(default = "default_editor_font_family")]
+    pub editor_font_family: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -451,6 +455,8 @@ impl NoteStore {
             theme: default_theme(),
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
+            editor_font_mode: default_editor_font_mode(),
+            editor_font_family: default_editor_font_family(),
         }
     }
 
@@ -718,6 +724,14 @@ fn default_surface_font_size() -> u32 {
     14
 }
 
+pub(crate) fn default_editor_font_mode() -> String {
+    "system".into()
+}
+
+pub(crate) fn default_editor_font_family() -> String {
+    "\"JetBrains Mono\", \"Fira Code\", monospace".into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -845,6 +859,8 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            editor_font_mode: default_editor_font_mode(),
+            editor_font_family: default_editor_font_family(),
         };
 
         store.save_config(saved.clone()).expect("save config");

@@ -4,6 +4,8 @@ export type ThemeOption = "light" | "dark" | "system";
 
 export type TileColorMode = "system" | "custom";
 
+export type EditorFontMode = "system" | "custom";
+
 export interface AppConfig {
   notesDir: string;
   globalShortcut: string;
@@ -17,4 +19,6 @@ export interface AppConfig {
   theme: ThemeOption;
   fontSize: number;
   surfaceFontSize: number;
+  editorFontMode?: EditorFontMode;
+  editorFontFamily?: string;
 }
