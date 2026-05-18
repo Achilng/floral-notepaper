@@ -1,0 +1,179 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（例如 v1.0.3）'
+        required: true
+        type: string
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version
+        shell: pwsh
+        run: |
+          $ver = "${{ github.event.inputs.version }}" -replace '^v', ''
+          @'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          '@ | Out-File -Encoding utf8 set-version.js
+          node set-version.js $ver
+
+      - name: Build
+        run: npm run tauri build
+
+      - name: Rename portable binary
+        shell: pwsh
+        run: |
+          $ver = "${{ github.event.inputs.version }}" -replace '^v', ''
+          Copy-Item src-tauri/target/release/floral-notepaper.exe "floral-notepaper_$ver.exe"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-nsis
+          path: src-tauri/target/release/bundle/nsis/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-portable
+          path: floral-notepaper_*.exe
+
+  build-macos-x86_64:
+    runs-on: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version & disable signing
+        run: |
+          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
+          cat > set-version.js << 'SCRIPT'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          conf.bundle.macOS = conf.bundle.macOS || {};
+          conf.bundle.macOS.signingIdentity = null;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          SCRIPT
+          node set-version.js "$ver"
+
+      - name: Build
+        run: npm run tauri build -- --target x86_64-apple-darwin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-x86_64
+          path: src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/
+
+  build-macos-aarch64:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version & disable signing
+        run: |
+          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
+          cat > set-version.js << 'SCRIPT'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          conf.bundle.macOS = conf.bundle.macOS || {};
+          conf.bundle.macOS.signingIdentity = null;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          SCRIPT
+          node set-version.js "$ver"
+
+      - name: Build
+        run: npm run tauri build -- --target aarch64-apple-darwin
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-aarch64
+          path: src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/
+
+  create-release:
+    needs: [build-windows, build-macos-x86_64, build-macos-aarch64]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Extract & flatten artifacts
+        run: |
+          mkdir -p release-files
+          find artifacts -name '*.zip' -exec unzip -o {} -d release-files/ \;
+          find release-files -mindepth 2 -type f -exec mv -n {} release-files/ \;
+          find release-files -mindepth 1 -type d -empty -delete
+
+      - name: Generate release body
+        run: |
+          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
+          cat > release-body.md << EOF
+          建议下载安装版本 \`floral-notepaper_${ver}_x64-setup.exe\`，无法正常安装再下载可运行文件 \`floral-notepaper_${ver}.exe\`
+
+          macOS 版安装流程请参考视频（Bilibili）：[Mac云课堂 - 在 Mac 上装软件，要学会和苹果斗智斗勇](https://www.bilibili.com/video/BV1tg411t7hN)
+          EOF
+
+      - name: Create Draft Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.version }}
+          draft: true
+          body_path: release-body.md
+          files: |
+            release-files/*
