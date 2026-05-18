@@ -40,6 +40,11 @@ jobs:
             echo "created=true" >> "$GITHUB_OUTPUT"
           fi
 
+          # Remove stale auxiliary files that were accidentally uploaded by older workflow versions.
+          for asset in icon.icns bundle_dmg.sh; do
+            gh release delete-asset "$TAG_NAME" "$asset" --repo "$GITHUB_REPOSITORY" --yes >/dev/null 2>&1 || true
+          done
+
   build-windows:
     needs: prepare-release
     runs-on: windows-latest
@@ -254,9 +259,9 @@ jobs:
           files=()
           while IFS= read -r file; do
             files+=("$file")
-          done < <(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f)
+          done < <(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f -name '*.dmg')
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No macOS x86_64 release assets found." >&2
+            echo "No macOS x86_64 DMG release assets found." >&2
             exit 1
           fi
           gh release upload "$TAG_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
@@ -309,9 +314,9 @@ jobs:
           files=()
           while IFS= read -r file; do
             files+=("$file")
-          done < <(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f)
+          done < <(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg')
           if [ ${#files[@]} -eq 0 ]; then
-            echo "No macOS aarch64 release assets found." >&2
+            echo "No macOS aarch64 DMG release assets found." >&2
             exit 1
           fi
           gh release upload "$TAG_NAME" "${files[@]}" --clobber --repo "$GITHUB_REPOSITORY"
