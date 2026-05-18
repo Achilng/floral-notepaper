@@ -48,11 +48,17 @@ pub struct TrayMenuSpec {
 pub enum ShortcutModifier {
     Control,
     Alt,
+    Shift,
+    Super,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShortcutKey {
     Space,
+    A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z,
+    Digit0, Digit1, Digit2, Digit3, Digit4, Digit5, Digit6, Digit7, Digit8, Digit9,
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
+    Tab, Enter, Escape, Delete, Backspace,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -61,9 +67,9 @@ pub struct RuntimeConfigChanges {
     pub global_shortcut_changed: bool,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ShortcutSpec {
-    pub modifier: ShortcutModifier,
+    pub modifiers: Vec<ShortcutModifier>,
     pub key: ShortcutKey,
 }
 
@@ -174,28 +180,101 @@ pub fn tray_menu_specs(close_to_tray: bool, autostart: bool) -> Vec<TrayMenuSpec
 }
 
 pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
-    let parts: Vec<_> = value
+    let parts: Vec<String> = value
         .split('+')
         .map(|part| part.trim().to_ascii_lowercase())
         .filter(|part| !part.is_empty())
         .collect();
 
-    if parts.len() != 2 {
+    if parts.len() < 2 {
         return None;
     }
 
-    let modifier = match parts[0].as_str() {
-        "ctrl" | "control" | "cmdorctrl" | "commandorcontrol" => ShortcutModifier::Control,
-        "alt" | "option" => ShortcutModifier::Alt,
-        _ => return None,
-    };
+    let key_str = parts.last()?;
+    let modifier_parts = &parts[..parts.len() - 1];
 
-    let key = match parts[1].as_str() {
+    let mut modifiers = Vec::new();
+    for m in modifier_parts {
+        match m.as_str() {
+            "ctrl" | "control" | "cmdorctrl" | "commandorcontrol" => {
+                modifiers.push(ShortcutModifier::Control);
+            }
+            "alt" | "option" => {
+                modifiers.push(ShortcutModifier::Alt);
+            }
+            "shift" => {
+                modifiers.push(ShortcutModifier::Shift);
+            }
+            "super" | "win" | "cmd" | "command" => {
+                modifiers.push(ShortcutModifier::Super);
+            }
+            _ => return None,
+        }
+    }
+
+    if modifiers.is_empty() {
+        return None;
+    }
+
+    let key = match key_str.as_str() {
         "space" => ShortcutKey::Space,
+        "a" => ShortcutKey::A,
+        "b" => ShortcutKey::B,
+        "c" => ShortcutKey::C,
+        "d" => ShortcutKey::D,
+        "e" => ShortcutKey::E,
+        "f" => ShortcutKey::F,
+        "g" => ShortcutKey::G,
+        "h" => ShortcutKey::H,
+        "i" => ShortcutKey::I,
+        "j" => ShortcutKey::J,
+        "k" => ShortcutKey::K,
+        "l" => ShortcutKey::L,
+        "m" => ShortcutKey::M,
+        "n" => ShortcutKey::N,
+        "o" => ShortcutKey::O,
+        "p" => ShortcutKey::P,
+        "q" => ShortcutKey::Q,
+        "r" => ShortcutKey::R,
+        "s" => ShortcutKey::S,
+        "t" => ShortcutKey::T,
+        "u" => ShortcutKey::U,
+        "v" => ShortcutKey::V,
+        "w" => ShortcutKey::W,
+        "x" => ShortcutKey::X,
+        "y" => ShortcutKey::Y,
+        "z" => ShortcutKey::Z,
+        "0" => ShortcutKey::Digit0,
+        "1" => ShortcutKey::Digit1,
+        "2" => ShortcutKey::Digit2,
+        "3" => ShortcutKey::Digit3,
+        "4" => ShortcutKey::Digit4,
+        "5" => ShortcutKey::Digit5,
+        "6" => ShortcutKey::Digit6,
+        "7" => ShortcutKey::Digit7,
+        "8" => ShortcutKey::Digit8,
+        "9" => ShortcutKey::Digit9,
+        "f1" => ShortcutKey::F1,
+        "f2" => ShortcutKey::F2,
+        "f3" => ShortcutKey::F3,
+        "f4" => ShortcutKey::F4,
+        "f5" => ShortcutKey::F5,
+        "f6" => ShortcutKey::F6,
+        "f7" => ShortcutKey::F7,
+        "f8" => ShortcutKey::F8,
+        "f9" => ShortcutKey::F9,
+        "f10" => ShortcutKey::F10,
+        "f11" => ShortcutKey::F11,
+        "f12" => ShortcutKey::F12,
+        "tab" => ShortcutKey::Tab,
+        "enter" => ShortcutKey::Enter,
+        "escape" | "esc" => ShortcutKey::Escape,
+        "delete" | "del" => ShortcutKey::Delete,
+        "backspace" => ShortcutKey::Backspace,
         _ => return None,
     };
 
-    Some(ShortcutSpec { modifier, key })
+    Some(ShortcutSpec { modifiers, key })
 }
 
 pub fn runtime_config_changes(previous: &AppConfig, next: &AppConfig) -> RuntimeConfigChanges {
@@ -799,15 +878,73 @@ fn apply_global_shortcut_config(
 
 #[cfg(desktop)]
 fn to_tauri_shortcut(spec: ShortcutSpec) -> Option<Shortcut> {
-    let modifier = match spec.modifier {
-        ShortcutModifier::Control => Modifiers::CONTROL,
-        ShortcutModifier::Alt => Modifiers::ALT,
-    };
+    let mut modifiers = Modifiers::empty();
+    for m in &spec.modifiers {
+        match m {
+            ShortcutModifier::Control => modifiers |= Modifiers::CONTROL,
+            ShortcutModifier::Alt => modifiers |= Modifiers::ALT,
+            ShortcutModifier::Shift => modifiers |= Modifiers::SHIFT,
+            ShortcutModifier::Super => modifiers |= Modifiers::SUPER,
+        }
+    }
     let key = match spec.key {
         ShortcutKey::Space => Code::Space,
+        ShortcutKey::A => Code::KeyA,
+        ShortcutKey::B => Code::KeyB,
+        ShortcutKey::C => Code::KeyC,
+        ShortcutKey::D => Code::KeyD,
+        ShortcutKey::E => Code::KeyE,
+        ShortcutKey::F => Code::KeyF,
+        ShortcutKey::G => Code::KeyG,
+        ShortcutKey::H => Code::KeyH,
+        ShortcutKey::I => Code::KeyI,
+        ShortcutKey::J => Code::KeyJ,
+        ShortcutKey::K => Code::KeyK,
+        ShortcutKey::L => Code::KeyL,
+        ShortcutKey::M => Code::KeyM,
+        ShortcutKey::N => Code::KeyN,
+        ShortcutKey::O => Code::KeyO,
+        ShortcutKey::P => Code::KeyP,
+        ShortcutKey::Q => Code::KeyQ,
+        ShortcutKey::R => Code::KeyR,
+        ShortcutKey::S => Code::KeyS,
+        ShortcutKey::T => Code::KeyT,
+        ShortcutKey::U => Code::KeyU,
+        ShortcutKey::V => Code::KeyV,
+        ShortcutKey::W => Code::KeyW,
+        ShortcutKey::X => Code::KeyX,
+        ShortcutKey::Y => Code::KeyY,
+        ShortcutKey::Z => Code::KeyZ,
+        ShortcutKey::Digit0 => Code::Digit0,
+        ShortcutKey::Digit1 => Code::Digit1,
+        ShortcutKey::Digit2 => Code::Digit2,
+        ShortcutKey::Digit3 => Code::Digit3,
+        ShortcutKey::Digit4 => Code::Digit4,
+        ShortcutKey::Digit5 => Code::Digit5,
+        ShortcutKey::Digit6 => Code::Digit6,
+        ShortcutKey::Digit7 => Code::Digit7,
+        ShortcutKey::Digit8 => Code::Digit8,
+        ShortcutKey::Digit9 => Code::Digit9,
+        ShortcutKey::F1 => Code::F1,
+        ShortcutKey::F2 => Code::F2,
+        ShortcutKey::F3 => Code::F3,
+        ShortcutKey::F4 => Code::F4,
+        ShortcutKey::F5 => Code::F5,
+        ShortcutKey::F6 => Code::F6,
+        ShortcutKey::F7 => Code::F7,
+        ShortcutKey::F8 => Code::F8,
+        ShortcutKey::F9 => Code::F9,
+        ShortcutKey::F10 => Code::F10,
+        ShortcutKey::F11 => Code::F11,
+        ShortcutKey::F12 => Code::F12,
+        ShortcutKey::Tab => Code::Tab,
+        ShortcutKey::Enter => Code::Enter,
+        ShortcutKey::Escape => Code::Escape,
+        ShortcutKey::Delete => Code::Delete,
+        ShortcutKey::Backspace => Code::Backspace,
     };
 
-    Some(Shortcut::new(Some(modifier), key))
+    Some(Shortcut::new(Some(modifiers), key))
 }
 
 #[cfg(desktop)]
@@ -910,22 +1047,36 @@ mod tests {
         assert_eq!(
             shortcut_from_config("Ctrl+Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Control,
+                modifiers: vec![ShortcutModifier::Control],
                 key: ShortcutKey::Space,
             })
         );
         assert_eq!(
             shortcut_from_config("CommandOrControl + Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Control,
+                modifiers: vec![ShortcutModifier::Control],
                 key: ShortcutKey::Space,
             })
         );
         assert_eq!(
             shortcut_from_config("Alt+Space"),
             Some(ShortcutSpec {
-                modifier: ShortcutModifier::Alt,
+                modifiers: vec![ShortcutModifier::Alt],
                 key: ShortcutKey::Space,
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Ctrl+Shift+Space"),
+            Some(ShortcutSpec {
+                modifiers: vec![ShortcutModifier::Control, ShortcutModifier::Shift],
+                key: ShortcutKey::Space,
+            })
+        );
+        assert_eq!(
+            shortcut_from_config("Ctrl+K"),
+            Some(ShortcutSpec {
+                modifiers: vec![ShortcutModifier::Control],
+                key: ShortcutKey::K,
             })
         );
     }
@@ -933,8 +1084,8 @@ mod tests {
     #[test]
     fn rejects_unsupported_shortcut_config_values() {
         assert_eq!(shortcut_from_config(""), None);
-        assert_eq!(shortcut_from_config("Ctrl+Shift+Space"), None);
-        assert_eq!(shortcut_from_config("Ctrl+K"), None);
+        assert_eq!(shortcut_from_config("K"), None);
+        assert_eq!(shortcut_from_config("Ctrl+"), None);
     }
 
     #[test]

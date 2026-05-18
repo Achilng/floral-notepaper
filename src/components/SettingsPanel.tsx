@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import type { AppConfig, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
-import { supportedShortcuts } from "../features/settings/api";
+import type { AppConfig, ThemeOption, TileColorMode, ViewMode } from "../features/settings/api";
 import {
   DEFAULT_TILE_COLOR,
   normalizeTileColor,
@@ -112,9 +111,8 @@ export function SettingsPanel({
           <label className="block text-[11px] font-body text-ink-faint">
             快捷键
           </label>
-          <ShortcutDropdown
+          <ShortcutRecorder
             value={config.globalShortcut}
-            options={[...supportedShortcuts]}
             onChange={(v) => setConfigValue("globalShortcut", v)}
           />
         </section>
@@ -278,74 +276,110 @@ function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
   );
 }
 
-interface ShortcutDropdownProps {
+interface ShortcutRecorderProps {
   value: string;
-  options: string[];
   onChange: (value: string) => void;
 }
 
-function ShortcutDropdown({ value, options, onChange }: ShortcutDropdownProps) {
-  const [open, setOpen] = useState(false);
+function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
+  const [recording, setRecording] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!recording) return;
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      e.preventDefault();
+      e.stopPropagation();
+
+      if (e.key === "Escape") {
+        setRecording(false);
+        return;
+      }
+
+      const modifiers: string[] = [];
+      if (e.ctrlKey || e.metaKey) modifiers.push("Ctrl");
+      if (e.altKey) modifiers.push("Alt");
+      if (e.shiftKey) modifiers.push("Shift");
+      if (e.metaKey && !e.ctrlKey) modifiers.push("Super");
+
+      const key = e.key;
+      if (key === "Control" || key === "Alt" || key === "Shift" || key === "Meta") {
+        return;
+      }
+
+      let keyName = key
+        .replace(/^Arrow/, "")
+        .replace(/^Digit/, "")
+        .replace(/^Key/, "")
+        .toUpperCase();
+
+      if (key.length === 1) {
+        keyName = key.toUpperCase();
+      }
+
+      if (["Space", "Tab", "Enter", "Escape", "Backspace", "Delete"].includes(key)) {
+        keyName = key;
+      }
+
+      if (key.startsWith("F") && !isNaN(Number(key.slice(1)))) {
+        keyName = key;
+      }
+
+      if (modifiers.length === 0) {
+        return;
+      }
+
+      const shortcut = [...modifiers, keyName].join("+");
+      onChange(shortcut);
+      setRecording(false);
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [recording, onChange]);
+
+  useEffect(() => {
+    if (!recording) return;
     const handleClick = (e: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        setOpen(false);
+        setRecording(false);
       }
     };
     document.addEventListener("mousedown", handleClick);
     return () => document.removeEventListener("mousedown", handleClick);
-  }, [open]);
+  }, [recording]);
 
   return (
     <div ref={containerRef} className="relative">
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] text-ink-soft flex items-center justify-between cursor-pointer hover:border-paper-deep/60 transition-colors"
+        onClick={() => setRecording(true)}
+        className={`w-full h-8 px-2.5 rounded-lg border text-[12px] flex items-center justify-between cursor-pointer transition-colors ${
+          recording
+            ? "bg-bamboo-mist/40 border-bamboo text-bamboo"
+            : "bg-paper-warm/70 border-paper-deep/40 text-ink-soft hover:border-paper-deep/60"
+        }`}
       >
-        <span>{value}</span>
-        <svg
-          width="10"
-          height="10"
-          viewBox="0 0 10 10"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className={`text-ink-ghost transition-transform duration-250 ease-[cubic-bezier(0.22,1,0.36,1)] ${open ? "rotate-180" : ""}`}
-        >
-          <path d="M2 3.5l3 3 3-3" />
-        </svg>
+        <span>{recording ? "按下快捷键..." : value}</span>
+        {recording ? (
+          <span className="text-[10px] text-ink-faint">按 Esc 取消</span>
+        ) : (
+          <svg
+            width="10"
+            height="10"
+            viewBox="0 0 10 10"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="text-ink-ghost"
+          >
+            <path d="M2 3.5l3 3 3-3" />
+          </svg>
+        )}
       </button>
-      <ul
-        className="absolute left-0 right-0 top-full mt-1 rounded-lg border border-paper-deep/30 bg-cloud/95 backdrop-blur-sm shadow-[0_4px_12px_rgba(0,0,0,0.06)] overflow-hidden z-10"
-        style={{
-          opacity: open ? 1 : 0,
-          transform: open ? "translateY(0)" : "translateY(-4px)",
-          transition: "opacity 200ms cubic-bezier(0.22, 1, 0.36, 1), transform 200ms cubic-bezier(0.22, 1, 0.36, 1)",
-          pointerEvents: open ? "auto" : "none",
-        }}
-      >
-        {options.map((opt) => (
-          <li key={opt} className="list-none">
-            <button
-              type="button"
-              onClick={() => { onChange(opt); setOpen(false); }}
-              className={`w-full h-8 px-2.5 text-left text-[12px] transition-colors cursor-pointer ${
-                opt === value
-                  ? "text-bamboo bg-bamboo-mist/40 font-medium"
-                  : "text-ink-soft hover:bg-paper-warm/60"
-              }`}
-            >
-              {opt}
-            </button>
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

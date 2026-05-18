@@ -79,7 +79,20 @@ describe("settings api", () => {
   });
 
   test("lists supported global shortcuts", () => {
-    expect(supportedShortcuts).toEqual(["Ctrl+Space", "Alt+Space"]);
+    expect(supportedShortcuts).toEqual([
+      "Ctrl+Space",
+      "Alt+Space",
+      "Ctrl+Shift+Space",
+      "Ctrl+K",
+      "Ctrl+N",
+      "Ctrl+Shift+N",
+      "Alt+Shift+Space",
+      "Ctrl+Alt+K",
+      "Super+Space",
+      "Ctrl+T",
+      "Ctrl+Enter",
+      "Ctrl+Escape",
+    ]);
   });
 
   test("chooses a notes directory through the folder picker", async () => {
