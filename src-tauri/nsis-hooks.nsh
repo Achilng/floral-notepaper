@@ -1,5 +1,4 @@
 !macro NSIS_HOOK_PREINSTALL
-  ; Append product name subdirectory if user selected a generic folder
   StrLen $R0 "\${PRODUCTNAME}"
   IntOp $R0 0 - $R0
   StrCpy $R1 "$INSTDIR" "" $R0

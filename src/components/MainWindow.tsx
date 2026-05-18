@@ -62,6 +62,12 @@ interface NoteMenuState {
   noteId: string;
 }
 
+export interface CategoryMenuState {
+  x: number;
+  y: number;
+  category: string;
+}
+
 type FormatAction = "bold" | "italic" | "heading" | "hr" | "ul" | "ol" | "code" | "quote";
 
 function applyFormat(

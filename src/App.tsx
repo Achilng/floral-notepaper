@@ -50,6 +50,17 @@ function App() {
     document.documentElement.lang = language;
   }, [language]);
 
+  useEffect(() => {
+    const preventSystemMenu = (e: KeyboardEvent) => {
+      if (e.altKey && e.code === "Space") {
+        e.preventDefault();
+      }
+    };
+    document.addEventListener("keydown", preventSystemMenu, true);
+    return () =>
+      document.removeEventListener("keydown", preventSystemMenu, true);
+  }, []);
+
   return (
     <LanguageContext.Provider
       value={{
