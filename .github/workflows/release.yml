@@ -153,12 +153,12 @@ jobs:
         with:
           path: artifacts
 
-      - name: Extract & flatten artifacts
+      - name: Flatten artifacts
         run: |
           mkdir -p release-files
-          find artifacts -name '*.zip' -exec unzip -o {} -d release-files/ \;
-          find release-files -mindepth 2 -type f -exec mv -n {} release-files/ \;
-          find release-files -mindepth 1 -type d -empty -delete
+          find artifacts -type f -exec cp -n {} release-files/ \;
+          find release-files -name '*.zip' -exec unzip -o {} -d release-files/ \;
+          find release-files -name '*.zip' -delete
 
       - name: Generate release body
         run: |
