@@ -366,17 +366,25 @@ jobs:
 
           mkdir -p release-assets
 
-          mapfile -t dmg_candidates < <(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort)
-          if [ "${#dmg_candidates[@]}" -eq 0 ]; then
+          dmg_source=""
+          dmg_count=0
+          while IFS= read -r file; do
+            dmg_count=$((dmg_count + 1))
+            if [ "$dmg_count" -eq 1 ]; then
+              dmg_source="$file"
+            fi
+          done < <(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort)
+
+          if [ "$dmg_count" -eq 0 ]; then
             echo "No macOS aarch64 DMG artifact found." >&2
             exit 1
           fi
-          if [ "${#dmg_candidates[@]}" -gt 1 ]; then
-            printf 'Multiple DMG candidates found:\n%s\n' "${dmg_candidates[*]}" >&2
+          if [ "$dmg_count" -gt 1 ]; then
+            echo "Multiple DMG candidates found under src-tauri/target/aarch64-apple-darwin/release/bundle/dmg." >&2
             exit 1
           fi
 
-          cp "${dmg_candidates[0]}" release-assets/floral-notepaper_macos_aarch64.dmg
+          cp "$dmg_source" release-assets/floral-notepaper_macos_aarch64.dmg
 
       - name: Upload macOS DMG artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
