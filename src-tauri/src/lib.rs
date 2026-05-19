@@ -181,8 +181,26 @@ async fn open_note_in_editor(app: AppHandle, note_id: String) -> Result<(), AppE
     Ok(())
 }
 
+// 屏蔽代理导致的应用白屏
+#[cfg(target_os = "linux")]
+fn fix_linux_proxy_issue() {
+    let existing = std::env::var("no_proxy").unwrap_or_default();
+    let append = if existing.is_empty() {
+        "localhost,127.0.0.1,::1".to_string()
+    } else if existing.contains("localhost") {
+        existing
+    } else {
+        format!("{},localhost,127.0.0.1,::1", existing)
+    };
+    std::env::set_var("no_proxy", append);
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 框架初始化前修复代理环境问题
+    #[cfg(target_os = "linux")]
+    fix_linux_proxy_issue();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
