@@ -1204,6 +1204,10 @@ mod tests {
             font_size: 14,
             surface_font_size: 14,
             external_file_auto_save: true,
+            accent_color: "#2d5a3d".into(),
+            accent_color_mode: "default".into(),
+            text_color: "#1a1a18".into(),
+            text_color_mode: "default".into(),
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -1219,6 +1223,10 @@ mod tests {
             font_size: 16,
             surface_font_size: 16,
             external_file_auto_save: true,
+            accent_color: "#1a5cad".into(),
+            accent_color_mode: "custom".into(),
+            text_color: "#e0e0e0".into(),
+            text_color_mode: "custom".into(),
         };
 
         assert_eq!(

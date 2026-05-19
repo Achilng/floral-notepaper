@@ -181,6 +181,94 @@ async fn open_note_in_editor(app: AppHandle, note_id: String) -> Result<(), AppE
     Ok(())
 }
 
+#[derive(serde::Serialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    version: String,
+    body: Option<String>,
+    url: String,
+}
+
+#[tauri::command]
+async fn check_update() -> Result<Option<UpdateInfo>, AppError> {
+    let url = "https://api.github.com/repos/yltx/floral-notepaper/releases/latest";
+    let client = reqwest::Client::new();
+    let resp = client
+        .get(url)
+        .header("User-Agent", "floral-notepaper")
+        .send()
+        .await
+        .map_err(|e| AppError {
+            code: "network".into(),
+            message: e.to_string(),
+        })?;
+
+    if !resp.status().is_success() {
+        return Ok(None);
+    }
+
+    let json: serde_json::Value = resp.json().await.map_err(|e| AppError {
+        code: "network".into(),
+        message: e.to_string(),
+    })?;
+
+    let tag = json["tag_name"].as_str().unwrap_or("");
+    let remote_version = tag.trim_start_matches('v');
+    let current_version = env!("CARGO_PKG_VERSION");
+
+    if is_newer_version(remote_version, current_version) {
+        let body = json["body"].as_str().map(|s| s.to_string());
+        let html_url = json["html_url"]
+            .as_str()
+            .unwrap_or("https://github.com/yltx/floral-notepaper/releases/latest")
+            .to_string();
+
+        Ok(Some(UpdateInfo {
+            version: remote_version.to_string(),
+            body,
+            url: html_url,
+        }))
+    } else {
+        Ok(None)
+    }
+}
+
+fn is_newer_version(remote: &str, current: &str) -> bool {
+    let parse = |v: &str| -> Vec<u32> {
+        v.split('.').filter_map(|s| s.parse().ok()).collect()
+    };
+    let r = parse(remote);
+    let c = parse(current);
+    for i in 0..std::cmp::max(r.len(), c.len()) {
+        let rv = r.get(i).copied().unwrap_or(0);
+        let cv = c.get(i).copied().unwrap_or(0);
+        if rv > cv {
+            return true;
+        }
+        if rv < cv {
+            return false;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn version_comparison() {
+        assert!(is_newer_version("1.0.5", "1.0.4"));
+        assert!(is_newer_version("1.1.0", "1.0.9"));
+        assert!(is_newer_version("2.0.0", "1.9.9"));
+        assert!(!is_newer_version("1.0.4", "1.0.4"));
+        assert!(!is_newer_version("1.0.3", "1.0.4"));
+        assert!(!is_newer_version("0.9.9", "1.0.0"));
+        assert!(is_newer_version("1.0.5", "1.0.4"));
+        assert!(is_newer_version("10.0.0", "9.99.99"));
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -219,7 +307,8 @@ pub fn run() {
             open_notepad_window,
             recycle_notepad_window,
             open_tile_window,
-            open_note_in_editor
+            open_note_in_editor,
+            check_update
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

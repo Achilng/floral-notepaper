@@ -16,6 +16,10 @@ const config = {
   fontSize: 14,
   surfaceFontSize: 14,
   externalFileAutoSave: true,
+  accentColor: "#2d5a3d",
+  accentColorMode: "default" as const,
+  textColor: "#1a1a18",
+  textColorMode: "default" as const,
 };
 
 describe("SettingsPanel", () => {

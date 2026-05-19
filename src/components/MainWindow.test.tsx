@@ -21,6 +21,10 @@ describe("MainWindow settings", () => {
           fontSize: 14,
           surfaceFontSize: 14,
           externalFileAutoSave: true,
+          accentColor: "#2d5a3d",
+          accentColorMode: "default",
+          textColor: "#1a1a18",
+          textColorMode: "default",
         }}
       />,
     );
