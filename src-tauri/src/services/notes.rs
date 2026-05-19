@@ -1,3 +1,7 @@
+use crate::services::json_file::{
+    config_json_guard, metadata_json_guard, recover_json_after_interrupted_write,
+    write_json_atomic, JsonFileError,
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -115,6 +119,12 @@ impl From<tauri::Error> for AppError {
     }
 }
 
+impl From<JsonFileError> for AppError {
+    fn from(error: JsonFileError) -> Self {
+        Self::new("jsonFile", error.to_string())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(rename_all = "camelCase")]
 struct MetadataFile {
@@ -171,11 +181,17 @@ impl NoteStore {
     }
 
     pub fn load_config(&self) -> Result<AppConfig, AppError> {
+        let _guard = config_json_guard()?;
+        self.load_config_unlocked()
+    }
+
+    fn load_config_unlocked(&self) -> Result<AppConfig, AppError> {
         self.ensure_base_dir()?;
         let path = self.config_path();
+        recover_json_after_interrupted_write(&path)?;
         if !path.exists() {
             let config = self.default_config();
-            self.save_config(config.clone())?;
+            self.save_config_unlocked(config.clone())?;
             return Ok(config);
         }
 
@@ -185,12 +201,19 @@ impl NoteStore {
     }
 
     pub fn save_config(&self, config: AppConfig) -> Result<(), AppError> {
+        let _guard = config_json_guard()?;
+        self.save_config_unlocked(config)
+    }
+
+    fn save_config_unlocked(&self, config: AppConfig) -> Result<(), AppError> {
         self.ensure_base_dir()?;
         fs::create_dir_all(&config.notes_dir)?;
-        write_json_atomic(&self.config_path(), &config)
+        write_json_atomic(&self.config_path(), &config)?;
+        Ok(())
     }
 
     pub fn list_notes(&self) -> Result<Vec<NoteMetadata>, AppError> {
+        let _guard = metadata_json_guard()?;
         self.ensure_storage()?;
         let mut metadata = self.load_metadata()?.notes;
         metadata.retain(|note| {
@@ -202,6 +225,7 @@ impl NoteStore {
     }
 
     pub fn read_note(&self, id: &str) -> Result<Note, AppError> {
+        let _guard = metadata_json_guard()?;
         self.ensure_storage()?;
         let metadata = self.find_metadata(id)?;
         let content = fs::read_to_string(
@@ -220,6 +244,7 @@ impl NoteStore {
     }
 
     pub fn create_note(&self, request: SaveNoteRequest) -> Result<Note, AppError> {
+        let _guard = metadata_json_guard()?;
         self.ensure_storage()?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -259,6 +284,7 @@ impl NoteStore {
     }
 
     pub fn update_note(&self, id: &str, request: SaveNoteRequest) -> Result<Note, AppError> {
+        let _guard = metadata_json_guard()?;
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let note = metadata_file
@@ -310,6 +336,7 @@ impl NoteStore {
     }
 
     pub fn delete_note(&self, id: &str) -> Result<(), AppError> {
+        let _guard = metadata_json_guard()?;
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let index = metadata_file
@@ -349,6 +376,7 @@ impl NoteStore {
     }
 
     pub fn list_categories(&self) -> Result<Vec<String>, AppError> {
+        let _guard = metadata_json_guard()?;
         let notes_dir = self.notes_dir()?;
         fs::create_dir_all(&notes_dir)?;
         let mut categories = Vec::new();
@@ -363,6 +391,7 @@ impl NoteStore {
     }
 
     pub fn create_category(&self, name: &str) -> Result<(), AppError> {
+        let _guard = metadata_json_guard()?;
         let name = name.trim();
         if name.is_empty() {
             return Err(AppError::new("invalidCategory", "分类名不能为空"));
@@ -377,6 +406,7 @@ impl NoteStore {
     }
 
     pub fn rename_category(&self, old_name: &str, new_name: &str) -> Result<(), AppError> {
+        let _guard = metadata_json_guard()?;
         let new_name = new_name.trim();
         if new_name.is_empty() {
             return Err(AppError::new("invalidCategory", "分类名不能为空"));
@@ -413,6 +443,7 @@ impl NoteStore {
     }
 
     pub fn delete_category(&self, name: &str) -> Result<(), AppError> {
+        let _guard = metadata_json_guard()?;
         let notes_dir = self.notes_dir()?;
         let category_path = notes_dir.join(name);
         if !category_path.exists() {
@@ -445,6 +476,7 @@ impl NoteStore {
         id: &str,
         new_category: &str,
     ) -> Result<NoteMetadata, AppError> {
+        let _guard = metadata_json_guard()?;
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let note = metadata_file
@@ -503,6 +535,7 @@ impl NoteStore {
         self.ensure_base_dir()?;
         let config = self.load_config()?;
         fs::create_dir_all(&config.notes_dir)?;
+        recover_json_after_interrupted_write(&self.metadata_path())?;
         if !self.metadata_path().exists() {
             self.save_metadata(&MetadataFile::default())?;
         }
@@ -544,6 +577,7 @@ impl NoteStore {
     fn load_metadata(&self) -> Result<MetadataFile, AppError> {
         self.ensure_base_dir()?;
         let path = self.metadata_path();
+        recover_json_after_interrupted_write(&path)?;
         if !path.exists() {
             let rebuilt = self.rebuild_metadata()?;
             self.save_metadata(&rebuilt)?;
@@ -568,7 +602,8 @@ impl NoteStore {
 
     fn save_metadata(&self, metadata: &MetadataFile) -> Result<(), AppError> {
         self.ensure_base_dir()?;
-        write_json_atomic(&self.metadata_path(), metadata)
+        write_json_atomic(&self.metadata_path(), metadata)?;
+        Ok(())
     }
 
     fn rebuild_metadata(&self) -> Result<MetadataFile, AppError> {
@@ -628,19 +663,6 @@ impl NoteStore {
         }
         Ok(())
     }
-}
-
-fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), AppError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temp_path = path.with_extension("json.tmp");
-    fs::write(&temp_path, serde_json::to_string_pretty(value)?)?;
-    if path.exists() {
-        fs::remove_file(path)?;
-    }
-    fs::rename(temp_path, path)?;
-    Ok(())
 }
 
 fn safe_file_stem(title: &str) -> String {
@@ -848,6 +870,7 @@ mod tests {
             })
             .expect("create second");
 
+        let _ = fs::remove_file(store.base_dir().join("metadata.json.bak"));
         fs::write(store.metadata_path(), "{ broken json").expect("corrupt metadata");
 
         let repaired = store.list_notes().expect("repair metadata");
