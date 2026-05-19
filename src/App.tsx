@@ -5,14 +5,23 @@ import { MainWindow } from "./components/MainWindow";
 import { NotePad } from "./components/NotePad";
 import { TileShowcase } from "./components/TileShowcase";
 import { getConfig } from "./features/settings/api";
+import { applyCustomAccentColor, applyCustomTextColor } from "./features/settings/customColors";
 import { applyTheme, watchSystemTheme } from "./features/settings/theme";
 import type { AppConfig, ThemeOption } from "./features/settings/types";
+import { UpdateBanner } from "./features/updater/UpdateBanner";
+import { useAutoUpdate } from "./features/updater/useAutoUpdate";
 import { getInitialRoute } from "./features/windows/windowRoutes";
 import { listen } from "@tauri-apps/api/event";
+
+function applyConfigColors(config: AppConfig) {
+  applyCustomAccentColor(config.accentColorMode ?? "default", config.accentColor ?? "#2d5a3d");
+  applyCustomTextColor(config.textColorMode ?? "default", config.textColor ?? "#1a1a18");
+}
 
 function App() {
   const route = getInitialRoute();
   const activeView = route.view;
+  const { updateInfo, dismiss, openDownload } = useAutoUpdate();
 
   useEffect(() => {
     let cleanup = () => {};
@@ -20,6 +29,7 @@ function App() {
       .then((config) => {
         const theme = (config.theme || "system") as ThemeOption;
         applyTheme(theme);
+        applyConfigColors(config);
         cleanup = watchSystemTheme(theme);
       })
       .catch(() => {});
@@ -28,8 +38,10 @@ function App() {
 
   useEffect(() => {
     const unlisten = listen<AppConfig>("config-changed", (event) => {
-      const theme = (event.payload.theme || "system") as ThemeOption;
+      const config = event.payload;
+      const theme = (config.theme || "system") as ThemeOption;
       applyTheme(theme);
+      applyConfigColors(config);
       watchSystemTheme(theme);
     });
     return () => {
@@ -59,6 +71,13 @@ function App() {
           <TileShowcase noteId={route.noteId} />
         )}
       </div>
+      {updateInfo && (
+        <UpdateBanner
+          update={updateInfo}
+          onDownload={openDownload}
+          onDismiss={dismiss}
+        />
+      )}
     </ContextMenuProvider>
   );
 }

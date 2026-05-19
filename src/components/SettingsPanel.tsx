@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useHotkeyRecorder } from "@tanstack/react-hotkeys";
-import type { AppConfig, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
+import type { AppConfig, ColorMode, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
 import {
   formatHeldKeys,
   hotkeyToConfigString,
@@ -10,11 +10,17 @@ import {
   DEFAULT_TILE_COLOR,
   normalizeTileColor,
 } from "../features/settings/tileColor";
+import { applyCustomAccentColor, applyCustomTextColor, normalizeHexColor } from "../features/settings/customColors";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 
 const tileColorModes: Array<{ value: TileColorMode; label: string }> = [
   { value: "system", label: "跟随主题" },
+  { value: "custom", label: "自定义" },
+];
+
+const colorModes: Array<{ value: ColorMode; label: string }> = [
+  { value: "default", label: "默认" },
   { value: "custom", label: "自定义" },
 ];
 
@@ -90,6 +96,102 @@ export function SettingsPanel({
               watchSystemTheme(v);
             }}
           />
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
+            主题色
+          </label>
+          <SlidingButtonGroup
+            options={colorModes}
+            value={config.accentColorMode ?? "default"}
+            onChange={(v: ColorMode) => {
+              setConfigValue("accentColorMode", v);
+              applyCustomAccentColor(v, config.accentColor ?? "#2d5a3d");
+            }}
+          />
+          {(config.accentColorMode ?? "default") === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={normalizeHexColor(config.accentColor, "#2d5a3d")}
+                onChange={(event) => {
+                  setConfigValue("accentColor", event.target.value);
+                  applyCustomAccentColor("custom", event.target.value);
+                }}
+                className="w-10 h-8 rounded-lg border border-paper-deep/40 bg-paper-warm/70 cursor-pointer"
+              />
+              <input
+                type="text"
+                value={config.accentColor ?? "#2d5a3d"}
+                onChange={(event) => {
+                  setConfigValue("accentColor", event.target.value);
+                  applyCustomAccentColor("custom", event.target.value);
+                }}
+                placeholder="#2d5a3d"
+                spellCheck={false}
+                className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setConfigValue("accentColor", "#2d5a3d");
+                  applyCustomAccentColor("custom", "#2d5a3d");
+                }}
+                className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                默认
+              </button>
+            </div>
+          )}
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
+            文本颜色
+          </label>
+          <SlidingButtonGroup
+            options={colorModes}
+            value={config.textColorMode ?? "default"}
+            onChange={(v: ColorMode) => {
+              setConfigValue("textColorMode", v);
+              applyCustomTextColor(v, config.textColor ?? "#1a1a18");
+            }}
+          />
+          {(config.textColorMode ?? "default") === "custom" && (
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={normalizeHexColor(config.textColor, "#1a1a18")}
+                onChange={(event) => {
+                  setConfigValue("textColor", event.target.value);
+                  applyCustomTextColor("custom", event.target.value);
+                }}
+                className="w-10 h-8 rounded-lg border border-paper-deep/40 bg-paper-warm/70 cursor-pointer"
+              />
+              <input
+                type="text"
+                value={config.textColor ?? "#1a1a18"}
+                onChange={(event) => {
+                  setConfigValue("textColor", event.target.value);
+                  applyCustomTextColor("custom", event.target.value);
+                }}
+                placeholder="#1a1a18"
+                spellCheck={false}
+                className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  setConfigValue("textColor", "#1a1a18");
+                  applyCustomTextColor("custom", "#1a1a18");
+                }}
+                className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer whitespace-nowrap"
+              >
+                默认
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="space-y-2">

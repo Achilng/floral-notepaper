@@ -42,6 +42,10 @@ describe("settings api", () => {
       surfaceFontSize: 14,
       externalFileAutoSave: true,
       rememberSurfaceSize: true,
+      accentColor: "#2d5a3d",
+      accentColorMode: "default",
+      textColor: "#1a1a18",
+      textColorMode: "default",
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -66,6 +70,10 @@ describe("settings api", () => {
       surfaceFontSize: 16,
       externalFileAutoSave: true,
       rememberSurfaceSize: true,
+      accentColor: "#1a5cad",
+      accentColorMode: "custom",
+      textColor: "#e0e0e0",
+      textColorMode: "custom",
     };
     mockedInvoke.mockResolvedValue(config);
 

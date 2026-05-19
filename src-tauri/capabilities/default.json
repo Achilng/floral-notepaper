@@ -21,6 +21,7 @@
     "core:window:allow-set-focus",
     "dialog:allow-open",
     "dialog:allow-save",
-    "opener:default"
+    "opener:default",
+    "opener:allow-open-url"
   ]
 }

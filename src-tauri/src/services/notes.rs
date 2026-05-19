@@ -36,6 +36,14 @@ pub struct AppConfig {
     pub surface_width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_height: Option<u32>,
+    #[serde(default = "default_accent_color")]
+    pub accent_color: String,
+    #[serde(default = "default_accent_color_mode")]
+    pub accent_color_mode: String,
+    #[serde(default = "default_text_color")]
+    pub text_color: String,
+    #[serde(default = "default_text_color_mode")]
+    pub text_color_mode: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -500,6 +508,10 @@ impl NoteStore {
             remember_surface_size: default_remember_surface_size(),
             surface_width: None,
             surface_height: None,
+            accent_color: default_accent_color(),
+            accent_color_mode: default_accent_color_mode(),
+            text_color: default_text_color(),
+            text_color_mode: default_text_color_mode(),
         }
     }
 
@@ -780,6 +792,22 @@ fn default_remember_surface_size() -> bool {
     true
 }
 
+fn default_accent_color() -> String {
+    "#2d5a3d".into()
+}
+
+fn default_accent_color_mode() -> String {
+    "default".into()
+}
+
+fn default_text_color() -> String {
+    "#1a1a18".into()
+}
+
+fn default_text_color_mode() -> String {
+    "default".into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -895,6 +923,10 @@ mod tests {
         assert_eq!(default_config.tile_color_mode, "system");
         assert_eq!(default_config.theme, "system");
         assert!(default_config.notes_dir.ends_with("notes"));
+        assert_eq!(default_config.accent_color, "#2d5a3d");
+        assert_eq!(default_config.accent_color_mode, "default");
+        assert_eq!(default_config.text_color, "#1a1a18");
+        assert_eq!(default_config.text_color_mode, "default");
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
         let saved = AppConfig {
@@ -914,6 +946,10 @@ mod tests {
             remember_surface_size: true,
             surface_width: None,
             surface_height: None,
+            accent_color: "#1a5cad".into(),
+            accent_color_mode: "custom".into(),
+            text_color: "#e0e0e0".into(),
+            text_color_mode: "custom".into(),
         };
 
         store.save_config(saved.clone()).expect("save config");
@@ -952,6 +988,11 @@ mod tests {
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
+        assert!(loaded.remember_surface_size);
+        assert_eq!(loaded.accent_color, "#2d5a3d");
+        assert_eq!(loaded.accent_color_mode, "default");
+        assert_eq!(loaded.text_color, "#1a1a18");
+        assert_eq!(loaded.text_color_mode, "default");
     }
 
     #[test]

@@ -1287,6 +1287,10 @@ mod tests {
             remember_surface_size: true,
             surface_width: None,
             surface_height: None,
+            accent_color: "#2d5a3d".into(),
+            accent_color_mode: "default".into(),
+            text_color: "#1a1a18".into(),
+            text_color_mode: "default".into(),
         };
         let next = AppConfig {
             notes_dir: "D:\\other-notes".into(),
@@ -1305,6 +1309,10 @@ mod tests {
             remember_surface_size: true,
             surface_width: None,
             surface_height: None,
+            accent_color: "#1a5cad".into(),
+            accent_color_mode: "custom".into(),
+            text_color: "#e0e0e0".into(),
+            text_color_mode: "custom".into(),
         };
 
         assert_eq!(
