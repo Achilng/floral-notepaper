@@ -1,4 +1,4 @@
-name: Pull Request
+name: PR Checks
 
 on:
   workflow_dispatch:
@@ -13,7 +13,7 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: pr-checks-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.ref }}
+  group: pr-checks-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -26,7 +26,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
-          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -43,7 +42,7 @@ jobs:
 
   cargo-test-clippy:
     name: cargo test & clippy / ${{ matrix.label }}
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
 
@@ -60,7 +59,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
-          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
           persist-credentials: false
 
       - name: Detect Rust-side changes
@@ -69,10 +67,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
+          EVENT_NAME: ${{ github.event_name }}
         run: |
           set -euo pipefail
 
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "$EVENT_NAME" != "pull_request" ]; then
             echo "changed=true" >> "$GITHUB_OUTPUT"
             echo "Manual run: cargo test & clippy are executed unconditionally." >> "$GITHUB_STEP_SUMMARY"
             exit 0
@@ -87,13 +86,13 @@ jobs:
           const prNumber = process.env.PR_NUMBER;
           const apiUrl = process.env.GITHUB_API_URL || "https://api.github.com";
 
-          const rustRelevantPrefixes = [
+          const relevantPrefixes = [
             "src-tauri/",
             ".cargo/",
             ".github/workflows/",
           ];
 
-          const rustRelevantExactFiles = new Set([
+          const relevantFiles = new Set([
             "rust-toolchain",
             "rust-toolchain.toml",
           ]);
@@ -112,8 +111,8 @@ jobs:
 
               https.get(url, { headers }, (res) => {
                 let body = "";
-
                 res.setEncoding("utf8");
+
                 res.on("data", (chunk) => {
                   body += chunk;
                 });
@@ -156,12 +155,12 @@ jobs:
               }
             }
 
-            const rustChangedFiles = changedFiles.filter((filename) => {
-              return rustRelevantExactFiles.has(filename)
-                || rustRelevantPrefixes.some((prefix) => filename.startsWith(prefix));
+            const rustSideFiles = changedFiles.filter((filename) => {
+              return relevantFiles.has(filename)
+                || relevantPrefixes.some((prefix) => filename.startsWith(prefix));
             });
 
-            const changed = rustChangedFiles.length > 0;
+            const changed = rustSideFiles.length > 0;
 
             fs.appendFileSync(process.env.GITHUB_OUTPUT, `changed=${changed ? "true" : "false"}\n`);
 
@@ -171,7 +170,7 @@ jobs:
                 [
                   "Rust-side changes detected:",
                   "",
-                  ...rustChangedFiles.map((file) => `- ${file}`),
+                  ...rustSideFiles.map((file) => `- ${file}`),
                   "",
                 ].join("\n")
               );
@@ -190,7 +189,7 @@ jobs:
           NODE
 
       - name: Setup Rust
-        if: steps.rust-diff.outputs.changed == 'true'
+        if: ${{ steps.rust-diff.outputs.changed == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
@@ -198,18 +197,18 @@ jobs:
           rustup default stable
 
       - name: Run cargo tests
-        if: steps.rust-diff.outputs.changed == 'true'
+        if: ${{ steps.rust-diff.outputs.changed == 'true' }}
         working-directory: src-tauri
         run: cargo test
 
       - name: Run clippy
-        if: steps.rust-diff.outputs.changed == 'true'
+        if: ${{ steps.rust-diff.outputs.changed == 'true' }}
         working-directory: src-tauri
         run: cargo clippy -- -D warnings
 
   tauri-build-windows:
     name: tauri build / Windows
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: windows-latest
     timeout-minutes: 90
 
@@ -217,7 +216,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
         with:
-          ref: ${{ github.event_name == 'pull_request' && format('refs/pull/{0}/merge', github.event.pull_request.number) || github.ref }}
           persist-credentials: false
 
       - name: Setup Node.js
@@ -226,4 +224,138 @@ jobs:
           node-version: '24'
           cache: npm
 
-      - name: Setup R
+      - name: Setup Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Tauri app
+        run: npm run tauri build
+
+      - name: Collect Windows artifacts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $artifactDir = 'release-assets'
+          New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
+
+          $setupSource = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -File -Recurse -Filter '*.exe' |
+            Sort-Object Length -Descending |
+            Select-Object -First 1
+
+          if (-not $setupSource) {
+            throw 'No Windows NSIS installer found.'
+          }
+
+          $portableSource = 'src-tauri/target/release/floral-notepaper.exe'
+          if (-not (Test-Path $portableSource)) {
+            throw "No Windows portable executable found at $portableSource."
+          }
+
+          Copy-Item $setupSource.FullName "$artifactDir/floral-notepaper_windows_x64-setup.exe" -Force
+          Copy-Item $portableSource "$artifactDir/floral-notepaper_windows_portable.exe" -Force
+
+      - name: Upload Windows setup artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: floral-notepaper_windows_x64-setup.exe
+          path: release-assets/floral-notepaper_windows_x64-setup.exe
+          if-no-files-found: error
+          archive: false
+
+      - name: Upload Windows portable artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: floral-notepaper_windows_portable.exe
+          path: release-assets/floral-notepaper_windows_portable.exe
+          if-no-files-found: error
+          archive: false
+
+  tauri-build-macos:
+    name: tauri build / macOS Apple Silicon
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    runs-on: macos-15
+    timeout-minutes: 90
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Setup Rust
+        run: |
+          set -euo pipefail
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Disable macOS signing
+        run: |
+          set -euo pipefail
+
+          cat > disable-macos-signing.cjs <<'SCRIPT'
+          const fs = require("fs");
+
+          const confPath = "src-tauri/tauri.conf.json";
+          const conf = JSON.parse(fs.readFileSync(confPath, "utf8"));
+
+          conf.bundle = conf.bundle || {};
+          conf.bundle.macOS = conf.bundle.macOS || {};
+          conf.bundle.macOS.signingIdentity = null;
+
+          fs.writeFileSync(confPath, JSON.stringify(conf, null, 2));
+          SCRIPT
+
+          node disable-macos-signing.cjs
+
+          node <<'SCRIPT'
+          const fs = require("fs");
+
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          if (conf.bundle?.macOS?.signingIdentity !== null) {
+            throw new Error("Failed to disable macOS signing.");
+          }
+
+          console.log("macOS signing is disabled for this CI build.");
+          SCRIPT
+
+      - name: Build Tauri app
+        run: npm run tauri build -- --target aarch64-apple-darwin
+
+      - name: Collect macOS artifact
+        run: |
+          set -euo pipefail
+
+          mkdir -p release-assets
+
+          dmg_source="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
+          if [ -z "$dmg_source" ]; then
+            echo "No macOS aarch64 DMG artifact found." >&2
+            exit 1
+          fi
+
+          cp "$dmg_source" release-assets/floral-notepaper_macos_aarch64.dmg
+
+      - name: Upload macOS DMG artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: floral-notepaper_macos_aarch64.dmg
+          path: release-assets/floral-notepaper_macos_aarch64.dmg
+          if-no-files-found: error
+          archive: false
