@@ -2,6 +2,12 @@ name: PR Checks
 
 on:
   workflow_dispatch:
+    inputs:
+      run_build:
+        description: 'Run heavy Tauri build jobs'
+        required: false
+        default: false
+        type: boolean
   pull_request:
     types: [opened, reopened, synchronize, ready_for_review]
 
@@ -10,7 +16,6 @@ env:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: pr-checks-${{ github.event.pull_request.number || github.ref }}
@@ -19,6 +24,7 @@ concurrency:
 jobs:
   frontend-test:
     name: npm test / Linux
+    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
@@ -45,6 +51,9 @@ jobs:
     if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 40
+    permissions:
+      contents: read
+      pull-requests: read
 
     strategy:
       fail-fast: false
@@ -77,7 +86,8 @@ jobs:
             exit 0
           fi
 
-          node <<'NODE'
+          detect_failed=false
+          node <<'NODE' || detect_failed=true
           const https = require("https");
           const fs = require("fs");
 
@@ -188,6 +198,14 @@ jobs:
           });
           NODE
 
+          if [ "$detect_failed" = true ]; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            {
+              echo "Rust-side change detection failed due to GitHub API/network issues."
+              echo "Fallback: run cargo test & clippy to avoid false green."
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
       - name: Setup Rust
         if: ${{ steps.rust-diff.outputs.changed == 'true' }}
         shell: bash
@@ -208,7 +226,7 @@ jobs:
 
   tauri-build-windows:
     name: tauri build / Windows
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_dispatch' && inputs.run_build == true) }}
     runs-on: windows-latest
     timeout-minutes: 90
 
@@ -245,14 +263,18 @@ jobs:
           $artifactDir = 'release-assets'
           New-Item -ItemType Directory -Path $artifactDir -Force | Out-Null
 
-          $setupSource = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -File -Recurse -Filter '*.exe' |
-            Sort-Object Length -Descending |
-            Select-Object -First 1
+          $setupCandidates = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -File -Recurse -Filter '*.exe' |
+            Where-Object { $_.Name -match 'setup|installer|_x64' }
 
-          if (-not $setupSource) {
-            throw 'No Windows NSIS installer found.'
+          if (-not $setupCandidates -or $setupCandidates.Count -eq 0) {
+            throw 'No Windows NSIS installer found with expected naming pattern.'
+          }
+          if ($setupCandidates.Count -gt 1) {
+            $names = ($setupCandidates | ForEach-Object { $_.FullName }) -join "`n"
+            throw "Multiple Windows NSIS installer candidates found:`n$names"
           }
 
+          $setupSource = $setupCandidates[0]
           $portableSource = 'src-tauri/target/release/floral-notepaper.exe'
           if (-not (Test-Path $portableSource)) {
             throw "No Windows portable executable found at $portableSource."
@@ -279,7 +301,7 @@ jobs:
 
   tauri-build-macos:
     name: tauri build / macOS Apple Silicon
-    if: ${{ github.event_name != 'pull_request' || github.event.pull_request.draft == false }}
+    if: ${{ (github.event_name == 'pull_request' && github.event.pull_request.draft == false) || (github.event_name == 'workflow_dispatch' && inputs.run_build == true) }}
     runs-on: macos-15
     timeout-minutes: 90
 
@@ -344,13 +366,17 @@ jobs:
 
           mkdir -p release-assets
 
-          dmg_source="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
-          if [ -z "$dmg_source" ]; then
+          mapfile -t dmg_candidates < <(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort)
+          if [ "${#dmg_candidates[@]}" -eq 0 ]; then
             echo "No macOS aarch64 DMG artifact found." >&2
             exit 1
           fi
+          if [ "${#dmg_candidates[@]}" -gt 1 ]; then
+            printf 'Multiple DMG candidates found:\n%s\n' "${dmg_candidates[*]}" >&2
+            exit 1
+          fi
 
-          cp "$dmg_source" release-assets/floral-notepaper_macos_aarch64.dmg
+          cp "${dmg_candidates[0]}" release-assets/floral-notepaper_macos_aarch64.dmg
 
       - name: Upload macOS DMG artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
