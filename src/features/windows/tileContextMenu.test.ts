@@ -7,7 +7,7 @@ describe("getTileContextMenuItems", () => {
       { action: "copy", label: "复制" },
       { action: "save", label: "保存" },
       { action: "switchToPad", label: "转为小窗" },
-      { action: "close", label: "关闭", tone: "danger" },
+      { action: "close", label: "取消钉屏", tone: "danger" },
     ]);
   });
 });

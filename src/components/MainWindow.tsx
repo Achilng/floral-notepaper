@@ -46,7 +46,7 @@ import {
   getNoteContextMenuItems,
   type NoteContextMenuAction,
 } from "../features/notes/noteContextMenu";
-import { openNotepadWindow, openTileWindow } from "../features/windows/api";
+import { openNotepadWindow, toggleTileWindow } from "../features/windows/api";
 import {
   closeCurrentWindow,
   minimizeCurrentWindow,
@@ -256,14 +256,20 @@ export function runEditorUndo(
   return doc.execCommand("undo");
 }
 
+export function pinTileButtonTitle(isPinned: boolean): string {
+  return isPinned ? "取消钉屏" : "钉到屏幕";
+}
+
 interface MainWindowProps {
   initialSettingsOpen?: boolean;
   initialConfig?: AppConfig;
+  initialErrorMessage?: string | null;
 }
 
 export function MainWindow({
   initialSettingsOpen = false,
   initialConfig = undefined,
+  initialErrorMessage = null,
 }: MainWindowProps = {}) {
   const { t } = useTranslation();
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
@@ -279,7 +285,9 @@ export function MainWindow({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(
+    initialErrorMessage,
+  );
   const [noteMenu, setNoteMenu] = useState<NoteMenuState | null>(null);
   const [noteMenuClosing, setNoteMenuClosing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
@@ -290,6 +298,7 @@ export function MainWindow({
   const [noteTransitionKey, setNoteTransitionKey] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteExiting, setDeleteExiting] = useState(false);
+  const [pinnedTileIds, setPinnedTileIds] = useState<Set<string>>(new Set());
   const [categories, setCategories] = useState<string[]>([]);
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
   const [activeCategory, setActiveCategory] = useState<string>("");
@@ -587,6 +596,28 @@ export function MainWindow({
       void unlisten.then((fn) => fn());
     };
   }, [loadNote]);
+
+  useEffect(() => {
+    const unlisten = listen<string>("shortcut-register-failed", (event) => {
+      setErrorMessage(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<string>("tile-window-closed", (event) => {
+      setPinnedTileIds((previous) => {
+        const next = new Set(previous);
+        next.delete(event.payload);
+        return next;
+      });
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedExternalFile) return;
@@ -1119,17 +1150,29 @@ export function MainWindow({
 
   const handlePinEntry = async () => {
     if (!selectedId) return;
-    if (saveState === "dirty") {
+    const isPinned = pinnedTileIds.has(selectedId);
+    if (!isPinned && saveState === "dirty") {
       await saveCurrentNote();
     }
 
     setErrorMessage(null);
     try {
-      await openTileWindow(selectedId);
+      const pinned = await toggleTileWindow(selectedId);
+      setPinnedTileIds((previous) => {
+        const next = new Set(previous);
+        if (pinned) {
+          next.add(selectedId);
+        } else {
+          next.delete(selectedId);
+        }
+        return next;
+      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
   };
+
+  const selectedTilePinned = selectedId ? pinnedTileIds.has(selectedId) : false;
 
   const handleTitleBarDrag = (event: MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest("button")) return;
@@ -1158,14 +1201,34 @@ export function MainWindow({
   };
 
   return (
-    <div className="w-full h-screen flex flex-col">
-      <div className="noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
+    <div className="w-full h-screen flex flex-col bg-transparent">
+      <div className="app-main-frame noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
         <div
-          className="flex items-center justify-between pl-5 pr-0 h-11 bg-paper/60 border-b border-paper-deep/30 shrink-0 select-none cursor-default"
+          className="flex items-center justify-between px-3 h-11 bg-paper/60 border-b border-paper-deep/30 shrink-0 select-none cursor-default"
           onMouseDown={handleTitleBarDrag}
           onDoubleClick={handleTitleBarDoubleClick}
         >
           <div className="flex items-center gap-3 min-w-0">
+            <div className="mac-window-controls flex items-center gap-2 shrink-0">
+              <button
+                onClick={handleClose}
+                className="mac-traffic-button mac-traffic-close"
+                aria-label="关闭"
+                title="关闭"
+              />
+              <button
+                onClick={handleMinimize}
+                className="mac-traffic-button mac-traffic-minimize"
+                aria-label="最小化"
+                title="最小化"
+              />
+              <button
+                onClick={handleMaximize}
+                className="mac-traffic-button mac-traffic-zoom"
+                aria-label={isMaximized ? "还原" : "最大化"}
+                title={isMaximized ? "还原" : "最大化"}
+              />
+            </div>
             <span className="text-[13px] font-display font-medium text-ink-soft tracking-wide">
               花笺
             </span>
@@ -1218,69 +1281,6 @@ export function MainWindow({
               >
                 <circle cx="12" cy="12" r="3" />
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
-              </svg>
-            </button>
-
-            <div className="w-px h-4 bg-paper-deep/30 mx-0.5" />
-
-            <button
-              onClick={handleMinimize}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={t("main.window.minimize", { defaultValue: "最小化" })}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
-              </svg>
-            </button>
-            <button
-              onClick={handleMaximize}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={
-                isMaximized
-                  ? t("main.window.restore", { defaultValue: "还原" })
-                  : t("main.window.maximize", { defaultValue: "最大化" })
-              }
-            >
-              {isMaximized ? (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                >
-                  <rect x="3" y="3" width="7" height="7" rx="1" />
-                  <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
-                </svg>
-              ) : (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                >
-                  <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
-                </svg>
-              )}
-            </button>
-            <button
-              onClick={handleClose}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
-              title={t("main.window.close", { defaultValue: "关闭" })}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
-                <path d="M2 2l8 8M10 2l-8 8" />
               </svg>
             </button>
           </div>
@@ -1841,8 +1841,13 @@ export function MainWindow({
                 <button
                   onClick={() => void handlePinEntry()}
                   disabled={!selectedId}
-                  className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={t("main.editor.pinToTile", { defaultValue: "钉为磁贴" })}
+                  aria-label={pinTileButtonTitle(selectedTilePinned)}
+                  className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed ${
+                    selectedTilePinned
+                      ? "text-bamboo bg-bamboo-mist/40 hover:text-red-400 hover:bg-danger-bg"
+                      : "text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50"
+                  }`}
+                  title={pinTileButtonTitle(selectedTilePinned)}
                 >
                   <svg
                     width="13"

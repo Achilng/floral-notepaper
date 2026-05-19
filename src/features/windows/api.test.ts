@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { describe, expect, test, vi } from "vitest";
-import { openNotepadWindow, openTileWindow, type WindowBounds } from "./api";
+import {
+  openNotepadWindow,
+  openTileWindow,
+  toggleTileWindow,
+  type WindowBounds,
+} from "./api";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -21,6 +26,17 @@ describe("window api", () => {
     expect(invoke).toHaveBeenNthCalledWith(2, "open_notepad_window", {
       noteId: "note-1",
       bounds,
+    });
+  });
+
+  test("toggles a tile window for a note", async () => {
+    vi.mocked(invoke).mockResolvedValue(false);
+
+    await expect(toggleTileWindow("note-1")).resolves.toBe(false);
+
+    expect(invoke).toHaveBeenCalledWith("toggle_tile_window", {
+      noteId: "note-1",
+      bounds: null,
     });
   });
 });

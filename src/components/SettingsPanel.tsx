@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeyRecorder } from "@tanstack/react-hotkeys";
 import { useTranslation } from "react-i18next";
+import { checkGlobalShortcut } from "../features/settings/api";
 import type { AppConfig, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
 import {
   formatHeldKeys,
   hotkeyToConfigString,
   isValidGlobalShortcut,
+  shortcutPlatform,
 } from "../features/settings/shortcutRecorder";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
@@ -342,12 +344,49 @@ interface ShortcutRecorderProps {
 function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const { t } = useTranslation();
   const [heldKeys, setHeldKeys] = useState<string[]>([]);
+  const [checkState, setCheckState] = useState<
+    "idle" | "checking" | "ok" | "warning" | "error"
+  >("idle");
+  const [checkMessage, setCheckMessage] = useState(
+    "用于打开快捷记录小窗",
+  );
+  const platform = shortcutPlatform();
+
+  const runShortcutCheck = async (shortcut: string, saveWhenAvailable: boolean) => {
+    setCheckState("checking");
+    setCheckMessage("正在检测快捷键...");
+    try {
+      const result = await checkGlobalShortcut(shortcut);
+      if (result.available) {
+        setCheckState("ok");
+        setCheckMessage(result.message);
+        if (saveWhenAvailable) {
+          onChange(shortcut);
+        }
+      } else {
+        setCheckState("warning");
+        setCheckMessage(result.message);
+      }
+    } catch (error) {
+      setCheckState("error");
+      setCheckMessage(
+        error instanceof Error ? error.message : "快捷键检测失败",
+      );
+    }
+  };
+
   const recorder = useHotkeyRecorder({
     onRecord: (hotkey) => {
       if ((hotkey as string) === "") {
         onChange("");
+        setCheckState("idle");
+        setCheckMessage("快捷键已清空");
       } else if (isValidGlobalShortcut(hotkey)) {
-        onChange(hotkeyToConfigString(hotkey));
+        const nextShortcut = hotkeyToConfigString(hotkey, platform);
+        void runShortcutCheck(nextShortcut, true);
+      } else {
+        setCheckState("warning");
+        setCheckMessage("快捷键需要包含 Ctrl、Option/Alt 或 Command/Meta");
       }
     },
   });
@@ -403,40 +442,67 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [recorder.isRecording, recorder.cancelRecording]);
 
-  const liveDisplay = recorder.isRecording && heldKeys.length > 0 ? formatHeldKeys(heldKeys) : null;
+  const liveDisplay =
+    recorder.isRecording && heldKeys.length > 0
+      ? formatHeldKeys(heldKeys, platform)
+      : null;
+  const statusClass =
+    checkState === "ok"
+      ? "text-bamboo"
+      : checkState === "warning" || checkState === "error"
+        ? "text-red-400"
+        : "text-ink-ghost";
+  const isChecking = checkState === "checking";
 
   return (
-    <div ref={containerRef} className="relative">
-      <button
-        type="button"
-        onClick={() => recorder.startRecording()}
-        className={`w-full h-8 px-2.5 rounded-lg border text-[12px] flex items-center gap-2 cursor-pointer transition-colors ${
-          recorder.isRecording
-            ? "bg-bamboo-mist/40 border-bamboo"
-            : "bg-paper-warm/70 border-paper-deep/40 hover:border-paper-deep/60"
-        }`}
-      >
-        {recorder.isRecording ? (
-          <>
-            <span className="flex-1 text-left text-bamboo">
-              {liveDisplay ||
-                t("settings.shortcut.pressHint", { defaultValue: "按下快捷键；按 Delete 清空。" })}
-            </span>
-            <span className="text-[10px] text-ink-faint shrink-0">
-              {t("settings.shortcut.cancelHint", { defaultValue: "Esc 取消" })}
-            </span>
-          </>
-        ) : (
-          <>
-            <span className={`flex-1 text-left ${value ? "text-ink-soft" : "text-ink-ghost"}`}>
-              {value || t("settings.shortcut.notSet", { defaultValue: "未设置" })}
-            </span>
-            <span className="text-[10px] text-ink-ghost shrink-0">
-              {t("settings.shortcut.clickToRecord", { defaultValue: "点击录制" })}
-            </span>
-          </>
-        )}
-      </button>
+    <div ref={containerRef} className="relative space-y-1.5">
+      <div className="flex gap-2">
+        <button
+          type="button"
+          onClick={() => recorder.startRecording()}
+          className={`min-w-0 flex-1 h-8 px-2.5 rounded-lg border text-[12px] flex items-center gap-2 cursor-pointer transition-colors ${
+            recorder.isRecording
+              ? "bg-bamboo-mist/40 border-bamboo"
+              : "bg-paper-warm/70 border-paper-deep/40 hover:border-paper-deep/60"
+          }`}
+        >
+          {recorder.isRecording ? (
+            <>
+              <span className="flex-1 min-w-0 text-left text-bamboo truncate">
+                {liveDisplay ||
+                  t("settings.shortcut.pressHint", { defaultValue: "按下快捷键；按 Delete 清空。" })}
+              </span>
+              <span className="text-[10px] text-ink-faint shrink-0">
+                {t("settings.shortcut.cancelHint", { defaultValue: "Esc 取消" })}
+              </span>
+            </>
+          ) : (
+            <>
+              <span
+                className={`flex-1 min-w-0 text-left truncate ${
+                  value ? "text-ink-soft" : "text-ink-ghost"
+                }`}
+              >
+                {value || t("settings.shortcut.notSet", { defaultValue: "未设置" })}
+              </span>
+              <span className="text-[10px] text-ink-ghost shrink-0">
+                {t("settings.shortcut.clickToRecord", { defaultValue: "点击录制" })}
+              </span>
+            </>
+          )}
+        </button>
+        <button
+          type="button"
+          disabled={isChecking || recorder.isRecording}
+          onClick={() => void runShortcutCheck(value, false)}
+          className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        >
+          {isChecking
+            ? t("settings.shortcut.checkingShort", { defaultValue: "检测中" })
+            : t("settings.shortcut.check", { defaultValue: "检测" })}
+        </button>
+      </div>
+      <p className={`min-h-4 text-[11px] ${statusClass}`}>{checkMessage}</p>
     </div>
   );
 }
