@@ -64,9 +64,7 @@ describe("MainWindow settings", () => {
     expect(markup).toContain("mac-traffic-close");
     expect(markup).toContain("mac-traffic-minimize");
     expect(markup).toContain("mac-traffic-zoom");
-    expect(markup.indexOf("mac-window-controls")).toBeLessThan(
-      markup.indexOf(">花笺<"),
-    );
+    expect(markup.indexOf("mac-window-controls")).toBeLessThan(markup.indexOf(">花笺<"));
   });
 
   test("renders the import Markdown icon as a down arrow", () => {

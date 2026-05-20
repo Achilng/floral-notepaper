@@ -42,8 +42,7 @@ function App() {
 
   useEffect(() => {
     const isWindows =
-      navigator.userAgent.includes("Windows") ||
-      navigator.platform.toLowerCase().startsWith("win");
+      navigator.userAgent.includes("Windows") || navigator.platform.toLowerCase().startsWith("win");
     if (!isWindows) return;
 
     const preventSystemMenu = (e: KeyboardEvent) => {

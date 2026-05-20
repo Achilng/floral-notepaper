@@ -16,9 +16,7 @@ export function saveConfig(config: AppConfig): Promise<AppConfig> {
   return invoke("config_save", { config });
 }
 
-export function checkGlobalShortcut(
-  shortcut: string,
-): Promise<ShortcutCheckResult> {
+export function checkGlobalShortcut(shortcut: string): Promise<ShortcutCheckResult> {
   return invoke("global_shortcut_check", { shortcut });
 }
 

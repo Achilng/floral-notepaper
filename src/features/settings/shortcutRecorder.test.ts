@@ -10,13 +10,9 @@ describe("shortcutRecorder", () => {
   });
 
   test("serializes mac shortcuts using Command and Option labels", () => {
-    const macShortcut = "Meta+Alt+N" as Parameters<
-      typeof hotkeyToConfigString
-    >[0];
+    const macShortcut = "Meta+Alt+N" as Parameters<typeof hotkeyToConfigString>[0];
 
-    expect(hotkeyToConfigString(macShortcut, "macos")).toBe(
-      "Command+Option+N",
-    );
+    expect(hotkeyToConfigString(macShortcut, "macos")).toBe("Command+Option+N");
   });
 
   test("accepts meta as a valid global shortcut modifier", () => {
@@ -29,8 +25,6 @@ describe("shortcutRecorder", () => {
   });
 
   test("formats held mac keys with Command before Option", () => {
-    expect(formatHeldKeys(["Alt", "Meta", "N"], "macos")).toBe(
-      "Command + Option + N",
-    );
+    expect(formatHeldKeys(["Alt", "Meta", "N"], "macos")).toBe("Command + Option + N");
   });
 });

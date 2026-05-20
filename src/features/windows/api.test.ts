@@ -1,11 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { describe, expect, test, vi } from "vitest";
-import {
-  openNotepadWindow,
-  openTileWindow,
-  toggleTileWindow,
-  type WindowBounds,
-} from "./api";
+import { openNotepadWindow, openTileWindow, toggleTileWindow, type WindowBounds } from "./api";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),

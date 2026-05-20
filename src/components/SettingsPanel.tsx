@@ -344,12 +344,10 @@ interface ShortcutRecorderProps {
 function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const { t } = useTranslation();
   const [heldKeys, setHeldKeys] = useState<string[]>([]);
-  const [checkState, setCheckState] = useState<
-    "idle" | "checking" | "ok" | "warning" | "error"
-  >("idle");
-  const [checkMessage, setCheckMessage] = useState(
-    "用于打开快捷记录小窗",
+  const [checkState, setCheckState] = useState<"idle" | "checking" | "ok" | "warning" | "error">(
+    "idle",
   );
+  const [checkMessage, setCheckMessage] = useState("用于打开快捷记录小窗");
   const platform = shortcutPlatform();
 
   const runShortcutCheck = async (shortcut: string, saveWhenAvailable: boolean) => {
@@ -369,9 +367,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
       }
     } catch (error) {
       setCheckState("error");
-      setCheckMessage(
-        error instanceof Error ? error.message : "快捷键检测失败",
-      );
+      setCheckMessage(error instanceof Error ? error.message : "快捷键检测失败");
     }
   };
 
@@ -443,9 +439,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   }, [recorder.isRecording, recorder.cancelRecording]);
 
   const liveDisplay =
-    recorder.isRecording && heldKeys.length > 0
-      ? formatHeldKeys(heldKeys, platform)
-      : null;
+    recorder.isRecording && heldKeys.length > 0 ? formatHeldKeys(heldKeys, platform) : null;
   const statusClass =
     checkState === "ok"
       ? "text-bamboo"

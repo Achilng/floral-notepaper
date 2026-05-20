@@ -53,10 +53,7 @@ export function isValidGlobalShortcut(hotkey: Hotkey): boolean {
   return parsed.ctrl || parsed.alt || parsed.meta;
 }
 
-export function formatHeldKeys(
-  keys: string[],
-  platform: ShortcutPlatform = "windows",
-): string {
+export function formatHeldKeys(keys: string[], platform: ShortcutPlatform = "windows"): string {
   const modifierOrder =
     platform === "macos"
       ? ["Meta", "Alt", "Control", "Shift"]
@@ -75,7 +72,6 @@ export function formatHeldKeys(
   modifiers.sort((a, b) => modifierOrder.indexOf(a) - modifierOrder.indexOf(b));
 
   const all = [...modifiers, ...others];
-  const displayNames =
-    platform === "macos" ? MAC_KEY_DISPLAY_NAMES : KEY_DISPLAY_NAMES;
+  const displayNames = platform === "macos" ? MAC_KEY_DISPLAY_NAMES : KEY_DISPLAY_NAMES;
   return all.map((k) => displayNames[k] ?? k).join(" + ");
 }

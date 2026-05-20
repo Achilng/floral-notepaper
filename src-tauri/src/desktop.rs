@@ -1295,6 +1295,7 @@ fn system_shortcut_conflict(_shortcut_config: &str) -> Option<ShortcutCheckResul
     None
 }
 
+#[cfg(target_os = "macos")]
 fn shortcut_matches(
     spec: &ShortcutSpec,
     ctrl: bool,
