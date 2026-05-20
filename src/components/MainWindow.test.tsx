@@ -74,6 +74,7 @@ describe("MainWindow settings", () => {
     expect(markup).toContain('d="m7 10 5 5 5-5"');
     expect(markup).toContain('d="M5 21h14"');
     expect(markup).not.toContain('d="m7 14 5-5 5 5"');
+    expect(markup).not.toContain('d="m7 8 5-5 5 5"');
   });
 
   test("labels the pin button as a toggle", () => {
