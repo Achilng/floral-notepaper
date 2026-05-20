@@ -348,13 +348,33 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     "idle",
   );
   const [checkMessage, setCheckMessage] = useState("用于打开快捷记录小窗");
+  const shortcutCheckRequestId = useRef(0);
+  const isMounted = useRef(true);
   const platform = shortcutPlatform();
 
+  useEffect(() => {
+    isMounted.current = true;
+    return () => {
+      isMounted.current = false;
+      shortcutCheckRequestId.current += 1;
+    };
+  }, []);
+
+  const isCurrentShortcutCheck = (requestId: number) =>
+    isMounted.current && requestId === shortcutCheckRequestId.current;
+
+  const invalidateShortcutChecks = () => {
+    shortcutCheckRequestId.current += 1;
+  };
+
   const runShortcutCheck = async (shortcut: string, saveWhenAvailable: boolean) => {
+    const requestId = shortcutCheckRequestId.current + 1;
+    shortcutCheckRequestId.current = requestId;
     setCheckState("checking");
     setCheckMessage("正在检测快捷键...");
     try {
       const result = await checkGlobalShortcut(shortcut);
+      if (!isCurrentShortcutCheck(requestId)) return;
       if (result.available) {
         setCheckState("ok");
         setCheckMessage(result.message);
@@ -366,6 +386,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
         setCheckMessage(result.message);
       }
     } catch (error) {
+      if (!isCurrentShortcutCheck(requestId)) return;
       setCheckState("error");
       setCheckMessage(error instanceof Error ? error.message : "快捷键检测失败");
     }
@@ -381,6 +402,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
         const nextShortcut = hotkeyToConfigString(hotkey, platform);
         void runShortcutCheck(nextShortcut, true);
       } else {
+        invalidateShortcutChecks();
         setCheckState("warning");
         setCheckMessage("快捷键需要包含 Ctrl、Option/Alt 或 Command/Meta");
       }
