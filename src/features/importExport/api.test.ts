@@ -60,9 +60,7 @@ describe("importExport api", () => {
     mockedSave.mockResolvedValue("D:\\exports\\读书笔记.md");
     mockedInvoke.mockResolvedValue(undefined);
 
-    await expect(
-      exportMarkdownNote({ id: "note-1", title: "读书笔记" }),
-    ).resolves.toBe(true);
+    await expect(exportMarkdownNote({ id: "note-1", title: "读书笔记" })).resolves.toBe(true);
 
     expect(save).toHaveBeenCalledWith({
       defaultPath: "读书笔记.md",

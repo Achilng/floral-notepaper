@@ -39,9 +39,7 @@ export function formatHeldKeys(keys: string[]): string {
     }
   }
 
-  modifiers.sort(
-    (a, b) => modifierOrder.indexOf(a) - modifierOrder.indexOf(b),
-  );
+  modifiers.sort((a, b) => modifierOrder.indexOf(a) - modifierOrder.indexOf(b));
 
   const all = [...modifiers, ...others];
   return all.map((k) => KEY_DISPLAY_NAMES[k] ?? k).join(" + ");

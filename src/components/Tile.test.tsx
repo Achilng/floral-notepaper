@@ -30,9 +30,7 @@ describe("Tile", () => {
   });
 
   test("uses a custom hex color instead of preset tile palettes", () => {
-    const markup = renderToStaticMarkup(
-      <Tile color="#efe8dc" content="磁贴内容" />,
-    );
+    const markup = renderToStaticMarkup(<Tile color="#efe8dc" content="磁贴内容" />);
 
     expect(markup).toContain("background-color:#efe8dc");
     expect(markup).not.toContain("bg-[#d8eee9]");

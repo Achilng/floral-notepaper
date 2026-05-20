@@ -5,11 +5,7 @@ import { MainWindow } from "./components/MainWindow";
 import { NotePad } from "./components/NotePad";
 import { TileShowcase } from "./components/TileShowcase";
 import { getConfig } from "./features/settings/api";
-import {
-  applyTheme,
-  applyUiFontFamily,
-  watchSystemTheme,
-} from "./features/settings/theme";
+import { applyTheme, applyUiFontFamily, watchSystemTheme } from "./features/settings/theme";
 import type { AppConfig, ThemeOption } from "./features/settings/types";
 import { getInitialRoute } from "./features/windows/windowRoutes";
 import { listen } from "@tauri-apps/api/event";
@@ -50,8 +46,7 @@ function App() {
       }
     };
     document.addEventListener("keydown", preventSystemMenu, true);
-    return () =>
-      document.removeEventListener("keydown", preventSystemMenu, true);
+    return () => document.removeEventListener("keydown", preventSystemMenu, true);
   }, []);
 
   return (

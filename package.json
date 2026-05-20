@@ -1,7 +1,7 @@
 {
   "name": "floral-notepaper",
-  "private": true,
   "version": "1.0.4",
+  "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",

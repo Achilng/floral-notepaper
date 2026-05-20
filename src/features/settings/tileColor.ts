@@ -32,11 +32,6 @@ export function resolveSystemTileColor(): string {
   return theme === "dark" ? SYSTEM_TILE_COLOR_DARK : SYSTEM_TILE_COLOR_LIGHT;
 }
 
-export function resolveTileColor(
-  mode: TileColorMode,
-  customColor: string,
-): string {
-  return mode === "system"
-    ? resolveSystemTileColor()
-    : normalizeTileColor(customColor);
+export function resolveTileColor(mode: TileColorMode, customColor: string): string {
+  return mode === "system" ? resolveSystemTileColor() : normalizeTileColor(customColor);
 }

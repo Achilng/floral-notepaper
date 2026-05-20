@@ -20,21 +20,23 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
 
   useEffect(() => {
     getConfig()
-      .then((c) => { tileCtrlCloseRef.current = c.tileCtrlClose ?? true; })
+      .then((c) => {
+        tileCtrlCloseRef.current = c.tileCtrlClose ?? true;
+      })
       .catch(() => {});
     const unlisten = listen<AppConfig>("config-changed", (event) => {
       tileCtrlCloseRef.current = event.payload.tileCtrlClose ?? true;
     });
-    return () => { void unlisten.then((fn) => fn()); };
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
   }, []);
 
   useEffect(() => {
     function handleContextMenu(event: MouseEvent) {
       const target = event.target as HTMLElement;
       const isEditable =
-        target.tagName === "TEXTAREA" ||
-        target.tagName === "INPUT" ||
-        target.isContentEditable;
+        target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable;
       const tileTarget = target.closest<HTMLElement>('[data-context-menu="tile"]');
 
       if (!isEditable && !tileTarget) {
@@ -108,9 +110,7 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     dismissMenu();
   };
 
-  const runSurfaceAction = (
-    action: (typeof tileContextMenuItems)[number]["action"],
-  ) => {
+  const runSurfaceAction = (action: (typeof tileContextMenuItems)[number]["action"]) => {
     requestSurfaceAction(action);
     dismissMenu();
   };

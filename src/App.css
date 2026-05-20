@@ -47,15 +47,29 @@ html.theme-transition,
 html.theme-transition *,
 html.theme-transition *::before,
 html.theme-transition *::after {
-  transition: color 0.35s ease, background-color 0.35s ease, border-color 0.35s ease, box-shadow 0.35s ease, fill 0.35s ease, stroke 0.35s ease !important;
+  transition:
+    color 0.35s ease,
+    background-color 0.35s ease,
+    border-color 0.35s ease,
+    box-shadow 0.35s ease,
+    fill 0.35s ease,
+    stroke 0.35s ease !important;
   transition-delay: 0s !important;
 }
 html.theme-transition .sliding-highlight {
-  transition: left 0.25s cubic-bezier(0.22,1,0.36,1), top 0.25s cubic-bezier(0.22,1,0.36,1), width 0.25s cubic-bezier(0.22,1,0.36,1), height 0.25s cubic-bezier(0.22,1,0.36,1), background-color 0.35s ease, box-shadow 0.35s ease !important;
+  transition:
+    left 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    top 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    width 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    height 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    background-color 0.35s ease,
+    box-shadow 0.35s ease !important;
 }
 
 /* Global resets */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
 }
 
@@ -64,21 +78,37 @@ html {
   -moz-osx-font-smoothing: grayscale;
 }
 
-::-webkit-scrollbar { width: 4px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--color-ink-ghost); border-radius: 2px; }
-::-webkit-scrollbar-thumb:hover { background: var(--color-ink-faint); }
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-ink-ghost);
+  border-radius: 2px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-ink-faint);
+}
 
-.scrollbar-hidden::-webkit-scrollbar { display: none; }
-.scrollbar-hidden { -ms-overflow-style: none; scrollbar-width: none; }
+.scrollbar-hidden::-webkit-scrollbar {
+  display: none;
+}
+.scrollbar-hidden {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
 
-textarea, input {
+textarea,
+input {
   resize: none;
   outline: none;
   border: none;
   background: transparent;
 }
-textarea::placeholder, input::placeholder {
+textarea::placeholder,
+input::placeholder {
   color: var(--color-ink-ghost);
 }
 
@@ -101,39 +131,87 @@ textarea::placeholder, input::placeholder {
 
 /* Animations */
 @keyframes fade-up {
-  from { opacity: 0; transform: translateY(14px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 @keyframes scale-in {
-  from { opacity: 0; transform: scale(0.95); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 @keyframes shimmer {
-  0%, 100% { opacity: 0.4; }
-  50% { opacity: 0.7; }
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.7;
+  }
 }
 @keyframes float-gentle {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-6px) rotate(0.3deg); }
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  50% {
+    transform: translateY(-6px) rotate(0.3deg);
+  }
 }
 @keyframes dash-draw {
-  to { stroke-dashoffset: 0; }
+  to {
+    stroke-dashoffset: 0;
+  }
 }
 @keyframes window-enter {
-  from { opacity: 0; transform: scale(0.96); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 @keyframes window-exit {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.96); }
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.96);
+  }
 }
 @keyframes menu-enter {
-  from { opacity: 0; transform: translateY(4px) scale(0.97); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 @keyframes menu-exit {
-  from { opacity: 1; transform: translateY(0) scale(1); }
-  to { opacity: 0; transform: translateY(4px) scale(0.97); }
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(4px) scale(0.97);
+  }
 }
 
 .animate-fade-up {
@@ -160,12 +238,24 @@ textarea::placeholder, input::placeholder {
   pointer-events: none;
 }
 @keyframes menu-slide-left {
-  from { opacity: 0; transform: translateX(8px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 @keyframes menu-slide-right {
-  from { opacity: 0; transform: translateX(-8px); }
-  to { opacity: 1; transform: translateX(0); }
+  from {
+    opacity: 0;
+    transform: translateX(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
 }
 .animate-menu-slide-left {
   animation: menu-slide-left 0.15s cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -174,22 +264,36 @@ textarea::placeholder, input::placeholder {
   animation: menu-slide-right 0.15s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 @keyframes fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .animate-fade-in {
   animation: fade-in 0.25s ease-out forwards;
 }
 @keyframes note-enter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 .animate-note-enter {
   animation: note-enter 0.6s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
 @keyframes view-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .animate-view-fade {
   animation: view-fade 0.72s ease-out forwards;
@@ -200,7 +304,9 @@ textarea::placeholder, input::placeholder {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
-  transition: grid-template-rows 0.25s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.2s ease;
+  transition:
+    grid-template-rows 0.25s cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 0.2s ease;
 }
 .category-body.expanded {
   grid-template-rows: 1fr;
@@ -212,12 +318,24 @@ textarea::placeholder, input::placeholder {
 
 /* Delete confirm inline pop */
 @keyframes delete-confirm-enter {
-  from { opacity: 0; transform: scale(0.9); }
-  to { opacity: 1; transform: scale(1); }
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
 }
 @keyframes delete-confirm-exit {
-  from { opacity: 1; transform: scale(1); }
-  to { opacity: 0; transform: scale(0.9); }
+  from {
+    opacity: 1;
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: scale(0.9);
+  }
 }
 .animate-delete-confirm {
   animation: delete-confirm-enter 0.18s cubic-bezier(0.22, 1, 0.36, 1) forwards;
@@ -229,8 +347,12 @@ textarea::placeholder, input::placeholder {
 
 /* Save status crossfade */
 @keyframes status-fade {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 .animate-status-fade {
   animation: status-fade 0.25s ease-out forwards;
