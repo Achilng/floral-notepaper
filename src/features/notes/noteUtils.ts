@@ -28,6 +28,7 @@ export function metadataFromNote(note: Note): NoteMetadata {
     title: note.title,
     fileName: note.fileName,
     category: note.category,
+    pinned: note.pinned,
     createdAt: note.createdAt,
     updatedAt: note.updatedAt,
     wordCount: note.wordCount,
@@ -44,6 +45,7 @@ export interface CategoryGroup {
 export function groupNotesByCategory(
   notes: NoteMetadata[],
   allCategories: string[] = [],
+  categoryOrder: string[] = [],
 ): CategoryGroup[] {
   const groups = new Map<string, NoteMetadata[]>();
 
@@ -63,7 +65,10 @@ export function groupNotesByCategory(
 
   const result: CategoryGroup[] = [];
   for (const [category, categoryNotes] of groups) {
-    categoryNotes.sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    categoryNotes.sort((a, b) => {
+      if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+      return b.updatedAt.localeCompare(a.updatedAt);
+    });
     result.push({
       category,
       notes: categoryNotes,
@@ -74,10 +79,13 @@ export function groupNotesByCategory(
   result.sort((a, b) => {
     if (!a.category) return 1;
     if (!b.category) return -1;
-    const aEmpty = a.notes.length === 0;
-    const bEmpty = b.notes.length === 0;
-    if (aEmpty && !bEmpty) return -1;
-    if (!aEmpty && bEmpty) return 1;
+    if (categoryOrder.length > 0) {
+      const ai = categoryOrder.indexOf(a.category);
+      const bi = categoryOrder.indexOf(b.category);
+      const aIdx = ai === -1 ? Infinity : ai;
+      const bIdx = bi === -1 ? Infinity : bi;
+      if (aIdx !== bIdx) return aIdx - bIdx;
+    }
     return a.category.localeCompare(b.category);
   });
   return result;

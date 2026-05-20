@@ -22,4 +22,5 @@ export interface AppConfig {
   tileCtrlClose: boolean;
   surfaceWidth?: number;
   surfaceHeight?: number;
+  categoryOrder?: string[];
 }

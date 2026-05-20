@@ -25,6 +25,10 @@ export function moveNoteCategory(id: string, category: string): Promise<NoteMeta
   return invoke("notes_move_category", { id, category });
 }
 
+export function toggleNotePin(id: string): Promise<NoteMetadata> {
+  return invoke("notes_toggle_pin", { id });
+}
+
 export function listCategories(): Promise<string[]> {
   return invoke("categories_list");
 }

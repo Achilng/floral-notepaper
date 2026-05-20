@@ -3,6 +3,7 @@ export interface NoteMetadata {
   title: string;
   fileName: string;
   category: string;
+  pinned: boolean;
   createdAt: string;
   updatedAt: string;
   wordCount: number;

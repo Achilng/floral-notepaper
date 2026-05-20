@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { emit, listen } from "@tauri-apps/api/event";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
-import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
+import { MilkdownPreview } from "../features/editor/MilkdownPreview";
 import {
   chooseNotesDirectory,
   getConfig,
@@ -24,6 +24,7 @@ import {
   listCategories,
   listNotes,
   moveNoteCategory,
+  toggleNotePin,
   readExternalFile,
   renameCategory,
   saveExternalFile,
@@ -40,6 +41,7 @@ import {
   metadataFromNote,
 } from "../features/notes/noteUtils";
 import type { CategoryGroup } from "../features/notes/noteUtils";
+import { ListUndoStack } from "../features/notes/undoStack";
 import {
   noteContextMenuItems,
   type NoteContextMenuAction,
@@ -290,14 +292,26 @@ export function MainWindow({
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameCategoryValue, setRenameCategoryValue] = useState("");
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
+  const [draggingCategory, setDraggingCategory] = useState<string | null>(null);
+  const [categoryDropTarget, setCategoryDropTarget] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [splitRatio, setSplitRatio] = useState(0.5);
   const [isResizingSplit, setIsResizingSplit] = useState(false);
   const splitContainerRef = useRef<HTMLDivElement>(null);
+  const previewScrollRef = useRef<HTMLDivElement>(null);
+  const scrollSyncingRef = useRef(false);
+  const [scrollSyncEnabled, setScrollSyncEnabled] = useState(true);
+  const undoStackRef = useRef<{ text: string; ss: number; se: number }[]>([]);
+  const redoStackRef = useRef<{ text: string; ss: number; se: number }[]>([]);
+  const lastUndoPushRef = useRef(0);
   const [categoryMenu, setCategoryMenu] = useState<CategoryMenuState | null>(null);
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
+  const listUndoRef = useRef(new ListUndoStack());
+  const [undoToast, setUndoToast] = useState<string | null>(null);
+  const categoryElsRef = useRef<Map<string, HTMLDivElement>>(new Map());
+  const prevCategoryPositionsRef = useRef<Map<string, DOMRect> | null>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
@@ -325,8 +339,8 @@ export function MainWindow({
   );
 
   const categoryGroups = useMemo(
-    () => groupNotesByCategory(filteredNotes, categories),
-    [filteredNotes, categories],
+    () => groupNotesByCategory(filteredNotes, categories, settingsConfig?.categoryOrder),
+    [filteredNotes, categories, settingsConfig?.categoryOrder],
   );
 
   const lineCount = useMemo(() => content.split("\n").length, [content]);
@@ -343,6 +357,8 @@ export function MainWindow({
     setSaveState("saved");
     setErrorMessage(null);
     setNoteTransitionKey((k) => k + 1);
+    undoStackRef.current = [];
+    redoStackRef.current = [];
   }, []);
 
   const replaceNoteMetadata = useCallback((note: Note) => {
@@ -599,6 +615,54 @@ export function MainWindow({
   }, [saveCurrentNote]);
 
   useEffect(() => {
+    function handleListUndo(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey) || event.key !== "z" || event.shiftKey) return;
+      const active = document.activeElement;
+      if (active instanceof HTMLTextAreaElement || active instanceof HTMLInputElement) return;
+      if (active?.closest?.(".milkdown")) return;
+      event.preventDefault();
+      void (async () => {
+        const desc = await listUndoRef.current.undo();
+        if (desc) {
+          setUndoToast(`已撤销：${desc}`);
+        }
+      })();
+    }
+    document.addEventListener("keydown", handleListUndo);
+    return () => document.removeEventListener("keydown", handleListUndo);
+  }, []);
+
+  useEffect(() => {
+    if (!undoToast) return undefined;
+    const timer = window.setTimeout(() => setUndoToast(null), 2000);
+    return () => window.clearTimeout(timer);
+  }, [undoToast]);
+
+  const categoryOrderKey = categoryGroups.map((g) => g.category).join("\0");
+  useLayoutEffect(() => {
+    const prev = prevCategoryPositionsRef.current;
+    if (!prev) return;
+    prevCategoryPositionsRef.current = null;
+
+    categoryElsRef.current.forEach((el, key) => {
+      const oldRect = prev.get(key);
+      if (!oldRect) return;
+      const newRect = el.getBoundingClientRect();
+      const deltaY = oldRect.top - newRect.top;
+      if (Math.abs(deltaY) < 1) return;
+
+      el.style.transform = `translateY(${deltaY}px)`;
+      el.style.transition = "none";
+      requestAnimationFrame(() => {
+        el.style.transition = "transform 250ms ease-out";
+        el.style.transform = "";
+        el.addEventListener("transitionend", () => { el.style.transition = ""; }, { once: true });
+      });
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [categoryOrderKey]);
+
+  useEffect(() => {
     if (!selectedId || saveState !== "dirty") return undefined;
     if (isExternal) {
       if (!settingsConfig?.externalFileAutoSave) return undefined;
@@ -705,6 +769,42 @@ export function MainWindow({
     setSettingsOpen(false);
   }, []);
 
+  const handleCategoryDrop = useCallback(
+    () => {
+      if (!draggingCategory || !settingsConfig || !categoryDropTarget) return;
+      const base = [...(settingsConfig.categoryOrder ?? [])];
+      for (const cat of categories) {
+        if (!base.includes(cat)) base.push(cat);
+      }
+      const order = base;
+      const fromIdx = order.indexOf(draggingCategory);
+      if (fromIdx === -1) return;
+
+      const positions = new Map<string, DOMRect>();
+      categoryElsRef.current.forEach((el, key) => {
+        positions.set(key, el.getBoundingClientRect());
+      });
+      prevCategoryPositionsRef.current = positions;
+
+      order.splice(fromIdx, 1);
+      if (categoryDropTarget === "__end__") {
+        order.push(draggingCategory);
+      } else {
+        const targetIdx = order.indexOf(categoryDropTarget);
+        if (targetIdx === -1) {
+          order.push(draggingCategory);
+        } else {
+          order.splice(targetIdx, 0, draggingCategory);
+        }
+      }
+      const nextConfig = { ...settingsConfig, categoryOrder: order };
+      handleSettingsChange(nextConfig);
+      setDraggingCategory(null);
+      setCategoryDropTarget(null);
+    },
+    [draggingCategory, settingsConfig, categories, categoryDropTarget, handleSettingsChange],
+  );
+
   const handleImportNote = async () => {
     setErrorMessage(null);
     try {
@@ -792,6 +892,7 @@ export function MainWindow({
     setDeleteConfirm(false);
     setErrorMessage(null);
     try {
+      const fullNote = await getNote(noteId);
       await deleteNote(noteId);
       const remaining = await refreshNotes();
       if (noteId === selectedId && remaining[0]) {
@@ -799,6 +900,14 @@ export function MainWindow({
       } else if (noteId === selectedId) {
         clearCurrentNote();
       }
+      listUndoRef.current.push({
+        description: `删除笔记「${fullNote.title || "无标题"}」`,
+        async execute() {},
+        async undo() {
+          await createNote({ title: fullNote.title, content: fullNote.content, category: fullNote.category });
+          await refreshNotes();
+        },
+      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -846,6 +955,28 @@ export function MainWindow({
     const note = noteMenuTarget;
     if (!note) return;
 
+    if (action === "pin") {
+      setNoteMenuClosing(true);
+      void (async () => {
+        try {
+          const wasPinned = note.pinned;
+          await toggleNotePin(note.id);
+          await refreshNotes();
+          listUndoRef.current.push({
+            description: wasPinned ? `取消置顶「${note.title || "无标题"}」` : `置顶「${note.title || "无标题"}」`,
+            async execute() {},
+            async undo() {
+              await toggleNotePin(note.id);
+              await refreshNotes();
+            },
+          });
+        } catch (error) {
+          setErrorMessage(getErrorMessage(error));
+        }
+      })();
+      return;
+    }
+
     if (action === "export") {
       setNoteMenuClosing(true);
       void handleExportNote(note);
@@ -865,8 +996,18 @@ export function MainWindow({
     setNoteMenuClosing(true);
     setErrorMessage(null);
     try {
+      const meta = notes.find((n) => n.id === noteId);
+      const oldCategory = meta?.category ?? "";
       await moveNoteCategory(noteId, targetCategory);
       await refreshNotes();
+      listUndoRef.current.push({
+        description: `移动笔记到「${targetCategory || "未分类"}」`,
+        async execute() {},
+        async undo() {
+          await moveNoteCategory(noteId, oldCategory);
+          await refreshNotes();
+        },
+      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -901,6 +1042,14 @@ export function MainWindow({
       await refreshNotes();
       setRenamingCategory(null);
       setRenameCategoryValue("");
+      listUndoRef.current.push({
+        description: `重命名分类「${oldName}」→「${newName}」`,
+        async execute() {},
+        async undo() {
+          await renameCategory(newName, oldName);
+          await refreshNotes();
+        },
+      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -909,11 +1058,23 @@ export function MainWindow({
   const handleDeleteCategory = async (name: string) => {
     setErrorMessage(null);
     try {
+      const notesInCategory = notes.filter((n) => n.category === name).map((n) => n.id);
       await deleteCategory(name);
       await refreshNotes();
       if (activeCategory === name) {
         setActiveCategory("");
       }
+      listUndoRef.current.push({
+        description: `删除分类「${name}」`,
+        async execute() {},
+        async undo() {
+          await createCategory(name);
+          for (const nid of notesInCategory) {
+            await moveNoteCategory(nid, name);
+          }
+          await refreshNotes();
+        },
+      });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -935,13 +1096,58 @@ export function MainWindow({
     if (selectedId) setSaveState("dirty");
   };
 
-  const handleUndo = () => {
-    if (!selectedId) return;
-    const textarea = contentRef.current;
-    if (runEditorUndo(textarea)) {
-      setContent(textarea?.value ?? content);
-      markDirty();
+  const handleScrollSync = useCallback((source: "textarea" | "preview") => {
+    if (!scrollSyncEnabled || scrollSyncingRef.current) return;
+    scrollSyncingRef.current = true;
+    requestAnimationFrame(() => {
+      const textarea = contentRef.current;
+      const preview = previewScrollRef.current;
+      if (!textarea || !preview) {
+        scrollSyncingRef.current = false;
+        return;
+      }
+      if (source === "textarea") {
+        const ratio = textarea.scrollTop / (textarea.scrollHeight - textarea.clientHeight || 1);
+        preview.scrollTop = ratio * (preview.scrollHeight - preview.clientHeight);
+      } else {
+        const ratio = preview.scrollTop / (preview.scrollHeight - preview.clientHeight || 1);
+        textarea.scrollTop = ratio * (textarea.scrollHeight - textarea.clientHeight);
+      }
+      scrollSyncingRef.current = false;
+    });
+  }, [scrollSyncEnabled]);
+
+  const pushUndo = useCallback((force = false) => {
+    const ta = contentRef.current;
+    if (!ta) return;
+    if (!force) {
+      const now = Date.now();
+      if (now - lastUndoPushRef.current < 300) return;
+      lastUndoPushRef.current = now;
     }
+    undoStackRef.current.push({ text: ta.value, ss: ta.selectionStart, se: ta.selectionEnd });
+    if (undoStackRef.current.length > 200) undoStackRef.current.shift();
+    redoStackRef.current = [];
+  }, []);
+
+  const handleUndo = () => {
+    const ta = contentRef.current;
+    if (!ta || !selectedId || undoStackRef.current.length === 0) return;
+    redoStackRef.current.push({ text: ta.value, ss: ta.selectionStart, se: ta.selectionEnd });
+    const entry = undoStackRef.current.pop()!;
+    setContent(entry.text);
+    markDirty();
+    requestAnimationFrame(() => ta.setSelectionRange(entry.ss, entry.se));
+  };
+
+  const handleRedo = () => {
+    const ta = contentRef.current;
+    if (!ta || !selectedId || redoStackRef.current.length === 0) return;
+    undoStackRef.current.push({ text: ta.value, ss: ta.selectionStart, se: ta.selectionEnd });
+    const entry = redoStackRef.current.pop()!;
+    setContent(entry.text);
+    markDirty();
+    requestAnimationFrame(() => ta.setSelectionRange(entry.ss, entry.se));
   };
 
   const handleOpenNotepad = async () => {
@@ -1277,7 +1483,37 @@ export function MainWindow({
               </div>
             )}
 
-            <div className="flex-1 overflow-y-auto px-2 pb-2">
+            <div
+              className="flex-1 overflow-y-auto px-2 pb-2"
+              onDragOver={(e) => {
+                if (!e.dataTransfer.types.includes("application/category")) return;
+                e.preventDefault();
+                e.dataTransfer.dropEffect = "move";
+                const headers = [...e.currentTarget.querySelectorAll<HTMLElement>("[data-cat-header]")];
+                let insertBefore: string | null = null;
+                for (const h of headers) {
+                  const catName = h.dataset.catName!;
+                  if (catName === draggingCategory) continue;
+                  const rect = h.getBoundingClientRect();
+                  if (e.clientY <= rect.top + rect.height / 2) {
+                    insertBefore = catName;
+                    break;
+                  }
+                }
+                setCategoryDropTarget(insertBefore ?? "__end__");
+              }}
+              onDrop={(e) => {
+                if (!e.dataTransfer.types.includes("application/category")) return;
+                e.preventDefault();
+                handleCategoryDrop();
+                setCategoryDropTarget(null);
+              }}
+              onDragLeave={(e) => {
+                if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                  setCategoryDropTarget(null);
+                }
+              }}
+            >
               <div className="space-y-0.5">
                 {externalFiles.length > 0 && (
                   <>
@@ -1399,6 +1635,7 @@ export function MainWindow({
                                 <span className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
                                   isSelected ? "text-bamboo" : "text-ink-soft"
                                 }`}>
+                                  {note.pinned && <span className="text-bamboo/60 mr-0.5">📌</span>}
                                   {getDisplayTitle(note)}
                                 </span>
                                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
@@ -1425,17 +1662,34 @@ export function MainWindow({
                   }
 
                   const isCollapsed = collapsedCategories.has(group.category);
+                  const isDraggingSelf = draggingCategory === group.category;
 
                   return (
-                    <div key={group.category} className="px-2 mb-0.5">
+                    <div
+                      key={group.category}
+                      ref={(el) => {
+                        if (el) categoryElsRef.current.set(group.category, el);
+                        else categoryElsRef.current.delete(group.category);
+                      }}
+                      className="px-2 mb-0.5"
+                    >
                       <div
+                        className="transition-all duration-200 ease-out"
+                        style={{ paddingTop: categoryDropTarget === group.category && !isDraggingSelf ? 36 : 0 }}
+                      />
+                      <div
+                        data-cat-header
+                        data-cat-name={group.category}
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg group/cat cursor-pointer select-none transition-all duration-200 ${
-                          dragOverCategory === group.category
-                            ? "bg-bamboo/15 border border-bamboo/40 ring-1 ring-bamboo/20"
-                            : isCollapsed
-                              ? "bg-transparent border border-bamboo/15"
-                              : "bg-bamboo/8 border border-bamboo/15 rounded-b-none"
+                          isDraggingSelf
+                            ? "opacity-40 border border-bamboo/15"
+                            : dragOverCategory === group.category
+                              ? "bg-bamboo/15 border border-bamboo/40 ring-1 ring-bamboo/20"
+                              : isCollapsed
+                                ? "bg-transparent border border-transparent"
+                                : "bg-transparent border border-transparent rounded-b-none"
                         }`}
+                        draggable
                         onClick={() => toggleCategoryCollapse(group.category)}
                         onContextMenu={(e) => {
                           e.preventDefault();
@@ -1444,17 +1698,31 @@ export function MainWindow({
                           setCategoryMenuClosing(false);
                           setCategoryMenuConfirmDelete(false);
                         }}
+                        onDragStart={(e) => {
+                          e.dataTransfer.setData("application/category", group.category);
+                          e.dataTransfer.effectAllowed = "move";
+                          setDraggingCategory(group.category);
+                        }}
+                        onDragEnd={() => {
+                          setDraggingCategory(null);
+                          setCategoryDropTarget(null);
+                        }}
                         onDragOver={(e) => {
+                          if (e.dataTransfer.types.includes("application/category")) return;
                           e.preventDefault();
                           e.dataTransfer.dropEffect = "move";
                           setDragOverCategory(group.category);
                         }}
-                        onDragLeave={() => setDragOverCategory(null)}
+                        onDragLeave={() => {
+                          setDragOverCategory(null);
+                        }}
                         onDrop={(e) => {
+                          if (e.dataTransfer.types.includes("application/category")) return;
                           e.preventDefault();
                           setDragOverCategory(null);
                           const noteId = e.dataTransfer.getData("text/plain");
                           if (noteId) void handleMoveNote(noteId, group.category);
+                          setCategoryDropTarget(null);
                         }}
                       >
                         <svg
@@ -1466,7 +1734,7 @@ export function MainWindow({
                           strokeWidth="2.5"
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          className={`text-bamboo/50 shrink-0 transition-transform duration-200 ${isCollapsed ? "" : "rotate-90"}`}
+                          className={`text-bamboo/70 shrink-0 transition-transform duration-200 ${isCollapsed ? "" : "rotate-90"}`}
                         >
                           <polyline points="9 18 15 12 9 6" />
                         </svg>
@@ -1479,7 +1747,7 @@ export function MainWindow({
                           strokeWidth="2"
                           strokeLinecap="round"
                           strokeLinejoin="round"
-                          className="text-bamboo/50 shrink-0"
+                          className="text-bamboo/70 shrink-0"
                         >
                           <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
                         </svg>
@@ -1499,18 +1767,18 @@ export function MainWindow({
                             className="flex-1 min-w-0 px-1 text-[10px] font-mono text-ink bg-paper-warm/80 border border-bamboo/30 rounded"
                           />
                         ) : (
-                          <span className="text-[11px] text-bamboo/70 font-medium truncate">
+                          <span className="text-[11px] text-bamboo font-medium truncate">
                             {group.category}
                           </span>
                         )}
-                        <span className="text-[9px] text-bamboo/40 font-mono ml-auto shrink-0">
+                        <span className="text-[9px] text-bamboo/60 font-mono ml-auto shrink-0">
                           {group.notes.length}
                         </span>
                       </div>
 
                       <div className={`category-body ${isCollapsed ? "" : "expanded"}`}>
                         <div
-                          className="category-body-inner bg-bamboo/[0.03] border border-t-0 border-bamboo/10 rounded-b-lg pb-1 pt-1"
+                          className="category-body-inner rounded-b-lg pb-1 pt-1"
                           onDragOver={(e) => {
                             e.preventDefault();
                             e.dataTransfer.dropEffect = "move";
@@ -1567,6 +1835,7 @@ export function MainWindow({
                                       isSelected ? "text-bamboo" : "text-ink-soft"
                                     }`}
                                   >
+                                    {note.pinned && <span className="text-bamboo/60 mr-0.5">📌</span>}
                                     {getDisplayTitle(note)}
                                   </span>
                                   <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
@@ -1595,6 +1864,12 @@ export function MainWindow({
                     </div>
                   );
                 })}
+
+                <div
+                  className="transition-all duration-200 ease-out"
+                  style={{ paddingTop: categoryDropTarget === "__end__" ? 36 : 0 }}
+                />
+
 
                 {!isLoading && filteredNotes.length === 0 && externalFiles.length === 0 && (
                   <div className="px-3 py-8 text-center text-[12px] text-ink-ghost leading-relaxed">
@@ -1828,6 +2103,7 @@ export function MainWindow({
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               if (contentRef.current) {
+                                pushUndo(true);
                                 applyFormat(contentRef.current, button.action, setContent, markDirty);
                               }
                             }}
@@ -1843,9 +2119,63 @@ export function MainWindow({
                           ref={contentRef}
                           value={content}
                           onChange={(event) => {
+                            pushUndo();
                             setContent(event.target.value);
                             markDirty();
                           }}
+                          onKeyDown={(e) => {
+                            if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+                              e.preventDefault();
+                              if (e.shiftKey) handleRedo();
+                              else handleUndo();
+                              return;
+                            }
+                            if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+                              e.preventDefault();
+                              handleRedo();
+                              return;
+                            }
+                            if (e.key === "Tab") {
+                              e.preventDefault();
+                              pushUndo(true);
+                              const { selectionStart: s, selectionEnd: end, value } = e.currentTarget;
+                              if (s === end && !e.shiftKey) {
+                                const newVal = value.slice(0, s) + "  " + value.slice(s);
+                                setContent(newVal);
+                                markDirty();
+                                requestAnimationFrame(() => contentRef.current?.setSelectionRange(s + 2, s + 2));
+                              } else {
+                                const before = value.slice(0, s);
+                                const lineStart = before.lastIndexOf("\n") + 1;
+                                const afterEnd = value.indexOf("\n", end);
+                                const blockEnd = afterEnd === -1 ? value.length : afterEnd;
+                                const block = value.slice(lineStart, blockEnd);
+                                const lines = block.split("\n");
+                                let sDelta = 0;
+                                let eDelta = 0;
+                                const newBlock = lines.map((line, i) => {
+                                  if (e.shiftKey) {
+                                    if (line.startsWith("  ")) {
+                                      if (i === 0) sDelta = -2;
+                                      eDelta -= 2;
+                                      return line.slice(2);
+                                    }
+                                    return line;
+                                  }
+                                  if (i === 0) sDelta = 2;
+                                  eDelta += 2;
+                                  return "  " + line;
+                                }).join("\n");
+                                const newVal = value.slice(0, lineStart) + newBlock + value.slice(blockEnd);
+                                setContent(newVal);
+                                markDirty();
+                                const newS = Math.max(lineStart, s + sDelta);
+                                const newEnd = end + eDelta;
+                                requestAnimationFrame(() => contentRef.current?.setSelectionRange(newS, newEnd));
+                              }
+                            }
+                          }}
+                          onScroll={() => handleScrollSync("textarea")}
                           className="w-full h-full leading-[1.9] text-ink-soft font-mono placeholder:text-ink-ghost/40"
                           style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
                           placeholder="开始写作……"
@@ -1873,18 +2203,38 @@ export function MainWindow({
                       className="flex flex-col min-h-0 min-w-0 flex-1"
                     >
                       {viewMode === "split" && (
-                        <div className="px-4 pt-2.5 pb-1 shrink-0">
+                        <div className="flex items-center justify-between px-4 pt-2.5 pb-1 shrink-0">
                           <span className="text-[10px] text-ink-ghost/60 font-mono tracking-widest uppercase">
                             Preview
                           </span>
+                          <button
+                            title={scrollSyncEnabled ? "关闭同步滚动" : "开启同步滚动"}
+                            onClick={() => setScrollSyncEnabled((v) => !v)}
+                            className={`text-[10px] font-mono tracking-widest uppercase transition-colors cursor-pointer ${
+                              scrollSyncEnabled
+                                ? "text-bamboo/70"
+                                : "text-ink-ghost/40 hover:text-ink-ghost/60"
+                            }`}
+                          >
+                            Sync
+                          </button>
                         </div>
                       )}
                       <div
+                        ref={previewScrollRef}
+                        onScroll={() => handleScrollSync("preview")}
                         className={`flex-1 overflow-y-auto px-6 pb-6 ${
                           viewMode === "preview" ? "pt-3" : "pt-1"
                         }`}
                       >
-                        <MarkdownPreview content={content} fontSize={settingsConfig?.fontSize ?? 14} />
+                        <MilkdownPreview
+                          content={content}
+                          fontSize={settingsConfig?.fontSize ?? 14}
+                          onChange={(md) => {
+                            setContent(md);
+                            markDirty();
+                          }}
+                        />
                       </div>
                     </div>
                   )}
@@ -1947,7 +2297,7 @@ export function MainWindow({
                       : "text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo"
                   } ${index > 0 ? "border-t border-paper-deep/20" : ""}`}
                 >
-                  <span>{item.label}</span>
+                <span>{typeof item.label === "function" ? item.label(noteMenuTarget.pinned) : item.label}</span>
                 </button>
               ))}
             </div>
@@ -2029,6 +2379,12 @@ export function MainWindow({
               </button>
             </div>
           )}
+        </div>
+      )}
+
+      {undoToast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 px-4 py-2 bg-paper-warm/95 border border-bamboo/30 rounded-lg shadow-lg text-[12px] font-body text-ink-soft backdrop-blur-sm z-50 animate-fade-in">
+          {undoToast}
         </div>
       )}
     </div>
