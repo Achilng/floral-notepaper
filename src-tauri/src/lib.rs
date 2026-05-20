@@ -134,6 +134,13 @@ fn notes_move_category(
 }
 
 #[tauri::command]
+fn notes_toggle_pin(app: AppHandle, id: String) -> Result<NoteMetadata, AppError> {
+    let result = default_store()?.toggle_pin(&id)?;
+    let _ = app.emit("notes-changed", ());
+    Ok(result)
+}
+
+#[tauri::command]
 fn config_get() -> Result<AppConfig, AppError> {
     default_store()?.load_config()
 }
@@ -207,6 +214,7 @@ pub fn run() {
             notes_import_markdown,
             notes_export_markdown,
             notes_move_category,
+            notes_toggle_pin,
             read_external_file,
             save_external_file,
             get_file_modified_time,
