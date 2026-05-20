@@ -46,6 +46,7 @@ function extractText(node: React.ReactNode): string {
 interface MarkdownPreviewProps {
   content: string;
   fontSize?: number;
+  fontFamily?: string;
 }
 
 const remarkPlugins = [remarkGfm, remarkMath];
@@ -72,15 +73,9 @@ const components: Components = {
       {children}
     </h4>
   ),
-  p: ({ children }) => (
-    <p className="text-ink-soft leading-[1.9]">{children}</p>
-  ),
-  strong: ({ children }) => (
-    <strong className="font-semibold text-ink">{children}</strong>
-  ),
-  em: ({ children }) => (
-    <em className="italic text-bamboo-light">{children}</em>
-  ),
+  p: ({ children }) => <p className="text-ink-soft leading-[1.9]">{children}</p>,
+  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
+  em: ({ children }) => <em className="italic text-bamboo-light">{children}</em>,
   blockquote: ({ children }) => (
     <blockquote className="border-l-2 border-bamboo/40 pl-4 my-3 text-ink-soft/80 italic leading-[1.9]">
       {children}
@@ -96,9 +91,7 @@ const components: Components = {
       {children}
     </ol>
   ),
-  li: ({ children }) => (
-    <li className="text-ink-soft leading-[1.9]">{children}</li>
-  ),
+  li: ({ children }) => <li className="text-ink-soft leading-[1.9]">{children}</li>,
   hr: () => (
     <hr className="my-6 border-none h-px bg-gradient-to-r from-transparent via-paper-deep to-transparent" />
   ),
@@ -141,25 +134,22 @@ const components: Components = {
     </th>
   ),
   td: ({ children }) => (
-    <td className="px-3 py-1.5 border-b border-paper-deep/15 text-ink-soft">
-      {children}
-    </td>
+    <td className="px-3 py-1.5 border-b border-paper-deep/15 text-ink-soft">{children}</td>
   ),
   input: ({ checked, ...props }) => (
-    <input
-      {...props}
-      checked={checked}
-      disabled
-      className="mr-1.5 accent-bamboo"
-    />
+    <input {...props} checked={checked} disabled className="mr-1.5 accent-bamboo" />
   ),
 };
 
-export function MarkdownPreview({ content, fontSize = 14 }: MarkdownPreviewProps) {
+export function MarkdownPreview({ content, fontSize = 14, fontFamily }: MarkdownPreviewProps) {
   return (
-    <div className="font-body" style={{ fontSize: `${fontSize}px` }}>
+    <div className="font-body" style={{ fontSize: `${fontSize}px`, fontFamily }}>
       {content.trim() ? (
-        <Markdown remarkPlugins={remarkPlugins} rehypePlugins={rehypePlugins} components={components}>
+        <Markdown
+          remarkPlugins={remarkPlugins}
+          rehypePlugins={rehypePlugins}
+          components={components}
+        >
           {content}
         </Markdown>
       ) : (

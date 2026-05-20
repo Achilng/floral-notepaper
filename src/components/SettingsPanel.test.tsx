@@ -15,6 +15,9 @@ const config = {
   theme: "light" as const,
   fontSize: 14,
   surfaceFontSize: 14,
+  uiFontFamily: '"LXGW WenKai", serif',
+  fontFamily: '"LXGW WenKai", serif',
+  surfaceFontFamily: '"Maple Mono NF CN", monospace',
   externalFileAutoSave: true,
   rememberSurfaceSize: true,
   tileCtrlClose: true,
@@ -40,6 +43,11 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("自动保存笔记");
     expect(markup).toContain("小窗笔记自动保存");
     expect(markup).toContain("磁贴颜色");
+    expect(markup).toContain("界面字体");
+    expect(markup).toContain("编辑器字体");
+    expect(markup).toContain("小窗/磁贴字体");
+    expect(markup).toContain("&quot;LXGW WenKai&quot;, serif");
+    expect(markup).toContain("&quot;Maple Mono NF CN&quot;, monospace");
     expect(markup).toContain("跟随主题");
     expect(markup).toContain("自定义");
     expect(markup).toContain('type="color"');

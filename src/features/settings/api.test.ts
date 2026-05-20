@@ -1,12 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  chooseNotesDirectory,
-  getConfig,
-  normalizeViewMode,
-  saveConfig,
-} from "./api";
+import { chooseNotesDirectory, getConfig, normalizeViewMode, saveConfig } from "./api";
 import type { AppConfig } from "./types";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -40,6 +35,9 @@ describe("settings api", () => {
       theme: "light",
       fontSize: 14,
       surfaceFontSize: 14,
+      uiFontFamily: '"Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif',
+      fontFamily: '"Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif',
+      surfaceFontFamily: '"Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif',
       externalFileAutoSave: true,
       rememberSurfaceSize: true,
       tileCtrlClose: true,
@@ -65,6 +63,9 @@ describe("settings api", () => {
       theme: "dark",
       fontSize: 16,
       surfaceFontSize: 16,
+      uiFontFamily: '"LXGW WenKai", serif',
+      fontFamily: '"LXGW WenKai", serif',
+      surfaceFontFamily: '"Maple Mono NF CN", monospace',
       externalFileAutoSave: true,
       rememberSurfaceSize: true,
       tileCtrlClose: true,

@@ -1,18 +1,18 @@
 import chroma from "chroma-js";
 import type { CSSProperties, HTMLAttributes } from "react";
-import {
-  DEFAULT_TILE_COLOR,
-  normalizeTileColor,
-} from "../features/settings/tileColor";
+import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 
-export interface TileProps
-  extends Omit<HTMLAttributes<HTMLDivElement>, "color" | "content" | "title"> {
+export interface TileProps extends Omit<
+  HTMLAttributes<HTMLDivElement>,
+  "color" | "content" | "title"
+> {
   title?: string;
   content: string;
   color?: string;
   width?: number | string;
   rotation?: number;
   fontSize?: number;
+  fontFamily?: string;
 }
 
 const MARK_SIZE = 8;
@@ -71,6 +71,7 @@ export function Tile({
   width = 260,
   rotation = 0,
   fontSize = 14,
+  fontFamily,
   className = "",
   style,
   children,
@@ -101,16 +102,25 @@ export function Tile({
     >
       <div className="px-4 pt-4 pb-4 h-full overflow-y-auto scrollbar-hidden">
         {title && (
-          <div className="font-display tracking-wide mb-3 leading-snug" style={{ color: titleColor, fontSize: `${fontSize + 1}px` }}>
+          <div
+            className="font-display tracking-wide mb-3 leading-snug"
+            style={{ color: titleColor, fontSize: `${fontSize + 1}px` }}
+          >
             {title}
           </div>
         )}
         {content ? (
-          <div className="leading-[1.8] whitespace-pre-wrap font-body" style={{ color: contentColor, fontSize: `${fontSize}px` }}>
+          <div
+            className="leading-[1.8] whitespace-pre-wrap font-body"
+            style={{ color: contentColor, fontSize: `${fontSize}px`, fontFamily }}
+          >
             {content}
           </div>
         ) : (
-          <div className="font-body text-center py-6" style={{ color: emptyColor, fontSize: `${fontSize}px` }}>
+          <div
+            className="font-body text-center py-6"
+            style={{ color: emptyColor, fontSize: `${fontSize}px`, fontFamily }}
+          >
             空
           </div>
         )}
@@ -121,4 +131,3 @@ export function Tile({
     </div>
   );
 }
-

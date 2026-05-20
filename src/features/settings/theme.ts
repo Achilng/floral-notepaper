@@ -1,5 +1,8 @@
 import type { ThemeOption } from "./types";
 
+const DEFAULT_UI_FONT_FAMILY =
+  '"Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif';
+
 function resolveTheme(option: ThemeOption): "light" | "dark" {
   if (option === "system") {
     return window.matchMedia("(prefers-color-scheme: dark)").matches
@@ -17,6 +20,13 @@ export function applyTheme(option: ThemeOption): void {
     root.setAttribute("data-theme", resolved);
     setTimeout(() => root.classList.remove("theme-transition"), 400);
   }
+}
+
+export function applyUiFontFamily(fontFamily?: string): void {
+  const nextFontFamily = fontFamily?.trim() || DEFAULT_UI_FONT_FAMILY;
+  document.documentElement.style.setProperty("--color-ui-font", nextFontFamily);
+  document.documentElement.style.setProperty("--font-body", nextFontFamily);
+  document.documentElement.style.setProperty("--font-display", nextFontFamily);
 }
 
 let systemListener: (() => void) | null = null;

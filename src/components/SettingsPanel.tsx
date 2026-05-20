@@ -6,10 +6,7 @@ import {
   hotkeyToConfigString,
   isValidGlobalShortcut,
 } from "../features/settings/shortcutRecorder";
-import {
-  DEFAULT_TILE_COLOR,
-  normalizeTileColor,
-} from "../features/settings/tileColor";
+import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 
@@ -37,25 +34,17 @@ const viewModes: Array<{ value: ViewMode; label: string }> = [
   { value: "preview", label: "预览" },
 ];
 
-export function SettingsPanel({
-  config,
-  onChange,
-  onChooseNotesDir,
-  onClose,
-}: SettingsPanelProps) {
-  const setConfigValue = <Key extends keyof AppConfig>(
-    key: Key,
-    value: AppConfig[Key],
-  ) => {
+const DEFAULT_FONT_FAMILY = '"Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif';
+
+export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: SettingsPanelProps) {
+  const setConfigValue = <Key extends keyof AppConfig>(key: Key, value: AppConfig[Key]) => {
     onChange({ ...config, [key]: value });
   };
 
   return (
     <aside className="w-[360px] h-full shrink-0 border-l border-paper-deep/30 bg-cloud/92 backdrop-blur-sm flex flex-col">
       <div className="flex items-center justify-between h-11 px-4 border-b border-paper-deep/25">
-        <h2 className="text-[13px] font-display font-medium text-ink-soft">
-          应用设置
-        </h2>
+        <h2 className="text-[13px] font-display font-medium text-ink-soft">应用设置</h2>
         <button
           type="button"
           onClick={onClose}
@@ -78,9 +67,7 @@ export function SettingsPanel({
 
       <div className="flex-1 overflow-y-auto scrollbar-hidden px-4 py-4 space-y-5">
         <section className="space-y-2">
-          <label className="block text-[11px] font-body text-ink-faint">
-            主题
-          </label>
+          <label className="block text-[11px] font-body text-ink-faint">主题</label>
           <SlidingButtonGroup
             options={themeOptions}
             value={config.theme}
@@ -93,9 +80,7 @@ export function SettingsPanel({
         </section>
 
         <section className="space-y-2">
-          <label className="block text-[11px] font-body text-ink-faint">
-            笔记目录
-          </label>
+          <label className="block text-[11px] font-body text-ink-faint">笔记目录</label>
           <div className="flex gap-2">
             <input
               type="text"
@@ -132,23 +117,17 @@ export function SettingsPanel({
           <ToggleRow
             label="小窗笔记自动保存"
             checked={config.noteSurfaceAutoSave}
-            onChange={(checked) =>
-              setConfigValue("noteSurfaceAutoSave", checked)
-            }
+            onChange={(checked) => setConfigValue("noteSurfaceAutoSave", checked)}
           />
           <ToggleRow
             label="外部文件自动保存"
             checked={config.externalFileAutoSave}
-            onChange={(checked) =>
-              setConfigValue("externalFileAutoSave", checked)
-            }
+            onChange={(checked) => setConfigValue("externalFileAutoSave", checked)}
           />
           <ToggleRow
             label="记住小窗尺寸"
             checked={config.rememberSurfaceSize}
-            onChange={(checked) =>
-              setConfigValue("rememberSurfaceSize", checked)
-            }
+            onChange={(checked) => setConfigValue("rememberSurfaceSize", checked)}
           />
         </section>
 
@@ -156,9 +135,7 @@ export function SettingsPanel({
           <ToggleRow
             label="Ctrl+右键快速关闭磁贴"
             checked={config.tileCtrlClose}
-            onChange={(checked) =>
-              setConfigValue("tileCtrlClose", checked)
-            }
+            onChange={(checked) => setConfigValue("tileCtrlClose", checked)}
           />
           <div className="space-y-1.5">
             <label className="block text-[11px] font-body text-ink-faint/70 px-0.5">
@@ -172,9 +149,7 @@ export function SettingsPanel({
         </section>
 
         <section className="space-y-2">
-          <label className="block text-[11px] font-body text-ink-faint">
-            编辑器字号
-          </label>
+          <label className="block text-[11px] font-body text-ink-faint">编辑器字号</label>
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
             <input
               type="range"
@@ -182,9 +157,7 @@ export function SettingsPanel({
               max={30}
               step={1}
               value={config.fontSize ?? 14}
-              onChange={(event) =>
-                setConfigValue("fontSize", Number(event.target.value))
-              }
+              onChange={(event) => setConfigValue("fontSize", Number(event.target.value))}
               className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
             />
             <span className="text-[12px] font-mono text-ink-soft tabular-nums w-8 text-right">
@@ -193,10 +166,22 @@ export function SettingsPanel({
           </div>
         </section>
 
+        <FontFamilyField
+          label="界面字体"
+          value={config.uiFontFamily ?? DEFAULT_FONT_FAMILY}
+          onChange={(value) => setConfigValue("uiFontFamily", value)}
+          onReset={() => setConfigValue("uiFontFamily", DEFAULT_FONT_FAMILY)}
+        />
+
+        <FontFamilyField
+          label="编辑器字体"
+          value={config.fontFamily ?? DEFAULT_FONT_FAMILY}
+          onChange={(value) => setConfigValue("fontFamily", value)}
+          onReset={() => setConfigValue("fontFamily", DEFAULT_FONT_FAMILY)}
+        />
+
         <section className="space-y-2">
-          <label className="block text-[11px] font-body text-ink-faint">
-            小窗/磁贴字号
-          </label>
+          <label className="block text-[11px] font-body text-ink-faint">小窗/磁贴字号</label>
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
             <input
               type="range"
@@ -204,9 +189,7 @@ export function SettingsPanel({
               max={30}
               step={1}
               value={config.surfaceFontSize ?? 14}
-              onChange={(event) =>
-                setConfigValue("surfaceFontSize", Number(event.target.value))
-              }
+              onChange={(event) => setConfigValue("surfaceFontSize", Number(event.target.value))}
               className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
             />
             <span className="text-[12px] font-mono text-ink-soft tabular-nums w-8 text-right">
@@ -215,10 +198,15 @@ export function SettingsPanel({
           </div>
         </section>
 
+        <FontFamilyField
+          label="小窗/磁贴字体"
+          value={config.surfaceFontFamily ?? DEFAULT_FONT_FAMILY}
+          onChange={(value) => setConfigValue("surfaceFontFamily", value)}
+          onReset={() => setConfigValue("surfaceFontFamily", DEFAULT_FONT_FAMILY)}
+        />
+
         <section className="space-y-2">
-          <label className="block text-[11px] font-body text-ink-faint">
-            磁贴颜色
-          </label>
+          <label className="block text-[11px] font-body text-ink-faint">磁贴颜色</label>
           <SlidingButtonGroup
             options={tileColorModes}
             value={config.tileColorMode}
@@ -229,17 +217,13 @@ export function SettingsPanel({
               <input
                 type="color"
                 value={normalizeTileColor(config.tileColor)}
-                onChange={(event) =>
-                  setConfigValue("tileColor", event.target.value)
-                }
+                onChange={(event) => setConfigValue("tileColor", event.target.value)}
                 className="w-10 h-8 rounded-lg border border-paper-deep/40 bg-paper-warm/70 cursor-pointer"
               />
               <input
                 type="text"
                 value={config.tileColor}
-                onChange={(event) =>
-                  setConfigValue("tileColor", event.target.value)
-                }
+                onChange={(event) => setConfigValue("tileColor", event.target.value)}
                 placeholder="#f6f3ec"
                 spellCheck={false}
                 className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
@@ -256,9 +240,7 @@ export function SettingsPanel({
         </section>
 
         <section className="space-y-2">
-          <label className="block text-[11px] font-body text-ink-faint">
-            默认视图
-          </label>
+          <label className="block text-[11px] font-body text-ink-faint">默认视图</label>
           <SlidingButtonGroup
             options={viewModes}
             value={config.defaultViewMode}
@@ -266,8 +248,39 @@ export function SettingsPanel({
           />
         </section>
       </div>
-
     </aside>
+  );
+}
+
+interface FontFamilyFieldProps {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  onReset: () => void;
+}
+
+function FontFamilyField({ label, value, onChange, onReset }: FontFamilyFieldProps) {
+  return (
+    <section className="space-y-2">
+      <label className="block text-[11px] font-body text-ink-faint">{label}</label>
+      <div className="flex items-center gap-2 h-9 rounded-xl border border-paper-deep/45 bg-cloud/80 px-2.5 shadow-[0_1px_4px_rgba(26,26,24,0.04)] focus-within:border-bamboo/35 transition-colors">
+        <input
+          type="text"
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          spellCheck={false}
+          className="min-w-0 flex-1 h-7 bg-transparent text-[13px] leading-none text-ink-soft placeholder:text-ink-ghost/60 outline-none"
+          style={{ fontFamily: value }}
+        />
+        <button
+          type="button"
+          onClick={onReset}
+          className="h-7 px-2 rounded-lg text-[11px] text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer whitespace-nowrap"
+        >
+          默认
+        </button>
+      </div>
+    </section>
   );
 }
 
@@ -360,10 +373,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   useEffect(() => {
     if (!recorder.isRecording) return;
     const handleClick = (e: MouseEvent) => {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(e.target as Node)
-      ) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
         recorder.cancelRecording();
       }
     };
@@ -371,10 +381,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     return () => document.removeEventListener("mousedown", handleClick);
   }, [recorder.isRecording, recorder.cancelRecording]);
 
-  const liveDisplay =
-    recorder.isRecording && heldKeys.length > 0
-      ? formatHeldKeys(heldKeys)
-      : null;
+  const liveDisplay = recorder.isRecording && heldKeys.length > 0 ? formatHeldKeys(heldKeys) : null;
 
   return (
     <div ref={containerRef} className="relative">
@@ -389,19 +396,13 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
       >
         {recorder.isRecording ? (
           <>
-            <span className="flex-1 text-left text-bamboo">
-              {liveDisplay || "按下快捷键..."}
-            </span>
-            <span className="text-[10px] text-ink-faint shrink-0">
-              Esc 取消
-            </span>
+            <span className="flex-1 text-left text-bamboo">{liveDisplay || "按下快捷键..."}</span>
+            <span className="text-[10px] text-ink-faint shrink-0">Esc 取消</span>
           </>
         ) : (
           <>
             <span className="flex-1 text-left text-ink-soft">{value}</span>
-            <span className="text-[10px] text-ink-ghost shrink-0">
-              点击录制
-            </span>
+            <span className="text-[10px] text-ink-ghost shrink-0">点击录制</span>
           </>
         )}
       </button>

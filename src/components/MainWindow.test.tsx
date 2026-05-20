@@ -20,6 +20,9 @@ describe("MainWindow settings", () => {
           theme: "light",
           fontSize: 14,
           surfaceFontSize: 14,
+          uiFontFamily: '"LXGW WenKai", serif',
+          fontFamily: '"LXGW WenKai", serif',
+          surfaceFontFamily: '"Maple Mono NF CN", monospace',
           externalFileAutoSave: true,
           rememberSurfaceSize: true,
           tileCtrlClose: true,
@@ -42,9 +45,9 @@ describe("MainWindow settings", () => {
   test("renders the import Markdown icon as a down arrow", () => {
     const markup = renderToStaticMarkup(<MainWindow />);
 
-    expect(markup).toContain('d="M12 21V9"');
-    expect(markup).toContain('d="m7 16 5 5 5-5"');
-    expect(markup).toContain('d="M5 3h14"');
+    expect(markup).toContain('d="M12 3v12"');
+    expect(markup).toContain('d="m7 10 5 5 5-5"');
+    expect(markup).toContain('d="M5 21h14"');
     expect(markup).not.toContain('d="m7 8 5-5 5 5"');
   });
 });

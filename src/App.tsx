@@ -5,7 +5,11 @@ import { MainWindow } from "./components/MainWindow";
 import { NotePad } from "./components/NotePad";
 import { TileShowcase } from "./components/TileShowcase";
 import { getConfig } from "./features/settings/api";
-import { applyTheme, watchSystemTheme } from "./features/settings/theme";
+import {
+  applyTheme,
+  applyUiFontFamily,
+  watchSystemTheme,
+} from "./features/settings/theme";
 import type { AppConfig, ThemeOption } from "./features/settings/types";
 import { getInitialRoute } from "./features/windows/windowRoutes";
 import { listen } from "@tauri-apps/api/event";
@@ -20,6 +24,7 @@ function App() {
       .then((config) => {
         const theme = (config.theme || "system") as ThemeOption;
         applyTheme(theme);
+        applyUiFontFamily(config.uiFontFamily);
         cleanup = watchSystemTheme(theme);
       })
       .catch(() => {});
@@ -30,6 +35,7 @@ function App() {
     const unlisten = listen<AppConfig>("config-changed", (event) => {
       const theme = (event.payload.theme || "system") as ThemeOption;
       applyTheme(theme);
+      applyUiFontFamily(event.payload.uiFontFamily);
       watchSystemTheme(theme);
     });
     return () => {

@@ -75,7 +75,17 @@ const saveStateLabel: Record<SaveState, string> = {
   error: "保存失败",
 };
 
-type FormatAction = "bold" | "italic" | "heading" | "hr" | "ul" | "ol" | "code" | "quote" | "inlineMath" | "blockMath";
+type FormatAction =
+  | "bold"
+  | "italic"
+  | "heading"
+  | "hr"
+  | "ul"
+  | "ol"
+  | "code"
+  | "quote"
+  | "inlineMath"
+  | "blockMath";
 
 const toolbarButtons: { label: string; title: string; style: string; action: FormatAction }[] = [
   { label: "B", title: "粗体", style: "font-bold", action: "bold" },
@@ -157,7 +167,10 @@ function applyFormat(
     }
     case "ul": {
       if (selected.includes("\n")) {
-        const lines = selected.split("\n").map((l) => `- ${l}`).join("\n");
+        const lines = selected
+          .split("\n")
+          .map((l) => `- ${l}`)
+          .join("\n");
         result = before + lines + after;
         cursorStart = start;
         cursorEnd = start + lines.length;
@@ -171,7 +184,10 @@ function applyFormat(
     }
     case "ol": {
       if (selected.includes("\n")) {
-        const lines = selected.split("\n").map((l, i) => `${i + 1}. ${l}`).join("\n");
+        const lines = selected
+          .split("\n")
+          .map((l, i) => `${i + 1}. ${l}`)
+          .join("\n");
         result = before + lines + after;
         cursorStart = start;
         cursorEnd = start + lines.length;
@@ -199,7 +215,10 @@ function applyFormat(
     }
     case "quote": {
       if (selected.includes("\n")) {
-        const lines = selected.split("\n").map((l) => `> ${l}`).join("\n");
+        const lines = selected
+          .split("\n")
+          .map((l) => `> ${l}`)
+          .join("\n");
         result = before + lines + after;
         cursorStart = start;
         cursorEnd = start + lines.length;
@@ -272,9 +291,7 @@ export function MainWindow({
   const [noteMenu, setNoteMenu] = useState<NoteMenuState | null>(null);
   const [noteMenuClosing, setNoteMenuClosing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
-  const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(
-    initialConfig ?? null,
-  );
+  const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(initialConfig ?? null);
   const [savedNotesDir, setSavedNotesDir] = useState<string | null>(
     initialConfig?.notesDir ?? null,
   );
@@ -319,10 +336,7 @@ export function MainWindow({
     [noteMenu?.noteId, notes],
   );
 
-  const filteredNotes = useMemo(
-    () => filterNotes(notes, searchQuery),
-    [notes, searchQuery],
-  );
+  const filteredNotes = useMemo(() => filterNotes(notes, searchQuery), [notes, searchQuery]);
 
   const categoryGroups = useMemo(
     () => groupNotesByCategory(filteredNotes, categories),
@@ -352,9 +366,7 @@ export function MainWindow({
       const next = exists
         ? current.map((item) => (item.id === metadata.id ? metadata : item))
         : [metadata, ...current];
-      return [...next].sort((left, right) =>
-        right.updatedAt.localeCompare(left.updatedAt),
-      );
+      return [...next].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     });
   }, []);
 
@@ -369,10 +381,7 @@ export function MainWindow({
   );
 
   const refreshNotes = useCallback(async () => {
-    const [loadedNotes, loadedCategories] = await Promise.all([
-      listNotes(),
-      listCategories(),
-    ]);
+    const [loadedNotes, loadedCategories] = await Promise.all([listNotes(), listCategories()]);
     setNotes(loadedNotes);
     setCategories(loadedCategories);
     return loadedNotes;
@@ -584,7 +593,15 @@ export function MainWindow({
       setErrorMessage(getErrorMessage(error));
       return null;
     }
-  }, [content, isExternal, replaceNoteMetadata, selectedExternalFile, selectedId, selectedNote, title]);
+  }, [
+    content,
+    isExternal,
+    replaceNoteMetadata,
+    selectedExternalFile,
+    selectedId,
+    selectedNote,
+    title,
+  ]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -611,7 +628,14 @@ export function MainWindow({
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [isExternal, saveCurrentNote, saveState, selectedId, settingsConfig?.noteAutoSave, settingsConfig?.externalFileAutoSave]);
+  }, [
+    isExternal,
+    saveCurrentNote,
+    saveState,
+    selectedId,
+    settingsConfig?.noteAutoSave,
+    settingsConfig?.externalFileAutoSave,
+  ]);
 
   const handleNewNote = async () => {
     setErrorMessage(null);
@@ -804,10 +828,7 @@ export function MainWindow({
     }
   };
 
-  const handleOpenNoteMenu = (
-    event: MouseEvent<HTMLElement>,
-    noteId: string,
-  ) => {
+  const handleOpenNoteMenu = (event: MouseEvent<HTMLElement>, noteId: string) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -1026,9 +1047,7 @@ export function MainWindow({
   };
 
   const toggleMaximize = () => {
-    void toggleMaximizeCurrentWindow().then(() =>
-      isCurrentWindowMaximized().then(setIsMaximized),
-    );
+    void toggleMaximizeCurrentWindow().then(() => isCurrentWindowMaximized().then(setIsMaximized));
   };
 
   const handleTitleBarDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -1127,12 +1146,26 @@ export function MainWindow({
               title={isMaximized ? "还原" : "最大化"}
             >
               {isMaximized ? (
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                >
                   <rect x="3" y="3" width="7" height="7" rx="1" />
                   <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
                 </svg>
               ) : (
-                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.2"
+                >
                   <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
                 </svg>
               )}
@@ -1142,7 +1175,15 @@ export function MainWindow({
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
               title="关闭"
             >
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 12 12"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              >
                 <path d="M2 2l8 8M10 2l-8 8" />
               </svg>
             </button>
@@ -1243,14 +1284,23 @@ export function MainWindow({
 
             <div className="flex items-center justify-between px-5 pb-1.5 shrink-0">
               <span className="text-[10px] text-ink-ghost font-mono tracking-wider uppercase">
-                {filteredNotes.length} 篇笔记{externalFiles.length > 0 ? ` · ${externalFiles.length} 个外部文件` : ""}
+                {filteredNotes.length} 篇笔记
+                {externalFiles.length > 0 ? ` · ${externalFiles.length} 个外部文件` : ""}
               </span>
               <button
                 onClick={() => setShowCategoryInput(true)}
                 className="text-[10px] text-ink-ghost hover:text-bamboo transition-colors cursor-pointer"
                 title="新建分类"
               >
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                >
                   <path d="M12 5v14M5 12h14" />
                 </svg>
               </button>
@@ -1302,9 +1352,11 @@ export function MainWindow({
                                 : "bg-transparent"
                           }`}
                         >
-                          <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                            isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                          }`} />
+                          <div
+                            className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
+                              isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
+                            }`}
+                          />
 
                           <div className="flex items-baseline justify-between mb-0.5">
                             <span
@@ -1312,7 +1364,17 @@ export function MainWindow({
                                 isSelected ? "text-bamboo" : "text-ink-soft"
                               }`}
                             >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-60">
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                                strokeLinejoin="round"
+                                className="shrink-0 opacity-60"
+                              >
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                 <polyline points="14 2 14 8 20 8" />
                               </svg>
@@ -1326,7 +1388,15 @@ export function MainWindow({
                               className="opacity-0 group-hover:opacity-100 text-ink-ghost hover:text-red-400 transition-all p-0.5"
                               title="从列表移除"
                             >
-                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
+                              <svg
+                                width="12"
+                                height="12"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                strokeWidth="2"
+                                strokeLinecap="round"
+                              >
                                 <line x1="18" y1="6" x2="6" y2="18" />
                                 <line x1="6" y1="6" x2="18" y2="18" />
                               </svg>
@@ -1348,9 +1418,7 @@ export function MainWindow({
                       <div
                         key="__uncategorized__"
                         className={`rounded-lg transition-all duration-200 ${
-                          dragOverCategory === ""
-                            ? "bg-bamboo/10 ring-1 ring-bamboo/20"
-                            : ""
+                          dragOverCategory === "" ? "bg-bamboo/10 ring-1 ring-bamboo/20" : ""
                         }`}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -1392,13 +1460,17 @@ export function MainWindow({
                                     : "bg-transparent"
                               }`}
                             >
-                              <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                                isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                              }`} />
+                              <div
+                                className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
+                                  isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
+                                }`}
+                              />
                               <div className="flex items-baseline justify-between mb-0.5">
-                                <span className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
-                                  isSelected ? "text-bamboo" : "text-ink-soft"
-                                }`}>
+                                <span
+                                  className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
+                                    isSelected ? "text-bamboo" : "text-ink-soft"
+                                  }`}
+                                >
                                   {getDisplayTitle(note)}
                                 </span>
                                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
@@ -1532,64 +1604,68 @@ export function MainWindow({
                             <div className="px-3 py-3 text-center text-[11px] text-ink-ghost/50">
                               空文件夹
                             </div>
-                          ) : group.notes.map((note) => {
-                            const isSelected = note.id === selectedId;
-                            const isHovered = note.id === hoveredId;
+                          ) : (
+                            group.notes.map((note) => {
+                              const isSelected = note.id === selectedId;
+                              const isHovered = note.id === hoveredId;
 
-                            return (
-                              <div
-                                key={note.id}
-                                draggable
-                                onDragStart={(e) => {
-                                  e.dataTransfer.setData("text/plain", note.id);
-                                  e.dataTransfer.effectAllowed = "move";
-                                }}
-                                onClick={() => void handleSelectNote(note.id)}
-                                onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
-                                onMouseEnter={() => setHoveredId(note.id)}
-                                onMouseLeave={() => setHoveredId(null)}
-                                className={`w-full text-left rounded-lg mx-1 px-2.5 py-2 transition-all duration-[600ms] cursor-pointer group relative ${
-                                  isSelected
-                                    ? "bg-bamboo-mist/70"
-                                    : isHovered
-                                      ? "bg-paper-warm/70"
-                                      : "bg-transparent"
-                                }`}
-                                style={{ width: "calc(100% - 8px)" }}
-                              >
-                                <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                                  isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                                }`} />
-
-                                <div className="flex items-baseline justify-between mb-0.5">
-                                  <span
-                                    className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
-                                      isSelected ? "text-bamboo" : "text-ink-soft"
+                              return (
+                                <div
+                                  key={note.id}
+                                  draggable
+                                  onDragStart={(e) => {
+                                    e.dataTransfer.setData("text/plain", note.id);
+                                    e.dataTransfer.effectAllowed = "move";
+                                  }}
+                                  onClick={() => void handleSelectNote(note.id)}
+                                  onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
+                                  onMouseEnter={() => setHoveredId(note.id)}
+                                  onMouseLeave={() => setHoveredId(null)}
+                                  className={`w-full text-left rounded-lg mx-1 px-2.5 py-2 transition-all duration-[600ms] cursor-pointer group relative ${
+                                    isSelected
+                                      ? "bg-bamboo-mist/70"
+                                      : isHovered
+                                        ? "bg-paper-warm/70"
+                                        : "bg-transparent"
+                                  }`}
+                                  style={{ width: "calc(100% - 8px)" }}
+                                >
+                                  <div
+                                    className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
+                                      isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
                                     }`}
-                                  >
-                                    {getDisplayTitle(note)}
-                                  </span>
-                                  <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
-                                    {formatShortDate(note.updatedAt)}
-                                  </span>
-                                </div>
+                                  />
 
-                                <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                                  {note.preview || "空白笔记"}
-                                </p>
+                                  <div className="flex items-baseline justify-between mb-0.5">
+                                    <span
+                                      className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
+                                        isSelected ? "text-bamboo" : "text-ink-soft"
+                                      }`}
+                                    >
+                                      {getDisplayTitle(note)}
+                                    </span>
+                                    <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
+                                      {formatShortDate(note.updatedAt)}
+                                    </span>
+                                  </div>
 
-                                <div className="flex items-center gap-2 mt-1">
-                                  <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                    {formatTime(note.updatedAt)}
-                                  </span>
-                                  <span className="text-[10px] text-ink-ghost/40">·</span>
-                                  <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                    {note.wordCount} 字
-                                  </span>
+                                  <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
+                                    {note.preview || "空白笔记"}
+                                  </p>
+
+                                  <div className="flex items-center gap-2 mt-1">
+                                    <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
+                                      {formatTime(note.updatedAt)}
+                                    </span>
+                                    <span className="text-[10px] text-ink-ghost/40">·</span>
+                                    <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
+                                      {note.wordCount} 字
+                                    </span>
+                                  </div>
                                 </div>
-                              </div>
-                            );
-                          })}
+                              );
+                            })
+                          )}
                         </div>
                       </div>
                     </div>
@@ -1613,7 +1689,9 @@ export function MainWindow({
                 setIsResizingSidebar(true);
               }}
             >
-              <div className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSidebar ? "" : "group-hover:bg-bamboo/5"}`} />
+              <div
+                className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSidebar ? "" : "group-hover:bg-bamboo/5"}`}
+              />
             </div>
           )}
 
@@ -1698,7 +1776,9 @@ export function MainWindow({
                 </button>
 
                 {deleteConfirm ? (
-                  <div className={`flex items-center gap-1 ml-1 ${deleteExiting ? "animate-delete-confirm-exit" : "animate-delete-confirm"}`}>
+                  <div
+                    className={`flex items-center gap-1 ml-1 ${deleteExiting ? "animate-delete-confirm-exit" : "animate-delete-confirm"}`}
+                  >
                     <span className="text-[11px] text-red-400 whitespace-nowrap">确认删除？</span>
                     <button
                       onClick={() => {
@@ -1762,7 +1842,10 @@ export function MainWindow({
               />
             </div>
 
-            <div key={noteTransitionKey} className="animate-note-enter px-6 pt-4 pb-2 shrink-0 border-b border-paper-deep/15">
+            <div
+              key={noteTransitionKey}
+              className="animate-note-enter px-6 pt-4 pb-2 shrink-0 border-b border-paper-deep/15"
+            >
               <input
                 type="text"
                 value={title}
@@ -1808,7 +1891,11 @@ export function MainWindow({
               </div>
             </div>
 
-            <div key={viewMode} ref={splitContainerRef} className="flex-1 flex min-h-0 animate-view-fade">
+            <div
+              key={viewMode}
+              ref={splitContainerRef}
+              className="flex-1 flex min-h-0 animate-view-fade"
+            >
               {!selectedId && !isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-[13px] text-ink-ghost">
                   选择或新建一篇笔记
@@ -1828,7 +1915,12 @@ export function MainWindow({
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               if (contentRef.current) {
-                                applyFormat(contentRef.current, button.action, setContent, markDirty);
+                                applyFormat(
+                                  contentRef.current,
+                                  button.action,
+                                  setContent,
+                                  markDirty,
+                                );
                               }
                             }}
                             className={`w-6 h-6 flex items-center justify-center rounded text-[11px] text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer ${button.style}`}
@@ -1847,7 +1939,10 @@ export function MainWindow({
                             markDirty();
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-mono placeholder:text-ink-ghost/40"
-                          style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
+                          style={{
+                            fontSize: `${settingsConfig?.fontSize ?? 14}px`,
+                            fontFamily: settingsConfig?.fontFamily,
+                          }}
                           placeholder="开始写作……"
                           spellCheck={false}
                           disabled={!selectedId}
@@ -1864,14 +1959,14 @@ export function MainWindow({
                         setIsResizingSplit(true);
                       }}
                     >
-                      <div className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSplit ? "" : "group-hover:bg-bamboo/5"}`} />
+                      <div
+                        className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSplit ? "" : "group-hover:bg-bamboo/5"}`}
+                      />
                     </div>
                   )}
 
                   {(viewMode === "preview" || viewMode === "split") && (
-                    <div
-                      className="flex flex-col min-h-0 min-w-0 flex-1"
-                    >
+                    <div className="flex flex-col min-h-0 min-w-0 flex-1">
                       {viewMode === "split" && (
                         <div className="px-4 pt-2.5 pb-1 shrink-0">
                           <span className="text-[10px] text-ink-ghost/60 font-mono tracking-widest uppercase">
@@ -1884,7 +1979,11 @@ export function MainWindow({
                           viewMode === "preview" ? "pt-3" : "pt-1"
                         }`}
                       >
-                        <MarkdownPreview content={content} fontSize={settingsConfig?.fontSize ?? 14} />
+                        <MarkdownPreview
+                          content={content}
+                          fontSize={settingsConfig?.fontSize ?? 14}
+                          fontFamily={settingsConfig?.fontFamily}
+                        />
                       </div>
                     </div>
                   )}
@@ -1898,14 +1997,10 @@ export function MainWindow({
                   Ln {lineCount}
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">|</span>
-                <span className="text-[10px] text-ink-ghost font-mono">
-                  Markdown + LaTeX
-                </span>
+                <span className="text-[10px] text-ink-ghost font-mono">Markdown + LaTeX</span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-[10px] text-ink-ghost font-mono">
-                  UTF-8
-                </span>
+                <span className="text-[10px] text-ink-ghost font-mono">UTF-8</span>
                 <span className="text-[10px] text-ink-ghost/40">|</span>
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
                   {byteSize} KB
@@ -1914,9 +2009,11 @@ export function MainWindow({
             </div>
           </div>
           {settingsConfig && (
-            <div className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden h-full ${
-              settingsOpen ? "w-[360px]" : "w-0"
-            }`}>
+            <div
+              className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden h-full ${
+                settingsOpen ? "w-[360px]" : "w-0"
+              }`}
+            >
               <div className="w-[360px] h-full">
                 <SettingsPanel
                   config={settingsConfig}
@@ -1957,7 +2054,16 @@ export function MainWindow({
                 onClick={() => setNoteMenuMode("main")}
                 className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-body text-ink-ghost hover:bg-paper-warm transition-colors cursor-pointer border-b border-paper-deep/20"
               >
-                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <svg
+                  width="10"
+                  height="10"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
                 <span>返回</span>

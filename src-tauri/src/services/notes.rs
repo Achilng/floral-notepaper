@@ -28,6 +28,12 @@ pub struct AppConfig {
     pub font_size: u32,
     #[serde(default = "default_surface_font_size")]
     pub surface_font_size: u32,
+    #[serde(default = "default_ui_font_family")]
+    pub ui_font_family: String,
+    #[serde(default = "default_font_family")]
+    pub font_family: String,
+    #[serde(default = "default_surface_font_family")]
+    pub surface_font_family: String,
     #[serde(default = "default_external_file_auto_save")]
     pub external_file_auto_save: bool,
     #[serde(default = "default_remember_surface_size")]
@@ -498,6 +504,9 @@ impl NoteStore {
             theme: default_theme(),
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
+            ui_font_family: default_ui_font_family(),
+            font_family: default_font_family(),
+            surface_font_family: default_surface_font_family(),
             external_file_auto_save: default_external_file_auto_save(),
             remember_surface_size: default_remember_surface_size(),
             tile_ctrl_close: default_tile_ctrl_close(),
@@ -775,6 +784,18 @@ fn default_surface_font_size() -> u32 {
     14
 }
 
+fn default_ui_font_family() -> String {
+    r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#.into()
+}
+
+fn default_font_family() -> String {
+    r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#.into()
+}
+
+fn default_surface_font_family() -> String {
+    r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#.into()
+}
+
 fn default_external_file_auto_save() -> bool {
     true
 }
@@ -901,6 +922,18 @@ mod tests {
         assert_eq!(default_config.tile_color, "#f6f3ec");
         assert_eq!(default_config.tile_color_mode, "system");
         assert_eq!(default_config.theme, "system");
+        assert_eq!(
+            default_config.ui_font_family,
+            r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#
+        );
+        assert_eq!(
+            default_config.font_family,
+            r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#
+        );
+        assert_eq!(
+            default_config.surface_font_family,
+            r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#
+        );
         assert!(default_config.notes_dir.ends_with("notes"));
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
@@ -917,8 +950,12 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            ui_font_family: r#""LXGW WenKai", serif"#.into(),
+            font_family: r#""LXGW WenKai", serif"#.into(),
+            surface_font_family: r#""Maple Mono NF CN", monospace"#.into(),
             external_file_auto_save: true,
             remember_surface_size: true,
+            tile_ctrl_close: false,
             surface_width: None,
             surface_height: None,
         };
@@ -959,6 +996,18 @@ mod tests {
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
+        assert_eq!(
+            loaded.ui_font_family,
+            r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#
+        );
+        assert_eq!(
+            loaded.font_family,
+            r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#
+        );
+        assert_eq!(
+            loaded.surface_font_family,
+            r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#
+        );
     }
 
     #[test]

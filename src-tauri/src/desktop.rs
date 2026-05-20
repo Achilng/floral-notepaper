@@ -1283,8 +1283,13 @@ mod tests {
             theme: "light".into(),
             font_size: 14,
             surface_font_size: 14,
+            ui_font_family: r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#.into(),
+            font_family: r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#.into(),
+            surface_font_family: r#""Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif"#
+                .into(),
             external_file_auto_save: true,
             remember_surface_size: true,
+            tile_ctrl_close: true,
             surface_width: None,
             surface_height: None,
         };
@@ -1301,8 +1306,12 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            ui_font_family: r#""LXGW WenKai", serif"#.into(),
+            font_family: r#""LXGW WenKai", serif"#.into(),
+            surface_font_family: r#""Maple Mono NF CN", monospace"#.into(),
             external_file_auto_save: true,
             remember_surface_size: true,
+            tile_ctrl_close: false,
             surface_width: None,
             surface_height: None,
         };

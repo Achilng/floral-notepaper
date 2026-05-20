@@ -17,6 +17,9 @@ export interface AppConfig {
   theme: ThemeOption;
   fontSize: number;
   surfaceFontSize: number;
+  uiFontFamily: string;
+  fontFamily: string;
+  surfaceFontFamily: string;
   externalFileAutoSave: boolean;
   rememberSurfaceSize: boolean;
   tileCtrlClose: boolean;
