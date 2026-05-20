@@ -4,6 +4,10 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import type { WindowBounds } from "./api";
 
 export type ResizeDirection =
+  | "North"
+  | "South"
+  | "East"
+  | "West"
   | "NorthWest"
   | "NorthEast"
   | "SouthWest"

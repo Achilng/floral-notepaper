@@ -46,8 +46,15 @@ import {
 } from "../features/windows/surfaceMode";
 import type { NoteSurfaceMode } from "../features/windows/surfaceMode";
 import { Tile } from "./Tile";
+import { MilkdownPreview } from "../features/editor/MilkdownPreview";
 
-type OpenMode = "new" | "open";
+type ActiveTab = "new" | "open" | string;
+
+interface OpenedTab {
+  noteId: string;
+  title: string;
+  content: string;
+}
 
 interface NotePadProps {
   initialNoteId?: string;
@@ -62,23 +69,43 @@ const surfaceResizeHandles: Array<{
   size: string;
 }> = [
   {
+    direction: "North",
+    size: "w-full h-2",
+    className: "top-0 left-0 cursor-ns-resize",
+  },
+  {
+    direction: "South",
+    size: "w-full h-2",
+    className: "bottom-0 left-0 cursor-ns-resize",
+  },
+  {
+    direction: "West",
+    size: "h-full w-2",
+    className: "top-0 left-0 cursor-ew-resize",
+  },
+  {
+    direction: "East",
+    size: "h-full w-2",
+    className: "top-0 right-0 cursor-ew-resize",
+  },
+  {
     direction: "NorthWest",
-    size: "w-8 h-8",
+    size: "w-3 h-3",
     className: "top-0 left-0 cursor-nwse-resize",
   },
   {
     direction: "NorthEast",
-    size: "w-5 h-5",
+    size: "w-3 h-3",
     className: "top-0 right-0 cursor-nesw-resize",
   },
   {
     direction: "SouthWest",
-    size: "w-8 h-8",
+    size: "w-3 h-3",
     className: "bottom-0 left-0 cursor-nesw-resize",
   },
   {
     direction: "SouthEast",
-    size: "w-5 h-5",
+    size: "w-3 h-3",
     className: "bottom-0 right-0 cursor-nwse-resize",
   },
 ];
@@ -113,12 +140,13 @@ export function NotePad({
 }: NotePadProps) {
   const [surfaceMode, setSurfaceMode] =
     useState<NoteSurfaceMode>(initialSurfaceMode);
-  const [mode, setMode] = useState<OpenMode>("new");
+  const [activeTab, setActiveTab] = useState<ActiveTab>("new");
+  const [openedTabs, setOpenedTabs] = useState<OpenedTab[]>([]);
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [hoveredNote, setHoveredNote] = useState<string | null>(null);
+  const [openSearch, setOpenSearch] = useState("");
   const [status, setStatus] = useState("空");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] =
@@ -149,7 +177,7 @@ export function NotePad({
     setEditingNoteId(note.id);
     setTitle(note.title);
     setContent(note.content);
-    setMode("new");
+    setActiveTab("new");
     setStatus("已打开");
   }, []);
 
@@ -259,7 +287,8 @@ export function NotePad({
       setEditingNoteId(null);
       setTitle("");
       setContent("");
-      setMode("new");
+      setActiveTab("new");
+      setOpenedTabs([]);
       setStatus("空");
       setErrorMessage(null);
       setIsExiting(false);
@@ -365,7 +394,12 @@ export function NotePad({
     setErrorMessage(null);
     try {
       const note = await getNote(noteId);
-      applyNote(note);
+      setOpenedTabs((tabs) => {
+        const exists = tabs.some((t) => t.noteId === noteId);
+        if (exists) return tabs.map((t) => t.noteId === noteId ? { ...t, title: note.title, content: note.content } : t);
+        return [...tabs, { noteId: note.id, title: note.title, content: note.content }];
+      });
+      setActiveTab(noteId);
       await switchSurfaceMode("pad");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
@@ -375,7 +409,14 @@ export function NotePad({
   const handlePin = async () => {
     setErrorMessage(null);
     try {
-      if (shouldSaveBeforeSwitchingToTile(noteSurfaceAutoSave)) {
+      const currentTab = activeTab !== "new" && activeTab !== "open"
+        ? openedTabs.find((t) => t.noteId === activeTab)
+        : undefined;
+      if (currentTab) {
+        setEditingNoteId(currentTab.noteId);
+        setTitle(currentTab.title);
+        setContent(currentTab.content);
+      } else if (shouldSaveBeforeSwitchingToTile(noteSurfaceAutoSave)) {
         await saveNote();
       }
       await switchSurfaceMode("tile");
@@ -442,7 +483,7 @@ export function NotePad({
   }, [copyTileContent, handleClose, handleSave, switchSurfaceMode]);
 
   useEffect(() => {
-    if (!noteSurfaceAutoSave || mode !== "new" || status !== "未保存") {
+    if (!noteSurfaceAutoSave || activeTab !== "new" || status !== "未保存") {
       return undefined;
     }
     if (!hasDraftContent()) return undefined;
@@ -452,7 +493,7 @@ export function NotePad({
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [handleSave, hasDraftContent, mode, noteSurfaceAutoSave, status]);
+  }, [handleSave, hasDraftContent, activeTab, noteSurfaceAutoSave, status]);
 
   const handleDrag = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
@@ -464,7 +505,7 @@ export function NotePad({
     setEditingNoteId(null);
     setTitle("");
     setContent("");
-    setMode("new");
+    setActiveTab("new");
     setStatus("空");
     setErrorMessage(null);
   };
@@ -475,7 +516,7 @@ export function NotePad({
   const enterClass = hasEnteredOnce.current ? "" : "animate-window-enter";
   const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : enterClass}`;
   const padSurfaceClassName =
-    "relative noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/40 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
+    "relative noise-bg w-full h-full min-h-0 bg-paper overflow-hidden flex flex-col flex-1 border border-paper-deep/40 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
 
   return (
     <div className={surfaceWrapperClassName}>
@@ -483,6 +524,7 @@ export function NotePad({
         <Tile
           title={tileTitle || undefined}
           content={errorMessage || content}
+          richContent={!errorMessage && content ? <MilkdownPreview content={content} fontSize={surfaceFontSize} readonly /> : undefined}
           color={tileColor}
           fontSize={surfaceFontSize}
           width="100%"
@@ -498,47 +540,76 @@ export function NotePad({
         <div className={padSurfaceClassName} data-surface-mode={surfaceMode}>
           <>
             <div
-              className="flex items-center justify-between px-4 pt-3 pb-0 cursor-default"
+              className="flex items-center justify-between px-1.5 pt-1.5 pb-0 cursor-default gap-1"
               onMouseDown={handleDrag}
             >
-              <div className="flex items-center gap-0.5">
+              <div className="flex items-center gap-0 min-w-0 flex-1 overflow-x-auto scrollbar-none">
                 <button
                   onClick={resetDraft}
-                  className={`relative px-3.5 py-1.5 text-[13px] rounded-t-lg transition-all duration-200 cursor-pointer ${
-                    mode === "new"
+                  className={`relative px-2.5 py-1 text-[12px] rounded-t-lg transition-all duration-200 cursor-pointer shrink-0 ${
+                    activeTab === "new"
                       ? "text-bamboo font-medium"
                       : "text-ink-ghost hover:text-ink-faint"
                   }`}
                 >
                   {editingNoteId ? "编辑" : "新建"}
-                  {mode === "new" && (
-                    <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-bamboo rounded-full" />
+                  {activeTab === "new" && (
+                    <div className="absolute bottom-0 left-2.5 right-2.5 h-[2px] bg-bamboo rounded-full" />
                   )}
                 </button>
                 <button
-                  onClick={() => setMode("open")}
-                  className={`relative px-3.5 py-1.5 text-[13px] rounded-t-lg transition-all duration-200 cursor-pointer ${
-                    mode === "open"
+                  onClick={() => { setActiveTab("open"); setOpenSearch(""); }}
+                  className={`relative px-2.5 py-1 text-[12px] rounded-t-lg transition-all duration-200 cursor-pointer shrink-0 ${
+                    activeTab === "open"
                       ? "text-bamboo font-medium"
                       : "text-ink-ghost hover:text-ink-faint"
                   }`}
                 >
                   打开
-                  {mode === "open" && (
-                    <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-bamboo rounded-full" />
+                  {activeTab === "open" && (
+                    <div className="absolute bottom-0 left-2.5 right-2.5 h-[2px] bg-bamboo rounded-full" />
                   )}
                 </button>
+                {openedTabs.map((tab) => (
+                  <button
+                    key={tab.noteId}
+                    onClick={() => setActiveTab(tab.noteId)}
+                    className={`relative flex items-center gap-1 px-2 py-1 text-[11px] rounded-t-lg transition-all duration-200 cursor-pointer min-w-0 ${
+                      activeTab === tab.noteId
+                        ? "text-bamboo font-medium"
+                        : "text-ink-ghost hover:text-ink-faint"
+                    }`}
+                    style={{ maxWidth: `${Math.max(60, 160 / Math.max(openedTabs.length, 1))}px` }}
+                  >
+                    <span className="truncate">{tab.title || "无标题"}</span>
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpenedTabs((tabs) => tabs.filter((t) => t.noteId !== tab.noteId));
+                        if (activeTab === tab.noteId) setActiveTab("open");
+                      }}
+                      className="shrink-0 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-paper-deep/40 text-ink-ghost hover:text-ink-faint transition-colors"
+                    >
+                      <svg width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round">
+                        <path d="M18 6L6 18M6 6l12 12" />
+                      </svg>
+                    </span>
+                    {activeTab === tab.noteId && (
+                      <div className="absolute bottom-0 left-2 right-2 h-[2px] bg-bamboo rounded-full" />
+                    )}
+                  </button>
+                ))}
               </div>
 
-              <div className="flex items-center gap-1.5">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={() => void handlePin()}
-                  className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
+                  className="group w-6 h-6 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
                   title="转为磁贴"
                 >
                   <svg
-                    width="14"
-                    height="14"
+                    width="12"
+                    height="12"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -553,12 +624,12 @@ export function NotePad({
 
                 <button
                   onClick={() => void handleClose()}
-                  className="group w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:bg-danger-bg hover:text-red-400 transition-all duration-200 cursor-pointer"
+                  className="group w-6 h-6 flex items-center justify-center rounded-lg text-ink-ghost hover:bg-danger-bg hover:text-red-400 transition-all duration-200 cursor-pointer"
                   title="关闭"
                 >
                   <svg
-                    width="13"
-                    height="13"
+                    width="11"
+                    height="11"
                     viewBox="0 0 24 24"
                     fill="none"
                     stroke="currentColor"
@@ -571,12 +642,12 @@ export function NotePad({
               </div>
             </div>
 
-            <div className="mx-4 mt-1 h-px bg-paper-deep/50" />
+            <div className="mx-3 mt-0.5 h-px bg-paper-deep/50" />
 
-            {mode === "new" ? (
+            {activeTab === "new" ? (
               <div
                 data-pad-editor-body="true"
-                className="px-4 pt-3 pb-2 flex flex-col flex-1 min-h-0"
+                className="px-3 pt-2 pb-1 flex flex-col flex-1 min-h-0"
               >
                 <input
                   type="text"
@@ -586,7 +657,7 @@ export function NotePad({
                     setStatus("未保存");
                   }}
                   placeholder="标题（可选）"
-                  className="w-full font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-2 tracking-wide shrink-0"
+                  className="w-full font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-1 tracking-wide shrink-0"
                   style={{ fontSize: `${surfaceFontSize}px` }}
                 />
 
@@ -602,39 +673,67 @@ export function NotePad({
                   style={{ fontSize: `${surfaceFontSize}px` }}
                 />
 
-                <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">
-                  <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
+                <div className="flex items-center justify-between mt-auto pt-1 border-t border-paper-deep/30 shrink-0">
+                  <span className="text-[10px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
                     {errorMessage ?? `${countNoteChars(content)} 字 · ${status}`}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={resetDraft}
-                      className="px-4 py-1.5 text-[12px] text-ink-faint hover:text-ink-soft rounded-lg hover:bg-paper-warm transition-all duration-200 cursor-pointer"
+                      className="px-3 py-1 text-[11px] text-ink-faint hover:text-ink-soft rounded-lg hover:bg-paper-warm transition-all duration-200 cursor-pointer"
                     >
                       清空
                     </button>
                     <button
                       onClick={() => void handleSave()}
-                      className="px-4 py-1.5 text-[12px] text-cloud bg-bamboo hover:bg-bamboo-light rounded-lg transition-all duration-200 font-medium cursor-pointer"
+                      className="px-3 py-1 text-[11px] text-cloud bg-bamboo hover:bg-bamboo-light rounded-lg transition-all duration-200 font-medium cursor-pointer"
                     >
                       保存
                     </button>
                   </div>
                 </div>
               </div>
-            ) : (
-              <div className="p-2 flex-1 min-h-0 overflow-y-auto">
+            ) : activeTab === "open" ? (
+              <div className="flex-1 min-h-0 flex flex-col">
+                <div className="px-2 pt-1.5 pb-1 shrink-0">
+                  <div className="flex items-center gap-1.5 px-2 h-7 rounded-lg bg-paper-warm/80 border border-paper-deep/40 focus-within:border-bamboo/30 focus-within:bg-paper transition-all">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" className="text-ink-ghost shrink-0">
+                      <circle cx="11" cy="11" r="8" />
+                      <path d="m21 21-4.35-4.35" />
+                    </svg>
+                    <input
+                      type="text"
+                      value={openSearch}
+                      onChange={(e) => setOpenSearch(e.target.value)}
+                      placeholder="搜索笔记…"
+                      className="flex-1 text-[11px] font-body text-ink placeholder:text-ink-ghost/60 bg-transparent"
+                    />
+                    {openSearch && (
+                      <button
+                        onClick={() => setOpenSearch("")}
+                        className="text-ink-ghost hover:text-ink-faint transition-colors cursor-pointer"
+                      >
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+                          <path d="M18 6L6 18M6 6l12 12" />
+                        </svg>
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="px-2 pb-2 flex-1 min-h-0 overflow-y-auto">
                 <div className="space-y-0.5">
-                  {notes.map((note) => (
+                  {notes.filter((n) => {
+                    if (!openSearch) return true;
+                    const q = openSearch.toLowerCase();
+                    return getDisplayTitle(n).toLowerCase().includes(q) || (n.preview ?? "").toLowerCase().includes(q);
+                  }).map((note) => (
                     <button
                       key={note.id}
                       onClick={() => void handleOpenNote(note.id)}
-                      onMouseEnter={() => setHoveredNote(note.id)}
-                      onMouseLeave={() => setHoveredNote(null)}
-                      className="w-full text-left px-3.5 py-3 rounded-xl transition-all duration-200 cursor-pointer group hover:bg-paper-warm/70"
+                      className="w-full text-left px-3 py-1.5 rounded-lg transition-all duration-200 cursor-pointer group hover:bg-paper-warm/70"
                     >
                       <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[13px] font-display font-medium text-ink-soft group-hover:text-ink transition-colors truncate pr-2">
+                        <span className="text-[12px] font-display font-medium text-ink-soft group-hover:text-ink transition-colors truncate pr-2">
                           {getDisplayTitle(note)}
                         </span>
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -661,17 +760,14 @@ export function NotePad({
                               <line x1="10" y1="14" x2="21" y2="3" />
                             </svg>
                           </button>
-                          <span className="text-[11px] text-ink-ghost font-mono tabular-nums">
+                          <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
                             {formatShortDate(note.updatedAt)}
                           </span>
                         </div>
                       </div>
-                      <p className="text-[12px] text-ink-ghost leading-relaxed line-clamp-1 group-hover:text-ink-faint transition-colors">
+                      <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-1 group-hover:text-ink-faint transition-colors">
                         {note.preview || "空白笔记"}
                       </p>
-                      {hoveredNote === note.id && (
-                        <div className="mt-1.5 h-px bg-bamboo/10 transition-all duration-300" />
-                      )}
                     </button>
                   ))}
                   {notes.length === 0 && (
@@ -680,7 +776,37 @@ export function NotePad({
                     </div>
                   )}
                 </div>
+                </div>
               </div>
+            ) : (
+              (() => {
+                const currentTab = openedTabs.find((t) => t.noteId === activeTab);
+                if (!currentTab) return null;
+                return (
+                  <div className="px-3 pt-2 pb-1 flex flex-col flex-1 min-h-0">
+                    <div className="flex-1 min-h-0 overflow-y-auto">
+                      <MilkdownPreview content={currentTab.content} fontSize={surfaceFontSize} readonly />
+                    </div>
+                    <div className="flex items-center justify-between mt-auto pt-1 border-t border-paper-deep/30 shrink-0">
+                      <span className="text-[10px] text-ink-ghost font-mono tabular-nums truncate">
+                        {countNoteChars(currentTab.content)} 字
+                      </span>
+                      <button
+                        onClick={() => {
+                          setEditingNoteId(currentTab.noteId);
+                          setTitle(currentTab.title);
+                          setContent(currentTab.content);
+                          setActiveTab("new");
+                          setStatus("已打开");
+                        }}
+                        className="px-3 py-1 text-[11px] text-cloud bg-bamboo hover:bg-bamboo-light rounded-lg transition-all duration-200 font-medium cursor-pointer"
+                      >
+                        编辑
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()
             )}
           </>
           <SurfaceResizeHandles />

@@ -13,6 +13,9 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@milkdown/crepe": "^7.21.1",
+    "@milkdown/kit": "^7.21.1",
+    "@prosemirror-adapter/react": "^0.5.3",
     "@tanstack/react-hotkeys": "^0.10.0",
     "@tauri-apps/api": "~2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.0",

@@ -1,0 +1,298 @@
+/* Milkdown theme overrides — maps Crepe CSS variables to 花笺 design tokens */
+
+.milkdown-preview .milkdown {
+  --crepe-color-background: transparent;
+  --crepe-color-on-background: var(--color-ink);
+  --crepe-color-surface: var(--color-paper-warm);
+  --crepe-color-surface-low: var(--color-paper-deep);
+  --crepe-color-on-surface: var(--color-ink);
+  --crepe-color-on-surface-variant: var(--color-ink-soft);
+  --crepe-color-outline: var(--color-ink-ghost);
+  --crepe-color-primary: var(--color-bamboo);
+  --crepe-color-secondary: var(--color-bamboo-mist);
+  --crepe-color-on-secondary: var(--color-bamboo);
+  --crepe-color-inverse: var(--color-ink);
+  --crepe-color-on-inverse: var(--color-paper);
+  --crepe-color-inline-code: var(--color-bamboo);
+  --crepe-color-error: #ef4444;
+  --crepe-color-hover: var(--color-paper-warm);
+  --crepe-color-selected: var(--color-bamboo-glow);
+  --crepe-color-inline-area: var(--color-paper-deep);
+
+  --crepe-font-title: var(--font-display);
+  --crepe-font-default: var(--font-body);
+  --crepe-font-code: var(--font-mono);
+
+  --crepe-shadow-1: 0 1px 3px var(--color-shadow);
+  --crepe-shadow-2: 0 2px 6px var(--color-shadow-deep);
+}
+
+/* ProseMirror padding — compact for preview panel */
+.milkdown-preview .milkdown .ProseMirror {
+  padding: 8px 2px;
+}
+
+/* Headings — match MarkdownPreview sizing */
+.milkdown-preview .milkdown .ProseMirror h1 {
+  font-size: 1.57em;
+  line-height: 1.4;
+  font-weight: 700;
+  margin-top: 1.5em;
+  margin-bottom: 0.5em;
+  letter-spacing: 0.02em;
+}
+
+.milkdown-preview .milkdown .ProseMirror h2 {
+  font-size: 1.21em;
+  line-height: 1.4;
+  font-weight: 700;
+  margin-top: 1.75em;
+  margin-bottom: 0.4em;
+  letter-spacing: 0.02em;
+}
+
+.milkdown-preview .milkdown .ProseMirror h3 {
+  font-size: 1.07em;
+  line-height: 1.4;
+  font-weight: 700;
+  margin-top: 1.25em;
+  margin-bottom: 0.3em;
+  letter-spacing: 0.02em;
+}
+
+.milkdown-preview .milkdown .ProseMirror h4 {
+  font-size: 1em;
+  line-height: 1.4;
+  font-weight: 600;
+  margin-top: 1em;
+  margin-bottom: 0.3em;
+  letter-spacing: 0.02em;
+}
+
+/* Paragraph */
+.milkdown-preview .milkdown .ProseMirror p {
+  font-size: 1em;
+  line-height: 1.9;
+  padding: 2px 0;
+  color: var(--color-ink-soft);
+}
+
+/* Strong / Em */
+.milkdown-preview .milkdown .ProseMirror strong {
+  font-weight: 600;
+  color: var(--color-ink);
+}
+
+.milkdown-preview .milkdown .ProseMirror em {
+  color: var(--color-bamboo-light);
+}
+
+/* Links */
+.milkdown-preview .milkdown .ProseMirror a {
+  color: var(--color-bamboo);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.milkdown-preview .milkdown .ProseMirror a:hover {
+  color: var(--color-bamboo-light);
+}
+
+/* Blockquote */
+.milkdown-preview .milkdown .ProseMirror blockquote {
+  padding-left: 1em;
+}
+
+.milkdown-preview .milkdown .ProseMirror blockquote::before {
+  width: 2px;
+  background: color-mix(in srgb, var(--color-bamboo) 40%, transparent);
+}
+
+.milkdown-preview .milkdown .ProseMirror blockquote p {
+  color: color-mix(in srgb, var(--color-ink-soft) 80%, transparent);
+  font-style: italic;
+  line-height: 1.9;
+}
+
+/* Inline code */
+.milkdown-preview .milkdown .ProseMirror code {
+  color: var(--color-bamboo);
+  background: var(--color-paper-warm);
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  font-size: 0.85em;
+}
+
+/* CodeMirror active line & selection */
+.milkdown-preview .milkdown .cm-editor .cm-activeLine {
+  background: color-mix(in srgb, var(--color-bamboo-glow) 40%, transparent) !important;
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-activeLineGutter {
+  background: color-mix(in srgb, var(--color-bamboo-glow) 40%, transparent) !important;
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-selectionBackground,
+.milkdown-preview .milkdown .cm-editor .cm-focused .cm-selectionBackground,
+.milkdown-preview .milkdown .cm-editor ::selection {
+  background: var(--color-paper-deep) !important;
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-lineNumbers .cm-gutterElement {
+  color: var(--color-ink-ghost);
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-cursor {
+  border-left-color: var(--color-bamboo);
+}
+
+/* Code block */
+.milkdown-preview .milkdown .milkdown-code-block {
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--color-paper-warm) 50%, transparent);
+  margin: 0.75em 0;
+}
+
+.milkdown-preview .milkdown .milkdown-code-block .cm-editor {
+  background: transparent;
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+}
+
+.milkdown-preview .milkdown .milkdown-code-block .cm-editor .cm-content {
+  color: var(--color-ink-soft);
+}
+
+.milkdown-preview .milkdown .milkdown-code-block .cm-gutters {
+  background: transparent;
+}
+
+/* CodeMirror syntax highlighting — JSON / general tokens */
+.milkdown-preview .milkdown .cm-editor .cm-string,
+.milkdown-preview .milkdown .cm-editor .cm-string-2 {
+  color: var(--color-bamboo-light);
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-number {
+  color: #b07d38;
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-propertyName {
+  color: var(--color-bamboo);
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-keyword,
+.milkdown-preview .milkdown .cm-editor .cm-atom,
+.milkdown-preview .milkdown .cm-editor .cm-bool {
+  color: #8b6cc1;
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-punctuation {
+  color: var(--color-ink-ghost);
+}
+
+.milkdown-preview .milkdown .cm-editor .cm-comment {
+  color: var(--color-ink-ghost);
+  font-style: italic;
+}
+
+/* Horizontal rule */
+.milkdown-preview .milkdown .ProseMirror hr {
+  background: linear-gradient(to right, transparent, var(--color-paper-deep), transparent);
+  background-clip: content-box;
+  margin: 1.5em 0;
+}
+
+/* Lists */
+.milkdown-preview .milkdown .ProseMirror ul,
+.milkdown-preview .milkdown .ProseMirror ol {
+  padding-left: 0.5em;
+}
+
+.milkdown-preview .milkdown .milkdown-list-item-block li .label-wrapper {
+  color: color-mix(in srgb, var(--color-bamboo) 50%, transparent);
+}
+
+.milkdown-preview .milkdown .milkdown-list-item-block li .label-wrapper svg {
+  fill: color-mix(in srgb, var(--color-bamboo) 50%, transparent);
+}
+
+.milkdown-preview .milkdown .milkdown-list-item-block p {
+  line-height: 1.9;
+}
+
+/* Table */
+.milkdown-preview .milkdown .milkdown-table-block th {
+  font-weight: 600;
+  font-size: 0.85em;
+  color: var(--color-ink);
+  border-color: color-mix(in srgb, var(--color-paper-deep) 30%, transparent);
+}
+
+.milkdown-preview .milkdown .milkdown-table-block td {
+  color: var(--color-ink-soft);
+  border-color: color-mix(in srgb, var(--color-paper-deep) 15%, transparent);
+}
+
+/* Image — basic styling for standard markdown images */
+.milkdown-preview .milkdown .ProseMirror img {
+  border-radius: 4px;
+  max-width: 100%;
+}
+
+/* Checkbox accent */
+.milkdown-preview .milkdown input[type="checkbox"] {
+  accent-color: var(--color-bamboo);
+}
+
+/* Hide code block editing UI (language picker, toolbar buttons) */
+.milkdown-preview .milkdown .milkdown-code-block .tools .language-button {
+  display: none !important;
+}
+
+.milkdown-preview .milkdown .milkdown-code-block .tools .tools-button-group {
+  display: none !important;
+}
+
+.milkdown-preview .milkdown .milkdown-code-block .language-picker {
+  display: none !important;
+}
+
+/* Remove focus outline on editor */
+.milkdown-preview .milkdown .ProseMirror {
+  outline: none !important;
+}
+
+.milkdown-preview .milkdown .ProseMirror:focus,
+.milkdown-preview .milkdown .ProseMirror-focused {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+.milkdown-preview .milkdown .ProseMirror .ProseMirror-selectednode {
+  outline: none !important;
+}
+
+/* Hide all floating editing UI (link tooltip, image edit, latex edit, table handles, etc.) */
+.milkdown-preview .milkdown .milkdown-link-preview,
+.milkdown-preview .milkdown .milkdown-link-edit,
+.milkdown-preview .milkdown .milkdown-latex-inline-edit,
+.milkdown-preview .milkdown .milkdown-image-block > .image-edit,
+.milkdown-preview .milkdown .milkdown-image-block .operation,
+.milkdown-preview .milkdown .milkdown-image-block .image-resize-handle,
+.milkdown-preview .milkdown .milkdown-image-inline .empty-image-inline,
+.milkdown-preview .milkdown .milkdown-table-block .handle,
+.milkdown-preview .milkdown .milkdown-table-block .line-handle,
+.milkdown-preview .milkdown .confirm {
+  display: none !important;
+}
+
+/* KaTeX inside Milkdown */
+.milkdown-preview .milkdown .katex {
+  font-size: 1.1em;
+  color: var(--color-ink-soft);
+}
+
+.milkdown-preview .milkdown .katex .mop {
+  color: var(--color-bamboo);
+}

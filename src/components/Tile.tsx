@@ -1,5 +1,5 @@
 import chroma from "chroma-js";
-import type { CSSProperties, HTMLAttributes } from "react";
+import type { CSSProperties, HTMLAttributes, ReactNode } from "react";
 import {
   DEFAULT_TILE_COLOR,
   normalizeTileColor,
@@ -9,6 +9,7 @@ export interface TileProps
   extends Omit<HTMLAttributes<HTMLDivElement>, "color" | "content" | "title"> {
   title?: string;
   content: string;
+  richContent?: ReactNode;
   color?: string;
   width?: number | string;
   rotation?: number;
@@ -67,6 +68,7 @@ function CornerMarks({ color }: { color: string }) {
 export function Tile({
   title,
   content,
+  richContent,
   color = DEFAULT_TILE_COLOR,
   width = 260,
   rotation = 0,
@@ -106,8 +108,8 @@ export function Tile({
           </div>
         )}
         {content ? (
-          <div className="leading-[1.8] whitespace-pre-wrap font-body" style={{ color: contentColor, fontSize: `${fontSize}px` }}>
-            {content}
+          <div className="leading-[1.8] font-body" style={{ color: contentColor, fontSize: `${fontSize}px` }}>
+            {richContent ?? <span className="whitespace-pre-wrap">{content}</span>}
           </div>
         ) : (
           <div className="font-body text-center py-6" style={{ color: emptyColor, fontSize: `${fontSize}px` }}>
