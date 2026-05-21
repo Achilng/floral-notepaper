@@ -487,7 +487,9 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
             <>
               <span className="flex-1 min-w-0 text-left text-bamboo truncate">
                 {liveDisplay ||
-                  t("settings.shortcut.pressHint", { defaultValue: "按下快捷键；按 Delete 清空。" })}
+                  t("settings.shortcut.pressHint", {
+                    defaultValue: "按下快捷键；按 Delete 清空。",
+                  })}
               </span>
               <span className="text-[10px] text-ink-faint shrink-0">
                 {t("settings.shortcut.cancelHint", { defaultValue: "Esc 取消" })}

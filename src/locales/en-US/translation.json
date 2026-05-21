@@ -22,7 +22,7 @@
       "selectAll": "Select All"
     },
     "tile": {
-      "close": "Close",
+      "close": "Unpin",
       "copy": "Copy",
       "save": "Save",
       "switchToPad": "Switch to Window"
