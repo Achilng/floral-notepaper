@@ -2132,7 +2132,7 @@ export function MainWindow({
                             setContent(event.target.value);
                             markDirty();
                           }}
-                          className="w-full h-full leading-[1.9] text-ink-soft font-mono placeholder:text-ink-ghost/40"
+                          className="w-full h-full leading-[1.9] text-ink-soft font-body placeholder:text-ink-ghost/40"
                           style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
                           placeholder={t("main.editor.contentPlaceholder", {
                             defaultValue: "开始写作……",

@@ -60,6 +60,14 @@ describe("MainWindow settings", () => {
     expect(markup).not.toContain('d="m7 8 5-5 5 5"');
   });
 
+  test("uses the body font for the main Markdown editor text", () => {
+    const markup = renderToStaticMarkup(<MainWindow />);
+    const editorMatch = markup.match(/<textarea[^>]*>/);
+
+    expect(editorMatch?.[0]).toContain("font-body");
+    expect(editorMatch?.[0]).not.toContain("font-mono");
+  });
+
   test("labels the pin button as a toggle", () => {
     expect(pinTileButtonTitle(false)).toBe("钉到屏幕");
     expect(pinTileButtonTitle(true)).toBe("取消钉屏");

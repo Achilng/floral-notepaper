@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@font-face {
+  font-family: "HarmonyOS Sans SC";
+  src: url("./assets/fonts/HarmonyOS_Sans_SC.ttf") format("truetype");
+  font-weight: 40 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-paper: #f6f3ec;
   --color-paper-warm: #f0ebe0;
@@ -19,12 +27,12 @@
   --color-danger-bg: #fef2f2;
 
   --font-display:
-    -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", system-ui, sans-serif;
+    "HarmonyOS Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
   --font-body:
-    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
-    "Microsoft YaHei", system-ui, sans-serif;
-  --font-mono: "SF Mono", "Menlo", "JetBrains Mono", "Fira Code", monospace;
+    "HarmonyOS Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
+    "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Menlo", "JetBrains Mono", "Fira Code", "HarmonyOS Sans SC", monospace;
 }
 
 :root {

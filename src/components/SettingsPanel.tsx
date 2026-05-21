@@ -14,6 +14,8 @@ import { applyTheme, watchSystemTheme } from "../features/settings/theme";
 import { SUPPORTED_LOCALES } from "../locales/locale-whitelist";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 
+const HARMONY_FONT_LICENSE_URL = new URL("../assets/fonts/LICENSE_Fonts", import.meta.url).href;
+
 interface SettingsPanelProps {
   config: AppConfig;
   onChange: (config: AppConfig) => void;
@@ -299,6 +301,25 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             value={config.defaultViewMode}
             onChange={(v) => setConfigValue("defaultViewMode", v)}
           />
+        </section>
+
+        <section className="pt-2 border-t border-paper-deep/25">
+          <p className="text-[10px] leading-relaxed text-ink-ghost/75">
+            <span>
+              {t("settings.fontNotice", {
+                defaultValue:
+                  "Uses HarmonyOS Sans SC font. Copyright 2021 Huawei Device Co., Ltd. Licensed under HarmonyOS Sans Fonts License Agreement.",
+              })}
+            </span>{" "}
+            <a
+              href={HARMONY_FONT_LICENSE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="underline underline-offset-2 hover:text-ink-faint"
+            >
+              HarmonyOS Sans Fonts License Agreement
+            </a>
+          </p>
         </section>
       </div>
     </aside>

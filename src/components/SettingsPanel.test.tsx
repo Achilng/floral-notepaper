@@ -49,6 +49,8 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("自定义");
     expect(markup).toContain('type="color"');
     expect(markup).toContain('value="#f6f3ec"');
+    expect(markup).toContain("HarmonyOS Sans SC");
+    expect(markup).toContain("HarmonyOS Sans Fonts License Agreement");
     expect(markup).toContain("默认视图");
     expect(markup).toContain("编辑");
     expect(markup).toContain("分栏");
