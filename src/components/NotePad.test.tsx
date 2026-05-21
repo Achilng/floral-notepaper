@@ -10,7 +10,7 @@ describe("NotePad surface modes", () => {
     expect(markup).toContain("bg-transparent p-0");
     expect(markup).not.toContain("bg-transparent p-1");
     expect(markup).toContain("app-surface-frame");
-    expect(markup).toContain("border-paper-deep/40");
+    expect(markup).toContain("border-paper-deep/70");
     expect(markup.match(/data-surface-resize-handle="true"/g)).toHaveLength(4);
     expect(markup).toContain('data-resize-direction="NorthWest"');
     expect(markup).toContain('data-resize-direction="NorthEast"');
