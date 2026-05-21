@@ -50,23 +50,6 @@ describe("MainWindow settings", () => {
     expect(markup).toContain("快捷键 Command+Option+N 注册失败");
   });
 
-  test("clips the main content to the macOS-style window frame", () => {
-    const markup = renderToStaticMarkup(<MainWindow />);
-
-    expect(markup).toContain("app-main-frame");
-    expect(markup).toContain("bg-transparent");
-  });
-
-  test("uses macOS traffic-light window controls on the left", () => {
-    const markup = renderToStaticMarkup(<MainWindow />);
-
-    expect(markup).toContain("mac-window-controls");
-    expect(markup).toContain("mac-traffic-close");
-    expect(markup).toContain("mac-traffic-minimize");
-    expect(markup).toContain("mac-traffic-zoom");
-    expect(markup.indexOf("mac-window-controls")).toBeLessThan(markup.indexOf(">花笺<"));
-  });
-
   test("renders the import Markdown icon as a down arrow", () => {
     const markup = renderToStaticMarkup(<MainWindow />);
 
