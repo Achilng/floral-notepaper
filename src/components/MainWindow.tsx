@@ -2072,15 +2072,21 @@ export function MainWindow({
 
                   {viewMode === "split" && (
                     <div
-                      className={`w-1 shrink-0 cursor-col-resize group relative ${isResizingSplit ? "bg-bamboo/30" : "hover:bg-bamboo/20"} transition-colors`}
+                      className={`w-1.5 shrink-0 cursor-col-resize group relative flex items-center justify-center ${isResizingSplit ? "bg-bamboo/30" : "hover:bg-bamboo/20"} transition-colors`}
                       onMouseDown={(e) => {
                         e.preventDefault();
                         setIsResizingSplit(true);
                       }}
                     >
                       <div
-                        className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSplit ? "" : "group-hover:bg-bamboo/5"}`}
+                        className={`absolute inset-y-0 -left-1.5 -right-1.5 ${isResizingSplit ? "" : "group-hover:bg-bamboo/5"}`}
                       />
+                      {/* 拖拽手柄指示器 */}
+                      <div className="relative z-10 flex flex-col gap-[3px] opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
+                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
+                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
+                      </div>
                     </div>
                   )}
 
@@ -2094,8 +2100,10 @@ export function MainWindow({
                         </div>
                       )}
                       <div
-                        className={`flex-1 overflow-y-auto px-6 pb-6 ${
-                          viewMode === "preview" ? "pt-3" : "pt-1"
+                        className={`flex-1 overflow-y-auto pb-6 ${
+                          viewMode === "preview"
+                            ? "pt-3 px-[max(2rem,calc((100%-720px)/2))]"
+                            : "pt-1 px-6"
                         }`}
                       >
                         <MarkdownPreview
