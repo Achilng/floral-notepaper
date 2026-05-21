@@ -56,23 +56,43 @@ const surfaceResizeHandles: Array<{
   size: string;
 }> = [
   {
+    direction: "North",
+    size: "w-full h-2",
+    className: "top-0 left-0 cursor-ns-resize",
+  },
+  {
+    direction: "South",
+    size: "w-full h-2",
+    className: "bottom-0 left-0 cursor-ns-resize",
+  },
+  {
+    direction: "West",
+    size: "h-full w-2",
+    className: "top-0 left-0 cursor-ew-resize",
+  },
+  {
+    direction: "East",
+    size: "h-full w-2",
+    className: "top-0 right-0 cursor-ew-resize",
+  },
+  {
     direction: "NorthWest",
-    size: "w-8 h-8",
+    size: "w-3 h-3",
     className: "top-0 left-0 cursor-nwse-resize",
   },
   {
     direction: "NorthEast",
-    size: "w-5 h-5",
+    size: "w-3 h-3",
     className: "top-0 right-0 cursor-nesw-resize",
   },
   {
     direction: "SouthWest",
-    size: "w-8 h-8",
+    size: "w-3 h-3",
     className: "bottom-0 left-0 cursor-nesw-resize",
   },
   {
     direction: "SouthEast",
-    size: "w-5 h-5",
+    size: "w-3 h-3",
     className: "bottom-0 right-0 cursor-nwse-resize",
   },
 ];
