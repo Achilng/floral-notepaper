@@ -1,6 +1,6 @@
 import { parseHotkey, type Hotkey } from "@tanstack/react-hotkeys";
 
-export type ShortcutPlatform = "macos" | "windows";
+export type ShortcutPlatform = "mac" | "windows";
 
 const KEY_DISPLAY_NAMES: Record<string, string> = {
   Control: "Ctrl",
@@ -21,7 +21,7 @@ const MAC_KEY_DISPLAY_NAMES: Record<string, string> = {
 
 export function shortcutPlatform(): ShortcutPlatform {
   if (typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)) {
-    return "macos";
+    return "mac";
   }
 
   return "windows";
@@ -31,9 +31,9 @@ export function hotkeyToConfigString(
   hotkey: Hotkey,
   platform: ShortcutPlatform = "windows",
 ): string {
-  const parsed = parseHotkey(hotkey, "windows");
+  const parsed = parseHotkey(hotkey, platform);
   const parts: string[] = [];
-  if (platform === "macos") {
+  if (platform === "mac") {
     if (parsed.meta) parts.push("Command");
     if (parsed.alt) parts.push("Option");
     if (parsed.ctrl) parts.push("Ctrl");
@@ -55,9 +55,7 @@ export function isValidGlobalShortcut(hotkey: Hotkey): boolean {
 
 export function formatHeldKeys(keys: string[], platform: ShortcutPlatform = "windows"): string {
   const modifierOrder =
-    platform === "macos"
-      ? ["Meta", "Alt", "Control", "Shift"]
-      : ["Control", "Alt", "Shift", "Meta"];
+    platform === "mac" ? ["Meta", "Alt", "Control", "Shift"] : ["Control", "Alt", "Shift", "Meta"];
   const modifiers: string[] = [];
   const others: string[] = [];
 
@@ -72,6 +70,6 @@ export function formatHeldKeys(keys: string[], platform: ShortcutPlatform = "win
   modifiers.sort((a, b) => modifierOrder.indexOf(a) - modifierOrder.indexOf(b));
 
   const all = [...modifiers, ...others];
-  const displayNames = platform === "macos" ? MAC_KEY_DISPLAY_NAMES : KEY_DISPLAY_NAMES;
+  const displayNames = platform === "mac" ? MAC_KEY_DISPLAY_NAMES : KEY_DISPLAY_NAMES;
   return all.map((k) => displayNames[k] ?? k).join(" + ");
 }
