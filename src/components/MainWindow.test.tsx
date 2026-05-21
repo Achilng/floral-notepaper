@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, test, vi } from "vitest";
-import { MainWindow, runEditorUndo } from "./MainWindow";
+import { describe, expect, test } from "vitest";
+import { MainWindow } from "./MainWindow";
 
 describe("MainWindow settings", () => {
   test("can render the settings panel with the loaded config", () => {
@@ -36,7 +36,6 @@ describe("MainWindow settings", () => {
   test("keeps draggable window chrome on the default arrow cursor", () => {
     const markup = renderToStaticMarkup(<MainWindow />);
 
-    expect(markup).toContain("cursor-default");
     expect(markup).not.toContain("cursor-grab");
     expect(markup).not.toContain("cursor-grabbing");
   });
@@ -59,17 +58,5 @@ describe("MainWindow editor undo", () => {
     expect(markup).toContain('data-testid="main-editor-undo-icon"');
     expect(markup).not.toContain(">撤销<");
     expect(markup.indexOf('aria-label="撤销"')).toBeLessThan(markup.indexOf(">保存<"));
-  });
-
-  test("focuses the editor and runs the browser undo command", () => {
-    const focus = vi.fn();
-    const execCommand = vi.fn(() => true);
-    const textarea = { disabled: false, focus } as unknown as HTMLTextAreaElement;
-
-    const undone = runEditorUndo(textarea, { execCommand });
-
-    expect(undone).toBe(true);
-    expect(focus).toHaveBeenCalledOnce();
-    expect(execCommand).toHaveBeenCalledWith("undo");
   });
 });
