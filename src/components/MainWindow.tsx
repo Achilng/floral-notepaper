@@ -310,11 +310,15 @@ export function MainWindow({
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
+  const saveStateRef = useRef(saveState);
+  saveStateRef.current = saveState;
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
     [notes, selectedId],
   );
+  const selectedNoteRef = useRef(selectedNote);
+  selectedNoteRef.current = selectedNote;
 
   const selectedExternalFile = useMemo(
     () => externalFiles.find((f) => f.id === selectedId) ?? null,
@@ -556,7 +560,19 @@ export function MainWindow({
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
       void refreshNotes().then((loaded) => {
-        if (selectedId && !loaded.some((n) => n.id === selectedId)) {
+        if (!selectedId) return;
+        const stillExists = loaded.some((n) => n.id === selectedId);
+        if (stillExists) {
+          if (saveStateRef.current !== "dirty") {
+            void getNote(selectedId)
+              .then((note) => {
+                setTitle(note.title);
+                setContent(note.content);
+                setSaveState("saved");
+              })
+              .catch(() => undefined);
+          }
+        } else if (selectedNoteRef.current) {
           if (loaded[0]) {
             void loadNote(loaded[0].id);
           } else {
@@ -569,6 +585,14 @@ export function MainWindow({
       void unlisten.then((fn) => fn());
     };
   }, [refreshNotes, selectedId, loadNote, clearCurrentNote]);
+
+  useEffect(() => {
+    function handleFocus() {
+      void refreshNotes();
+    }
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [refreshNotes]);
 
   useEffect(() => {
     const unlisten = listen<string>("open-external-file", (event) => {
