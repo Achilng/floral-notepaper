@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { MouseEvent } from "react";
-import { useMemo } from "react";
-import { useTranslation } from "react-i18next";
-import { createNote, getErrorMessage, getNote, listNotes, updateNote } from "../features/notes/api";
+import type { CSSProperties, MouseEvent } from "react";
+import {
+  createNote,
+  getErrorMessage,
+  getNote,
+  listNotes,
+  updateNote,
+} from "../features/notes/api";
 import type { Note, NoteMetadata } from "../features/notes/types";
 import {
   countNoteChars,
@@ -10,7 +14,7 @@ import {
   getDisplayTitle,
   metadataFromNote,
 } from "../features/notes/noteUtils";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   animateCurrentWindowBounds,
@@ -21,7 +25,7 @@ import {
   startCurrentWindowDrag,
   startCurrentWindowResize,
 } from "../features/windows/controls";
-import { openNoteInEditor } from "../features/windows/api";
+import { openMainWindow, openNoteInEditor } from "../features/windows/api";
 import type { ResizeDirection } from "../features/windows/controls";
 import { getConfig } from "../features/settings/api";
 import {
@@ -30,6 +34,7 @@ import {
   resolveTileColor,
 } from "../features/settings/tileColor";
 import type { TileColorMode } from "../features/settings/types";
+import type { AppConfig } from "../features/settings/types";
 import { shouldSaveBeforeSwitchingToTile } from "../features/windows/noteSurfaceSavePolicy";
 import {
   NOTE_SURFACE_ACTION_EVENT,
@@ -42,9 +47,31 @@ import {
 } from "../features/windows/surfaceMode";
 import type { NoteSurfaceMode } from "../features/windows/surfaceMode";
 import { Tile } from "./Tile";
+import { BackgroundLayer } from "./BackgroundLayer";
+import { ReminderAlert } from "./ReminderAlert";
+import { ReminderCountdownBadge } from "./ReminderCountdownBadge";
+import type { DueReminder, Reminder } from "../features/reminders/types";
+import {
+  loadReminders,
+  REMINDERS_CHANGED_EVENT,
+  saveReminders,
+  setReminderSurfaceMode,
+  clearReminderSurfaceMode,
+} from "../features/reminders/storage";
+import {
+  collectDueReminders,
+  completeReminder,
+  snoozeReminder,
+} from "../features/reminders/scheduler";
+import {
+  formatRemainingTime,
+  getActiveReminderForNote,
+  remainingSeconds,
+} from "../features/reminders/countdown";
+import { playReminderSound, stopReminderSound } from "../features/reminders/sound";
+import { showReminderNotification } from "../features/reminders/notifications";
 
 type OpenMode = "new" | "open";
-type NotePadStatus = "empty" | "opened" | "saved" | "dirty" | "saveFailed" | "copied";
 
 interface NotePadProps {
   initialNoteId?: string;
@@ -91,7 +118,9 @@ function SurfaceResizeHandles() {
           data-resize-direction={handle.direction}
           onMouseDown={(event) => {
             event.stopPropagation();
-            void startCurrentWindowResize(handle.direction).catch(() => undefined);
+            void startCurrentWindowResize(handle.direction).catch(
+              () => undefined,
+            );
           }}
           className={`absolute ${handle.size} opacity-0 ${handle.className}`}
         />
@@ -106,24 +135,29 @@ export function NotePad({
   initialAutoSave = true,
   initialTileColor = DEFAULT_TILE_COLOR,
 }: NotePadProps) {
-  const { t } = useTranslation();
-  const [surfaceMode, setSurfaceMode] = useState<NoteSurfaceMode>(initialSurfaceMode);
+  const [surfaceMode, setSurfaceMode] =
+    useState<NoteSurfaceMode>(initialSurfaceMode);
   const [mode, setMode] = useState<OpenMode>("new");
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [hoveredNote, setHoveredNote] = useState<string | null>(null);
-  const [status, setStatus] = useState<NotePadStatus>("empty");
+  const [status, setStatus] = useState("空");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] = useState(initialAutoSave);
-  const [tileColorRaw, setTileColorRaw] = useState(normalizeTileColor(initialTileColor));
+  const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] =
+    useState(initialAutoSave);
+  const [tileColorRaw, setTileColorRaw] = useState(
+    normalizeTileColor(initialTileColor),
+  );
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
   const [surfaceFontSize, setSurfaceFontSize] = useState(14);
-  const [tileRenderMarkdown, setTileRenderMarkdown] = useState(false);
+  const [surfaceConfig, setSurfaceConfig] = useState<AppConfig | null>(null);
   const [tileColor, setTileColor] = useState(() =>
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [now, setNow] = useState(Date.now());
   const [isExiting, setIsExiting] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const isStandby = useRef(
@@ -131,25 +165,34 @@ export function NotePad({
       new URLSearchParams(window.location.search).get("standby") === "1",
   );
   const hasEnteredOnce = useRef(false);
-  const statusLabel = useMemo<Record<NotePadStatus, string>>(
-    () => ({
-      empty: t("notepad.status.empty", { defaultValue: "空" }),
-      opened: t("notepad.status.opened", { defaultValue: "已打开" }),
-      saved: t("notepad.status.saved", { defaultValue: "已保存" }),
-      dirty: t("notepad.status.unsaved", { defaultValue: "未保存" }),
-      saveFailed: t("notepad.status.saveFailed", { defaultValue: "保存失败" }),
-      copied: t("notepad.status.copied", { defaultValue: "已复制" }),
-    }),
-    [t],
+  const reminderNoteIdRef = useRef<string | null>(initialNoteId ?? null);
+
+  const activeCountdown = getActiveReminderForNote(
+    reminders,
+    editingNoteId,
+    now,
   );
-  const tabLabels = useMemo(
-    () => ({
-      new: t("notepad.tab.new", { defaultValue: "新建" }),
-      edit: t("notepad.tab.edit", { defaultValue: "编辑" }),
-      open: t("notepad.tab.open", { defaultValue: "打开" }),
-    }),
-    [t],
-  );
+  const countdownText = activeCountdown
+    ? formatRemainingTime(remainingSeconds(activeCountdown.remindAt, now))
+    : null;
+  const dueReminder: DueReminder | null =
+    activeCountdown && new Date(activeCountdown.remindAt).getTime() <= now
+      ? {
+          reminder: activeCountdown,
+          missed: now - new Date(activeCountdown.remindAt).getTime() > 30_000,
+        }
+      : null;
+
+  useEffect(() => {
+    reminderNoteIdRef.current = editingNoteId ?? initialNoteId ?? null;
+  }, [editingNoteId, initialNoteId]);
+
+  useEffect(() => {
+    const noteId = editingNoteId ?? initialNoteId ?? null;
+    if (!noteId || isStandby.current) return;
+    setReminderSurfaceMode(noteId, surfaceMode === "tile" ? "tile" : "notepad");
+    return () => clearReminderSurfaceMode(noteId);
+  }, [editingNoteId, initialNoteId, surfaceMode]);
 
   const refreshNotes = useCallback(async () => {
     const loadedNotes = await listNotes();
@@ -162,7 +205,7 @@ export function NotePad({
     setTitle(note.title);
     setContent(note.content);
     setMode("new");
-    setStatus("opened");
+    setStatus("已打开");
   }, []);
 
   useEffect(() => {
@@ -172,13 +215,16 @@ export function NotePad({
       try {
         const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
         if (!cancelled) {
+          setSurfaceConfig(loadedConfig);
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
           setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
-          setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
           setTileColorRaw(normalizeTileColor(loadedConfig.tileColor));
           setTileColorMode(loadedConfig.tileColorMode ?? "system");
           setTileColor(
-            resolveTileColor(loadedConfig.tileColorMode ?? "system", loadedConfig.tileColor),
+            resolveTileColor(
+              loadedConfig.tileColorMode ?? "system",
+              loadedConfig.tileColor,
+            ),
           );
         }
         if (initialNoteId) {
@@ -206,6 +252,66 @@ export function NotePad({
   }, [refreshNotes]);
 
   useEffect(() => {
+    setReminders(loadReminders());
+    const interval = window.setInterval(() => {
+      setNow(Date.now());
+      if (isStandby.current) {
+        return;
+      }
+      const currentNoteId = reminderNoteIdRef.current;
+      if (!currentNoteId) return;
+      const { due, reminders: nextReminders } = collectDueReminders(
+        loadReminders().filter((reminder) => reminder.noteId === currentNoteId),
+      );
+      if (due.length > 0) {
+        const nextIds = new Map(nextReminders.map((reminder) => [reminder.id, reminder]));
+        const mergedReminders = loadReminders().map(
+          (reminder) => nextIds.get(reminder.id) ?? reminder,
+        );
+        saveReminders(mergedReminders);
+        due.forEach((item) => {
+          void showReminderNotification(item);
+        });
+        void playReminderSound(due[0].reminder);
+      }
+      setReminders(loadReminders());
+    }, 1000);
+    return () => {
+      window.clearInterval(interval);
+      void stopReminderSound();
+    };
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => setReminders(loadReminders());
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "floral-notepaper.reminders") refresh();
+    };
+    window.addEventListener(REMINDERS_CHANGED_EVENT, refresh);
+    window.addEventListener("storage", handleStorage);
+    const unlisten = listen("reminders-changed", refresh);
+    return () => {
+      window.removeEventListener(REMINDERS_CHANGED_EVENT, refresh);
+      window.removeEventListener("storage", handleStorage);
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const handleCompleteReminder = useCallback((id: string) => {
+    void stopReminderSound();
+    const next = completeReminder(loadReminders(), id);
+    saveReminders(next);
+    setReminders(next);
+  }, []);
+
+  const handleSnoozeReminder = useCallback((reminder: Reminder) => {
+    void stopReminderSound();
+    const next = snoozeReminder(loadReminders(), reminder, 5);
+    saveReminders(next);
+    setReminders(next);
+  }, []);
+
+  useEffect(() => {
     if (isStandby.current) return;
     let cancelled = false;
     requestAnimationFrame(() => {
@@ -228,16 +334,16 @@ export function NotePad({
       tileColor?: string;
       tileColorMode?: TileColorMode;
       surfaceFontSize?: number;
-      tileRenderMarkdown?: boolean;
-    }>("config-changed", (event) => {
+    } & Partial<AppConfig>>("config-changed", (event) => {
+      setSurfaceConfig((current) =>
+        current ? { ...current, ...event.payload } : current,
+      );
       const mode = event.payload.tileColorMode ?? tileColorMode;
       const raw = event.payload.tileColor ?? tileColorRaw;
       setTileColorMode(mode);
       setTileColorRaw(normalizeTileColor(raw));
       setTileColor(resolveTileColor(mode, raw));
       if (event.payload.surfaceFontSize != null) setSurfaceFontSize(event.payload.surfaceFontSize);
-      if (event.payload.tileRenderMarkdown != null)
-        setTileRenderMarkdown(event.payload.tileRenderMarkdown);
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -273,7 +379,7 @@ export function NotePad({
       setTitle("");
       setContent("");
       setMode("new");
-      setStatus("empty");
+      setStatus("空");
       setErrorMessage(null);
       setIsExiting(false);
       setSurfaceMode("pad");
@@ -301,9 +407,11 @@ export function NotePad({
       const next = exists
         ? current.map((item) => (item.id === note.id ? metadata : item))
         : [metadata, ...current];
-      return [...next].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      return [...next].sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      );
     });
-    setStatus("saved");
+    setStatus("已保存");
     return note;
   }, [content, editingNoteId, title]);
 
@@ -321,7 +429,9 @@ export function NotePad({
       }
 
       const currentBounds = await getCurrentWindowBounds();
-      await animateCurrentWindowBounds(getSurfaceTargetBounds(nextMode, currentBounds));
+      await animateCurrentWindowBounds(
+        getSurfaceTargetBounds(nextMode, currentBounds),
+      );
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
@@ -336,7 +446,10 @@ export function NotePad({
 
     window.addEventListener(NOTE_SURFACE_MODE_EVENT, handleSurfaceModeRequest);
     return () => {
-      window.removeEventListener(NOTE_SURFACE_MODE_EVENT, handleSurfaceModeRequest);
+      window.removeEventListener(
+        NOTE_SURFACE_MODE_EVENT,
+        handleSurfaceModeRequest,
+      );
     };
   }, [switchSurfaceMode]);
 
@@ -350,7 +463,7 @@ export function NotePad({
     try {
       await saveNote();
     } catch (error) {
-      setStatus("saveFailed");
+      setStatus("保存失败");
       setErrorMessage(getErrorMessage(error));
     }
   }, [saveNote]);
@@ -378,6 +491,20 @@ export function NotePad({
     }
   };
 
+  const handleOpenReminderCenter = useCallback(async () => {
+    setErrorMessage(null);
+    try {
+      if (editingNoteId) {
+        await openNoteInEditor(editingNoteId);
+      } else {
+        await openMainWindow();
+      }
+      await emit("open-reminder-panel", editingNoteId ?? null);
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+    }
+  }, [editingNoteId]);
+
   const handlePin = async () => {
     setErrorMessage(null);
     try {
@@ -391,6 +518,8 @@ export function NotePad({
   };
 
   const handleClose = useCallback(() => {
+    clearReminderSurfaceMode(reminderNoteIdRef.current);
+    void stopReminderSound();
     setIsExiting(true);
     void recycleCurrentNotepad().catch((error) => {
       setIsExiting(false);
@@ -403,14 +532,14 @@ export function NotePad({
     try {
       const clipboard = navigator.clipboard;
       if (!clipboard?.writeText) {
-        throw new Error(t("notepad.error.copyUnsupported", { defaultValue: "当前环境不支持复制" }));
+        throw new Error("当前环境不支持复制");
       }
       await clipboard.writeText(content);
-      setStatus("copied");
+      setStatus("已复制");
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
     }
-  }, [content, t]);
+  }, [content]);
 
   useEffect(() => {
     function handleSurfaceActionRequest(event: Event) {
@@ -435,14 +564,20 @@ export function NotePad({
       void switchSurfaceMode("pad");
     }
 
-    window.addEventListener(NOTE_SURFACE_ACTION_EVENT, handleSurfaceActionRequest);
+    window.addEventListener(
+      NOTE_SURFACE_ACTION_EVENT,
+      handleSurfaceActionRequest,
+    );
     return () => {
-      window.removeEventListener(NOTE_SURFACE_ACTION_EVENT, handleSurfaceActionRequest);
+      window.removeEventListener(
+        NOTE_SURFACE_ACTION_EVENT,
+        handleSurfaceActionRequest,
+      );
     };
   }, [copyTileContent, handleClose, handleSave, switchSurfaceMode]);
 
   useEffect(() => {
-    if (!noteSurfaceAutoSave || mode !== "new" || status !== "dirty") {
+    if (!noteSurfaceAutoSave || mode !== "new" || status !== "未保存") {
       return undefined;
     }
     if (!hasDraftContent()) return undefined;
@@ -456,7 +591,13 @@ export function NotePad({
 
   const handleDrag = (event: MouseEvent<HTMLElement>) => {
     const target = event.target as HTMLElement;
-    if (target.closest("button,input,textarea")) return;
+    if (
+      target.closest(
+        "button,input,textarea,[data-reminder-panel],[data-reminder-action]",
+      )
+    ) {
+      return;
+    }
     void startCurrentWindowDrag().catch(() => undefined);
   };
 
@@ -465,38 +606,148 @@ export function NotePad({
     setTitle("");
     setContent("");
     setMode("new");
-    setStatus("empty");
+    setStatus("空");
     setErrorMessage(null);
   };
 
   const isTile = surfaceMode === "tile";
   const tileNoteId = editingNoteId ?? initialNoteId ?? "";
   const tileTitle = title.trim();
+  const hasBackgroundImage = Boolean(surfaceConfig?.backgroundImagePath?.trim());
+  const surfacePanelStyle: CSSProperties =
+    tileColorMode === "custom"
+      ? {
+          backgroundColor: hasBackgroundImage
+            ? `${tileColor}dd`
+            : tileColor,
+          borderColor: `${tileColor}cc`,
+        }
+      : {};
+  const tileStyle: CSSProperties = hasBackgroundImage
+    ? { backgroundColor: `${tileColor}dd`, backdropFilter: "blur(1px)" }
+    : {};
   const enterClass = hasEnteredOnce.current ? "" : "animate-window-enter";
   const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : enterClass}`;
   const padSurfaceClassName =
-    "relative noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/70 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
+    "relative noise-bg w-full h-full min-h-0 bg-cloud/88 overflow-hidden flex flex-col flex-1 border border-paper-deep/40 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
 
   return (
-    <div className={surfaceWrapperClassName}>
+    <div className={`${surfaceWrapperClassName} relative`}>
+      <BackgroundLayer config={surfaceConfig} />
       {isTile ? (
         <Tile
           title={tileTitle || undefined}
           content={errorMessage || content}
           color={tileColor}
           fontSize={surfaceFontSize}
-          renderMarkdown={!errorMessage && tileRenderMarkdown}
           width="100%"
           className="h-full cursor-default"
+          style={tileStyle}
           data-surface-mode={surfaceMode}
           data-context-menu="tile"
           data-note-id={tileNoteId}
           onMouseDown={handleDrag}
         >
+          {dueReminder ? (
+            <div
+              data-reminder-action="true"
+              className="absolute inset-x-3 top-3 z-50 rounded-lg border border-paper-deep/35 bg-cloud/95 px-3 py-2.5 shadow-[0_8px_22px_rgba(26,26,24,0.14)] pointer-events-auto"
+              onPointerDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+              onMouseDown={(event) => {
+                event.preventDefault();
+                event.stopPropagation();
+              }}
+            >
+              <div className="flex items-center gap-1.5 text-[11px] font-mono text-bamboo tabular-nums">
+                <span aria-hidden="true">⏰</span>
+                <span className="min-w-0 truncate">
+                  {dueReminder.reminder.noteTitle?.trim() ||
+                    tileTitle ||
+                    countdownText ||
+                    "00:00:00"}
+                </span>
+              </div>
+              <div className="mt-1.5 flex items-center justify-end gap-1.5">
+                <div
+                  data-reminder-action="true"
+                  role="button"
+                  tabIndex={0}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onPointerUp={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleSnoozeReminder(dueReminder.reminder);
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleSnoozeReminder(dueReminder.reminder);
+                  }}
+                  className="h-8 min-w-12 px-2.5 flex items-center justify-center rounded-md border border-paper-deep/40 text-[11px] text-ink-faint hover:text-ink-soft hover:bg-paper-warm cursor-pointer select-none"
+                >
+                  稍后
+                </div>
+                <div
+                  data-reminder-action="true"
+                  role="button"
+                  tabIndex={0}
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onMouseDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onPointerUp={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleCompleteReminder(dueReminder.reminder.id);
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter" && event.key !== " ") return;
+                    event.preventDefault();
+                    event.stopPropagation();
+                    handleCompleteReminder(dueReminder.reminder.id);
+                  }}
+                  className="h-8 min-w-12 px-2.5 flex items-center justify-center rounded-md bg-bamboo text-[11px] text-cloud hover:bg-bamboo-light cursor-pointer select-none"
+                >
+                  确认
+                </div>
+              </div>
+            </div>
+          ) : countdownText ? (
+            <div className="absolute right-3 top-3 z-10">
+              <ReminderCountdownBadge value={countdownText} className="bg-cloud/85" />
+            </div>
+          ) : null}
           <SurfaceResizeHandles />
         </Tile>
       ) : (
-        <div className={padSurfaceClassName} data-surface-mode={surfaceMode}>
+        <div
+          className={padSurfaceClassName}
+          data-surface-mode={surfaceMode}
+          style={surfacePanelStyle}
+        >
           <>
             <div
               className="flex items-center justify-between px-4 pt-3 pb-0 cursor-default"
@@ -511,7 +762,7 @@ export function NotePad({
                       : "text-ink-ghost hover:text-ink-faint"
                   }`}
                 >
-                  {editingNoteId ? tabLabels.edit : tabLabels.new}
+                  {editingNoteId ? "编辑" : "新建"}
                   {mode === "new" && (
                     <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-bamboo rounded-full" />
                   )}
@@ -524,7 +775,7 @@ export function NotePad({
                       : "text-ink-ghost hover:text-ink-faint"
                   }`}
                 >
-                  {tabLabels.open}
+                  打开
                   {mode === "open" && (
                     <div className="absolute bottom-0 left-3 right-3 h-[2px] bg-bamboo rounded-full" />
                   )}
@@ -532,10 +783,32 @@ export function NotePad({
               </div>
 
               <div className="flex items-center gap-1.5">
+                {countdownText && (
+                  <ReminderCountdownBadge value={countdownText} />
+                )}
+                <button
+                  onClick={() => void handleOpenReminderCenter()}
+                  className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50"
+                  title="提醒中心"
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" />
+                    <path d="M10 21h4" />
+                  </svg>
+                </button>
                 <button
                   onClick={() => void handlePin()}
                   className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
-                  title={t("notepad.tooltip.pinToTile", { defaultValue: "转为磁贴" })}
+                  title="转为磁贴"
                 >
                   <svg
                     width="14"
@@ -555,7 +828,7 @@ export function NotePad({
                 <button
                   onClick={() => void handleClose()}
                   className="group w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:bg-danger-bg hover:text-red-400 transition-all duration-200 cursor-pointer"
-                  title={t("notepad.tooltip.close", { defaultValue: "关闭" })}
+                  title="关闭"
                 >
                   <svg
                     width="13"
@@ -584,9 +857,9 @@ export function NotePad({
                   value={title}
                   onChange={(event) => {
                     setTitle(event.target.value);
-                    setStatus("dirty");
+                    setStatus("未保存");
                   }}
-                  placeholder={t("notepad.placeholder.title", { defaultValue: "标题（可选）" })}
+                  placeholder="标题（可选）"
                   className="w-full font-display font-medium text-ink placeholder:text-ink-ghost/60 mb-2 tracking-wide shrink-0"
                   style={{ fontSize: `${surfaceFontSize}px` }}
                 />
@@ -596,30 +869,29 @@ export function NotePad({
                   value={content}
                   onChange={(event) => {
                     setContent(event.target.value);
-                    setStatus("dirty");
+                    setStatus("未保存");
                   }}
-                  placeholder={t("notepad.placeholder.content", { defaultValue: "写点什么……" })}
+                  placeholder="写点什么……"
                   className="w-full flex-1 min-h-0 pb-2 leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
                   style={{ fontSize: `${surfaceFontSize}px` }}
                 />
 
                 <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">
                   <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
-                    {errorMessage ??
-                      `${countNoteChars(content)} ${t("common.wordCountUnit", { defaultValue: "字" })} · ${statusLabel[status]}`}
+                    {errorMessage ?? `${countNoteChars(content)} 字 · ${status}`}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
                       onClick={resetDraft}
                       className="px-4 py-1.5 text-[12px] text-ink-faint hover:text-ink-soft rounded-lg hover:bg-paper-warm transition-all duration-200 cursor-pointer"
                     >
-                      {t("notepad.button.clear", { defaultValue: "清空" })}
+                      清空
                     </button>
                     <button
                       onClick={() => void handleSave()}
                       className="px-4 py-1.5 text-[12px] text-cloud bg-bamboo hover:bg-bamboo-light rounded-lg transition-all duration-200 font-medium cursor-pointer"
                     >
-                      {t("common.save", { defaultValue: "保存" })}
+                      保存
                     </button>
                   </div>
                 </div>
@@ -646,9 +918,7 @@ export function NotePad({
                               void openNoteInEditor(note.id);
                             }}
                             className="w-6 h-6 flex items-center justify-center rounded-md text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all duration-200 opacity-0 group-hover:opacity-100 cursor-pointer"
-                            title={t("notepad.tooltip.openInEditor", {
-                              defaultValue: "在编辑器中打开",
-                            })}
+                            title="在编辑器中打开"
                           >
                             <svg
                               width="13"
@@ -671,7 +941,7 @@ export function NotePad({
                         </div>
                       </div>
                       <p className="text-[12px] text-ink-ghost leading-relaxed line-clamp-1 group-hover:text-ink-faint transition-colors">
-                        {note.preview || t("common.blankNote", { defaultValue: "空白笔记" })}
+                        {note.preview || "空白笔记"}
                       </p>
                       {hoveredNote === note.id && (
                         <div className="mt-1.5 h-px bg-bamboo/10 transition-all duration-300" />
@@ -680,13 +950,23 @@ export function NotePad({
                   ))}
                   {notes.length === 0 && (
                     <div className="px-4 py-8 text-center text-[12px] text-ink-ghost">
-                      {t("notepad.emptyState", { defaultValue: "还没有可打开的笔记" })}
+                      还没有可打开的笔记
                     </div>
                   )}
                 </div>
               </div>
             )}
           </>
+          {dueReminder && (
+            <ReminderAlert
+              due={dueReminder}
+              inline
+              compact
+              onComplete={() => handleCompleteReminder(dueReminder.reminder.id)}
+              onSnooze={() => handleSnoozeReminder(dueReminder.reminder)}
+              onOpenNote={() => void handleOpenReminderCenter()}
+            />
+          )}
           <SurfaceResizeHandles />
         </div>
       )}

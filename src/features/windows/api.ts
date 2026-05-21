@@ -7,17 +7,31 @@ export interface WindowBounds {
   height: number;
 }
 
-export function openNotepadWindow(noteId?: string, bounds?: WindowBounds): Promise<string> {
+export function openNotepadWindow(
+  noteId?: string,
+  bounds?: WindowBounds,
+): Promise<string> {
   return invoke("open_notepad_window", {
     noteId: noteId ?? null,
     bounds: bounds ?? null,
   });
 }
 
-export function openTileWindow(noteId: string, bounds?: WindowBounds): Promise<string> {
+export function openTileWindow(
+  noteId: string,
+  bounds?: WindowBounds,
+): Promise<string> {
   return invoke("open_tile_window", { noteId, bounds: bounds ?? null });
 }
 
 export function openNoteInEditor(noteId: string): Promise<void> {
   return invoke("open_note_in_editor", { noteId });
+}
+
+export function openMainWindow(): Promise<void> {
+  return invoke("open_main_window");
+}
+
+export function openReminderAlarmWindow(reminderId: string): Promise<void> {
+  return invoke("open_reminder_alarm_window", { reminderId });
 }

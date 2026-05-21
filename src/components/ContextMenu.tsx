@@ -1,10 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { listen } from "@tauri-apps/api/event";
-import { getConfig } from "../features/settings/api";
-import type { AppConfig } from "../features/settings/types";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { requestSurfaceAction } from "../features/windows/surfaceActions";
-import { getTileContextMenuItems } from "../features/windows/tileContextMenu";
+import { tileContextMenuItems } from "../features/windows/tileContextMenu";
 
 interface MenuState {
   x: number;
@@ -14,32 +10,17 @@ interface MenuState {
 }
 
 export function ContextMenuProvider({ children }: { children: React.ReactNode }) {
-  const { t } = useTranslation();
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [menuClosing, setMenuClosing] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
-  const tileCtrlCloseRef = useRef(true);
-  const tileContextMenuItems = useMemo(() => getTileContextMenuItems(t), [t]);
-
-  useEffect(() => {
-    getConfig()
-      .then((c) => {
-        tileCtrlCloseRef.current = c.tileCtrlClose ?? true;
-      })
-      .catch(() => {});
-    const unlisten = listen<AppConfig>("config-changed", (event) => {
-      tileCtrlCloseRef.current = event.payload.tileCtrlClose ?? true;
-    });
-    return () => {
-      void unlisten.then((fn) => fn());
-    };
-  }, []);
 
   useEffect(() => {
     function handleContextMenu(event: MouseEvent) {
       const target = event.target as HTMLElement;
       const isEditable =
-        target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable;
+        target.tagName === "TEXTAREA" ||
+        target.tagName === "INPUT" ||
+        target.isContentEditable;
       const tileTarget = target.closest<HTMLElement>('[data-context-menu="tile"]');
 
       if (!isEditable && !tileTarget) {
@@ -49,7 +30,7 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
 
       event.preventDefault();
 
-      if (tileTarget && event.ctrlKey && tileCtrlCloseRef.current) {
+      if (tileTarget && event.ctrlKey) {
         requestSurfaceAction("close");
         return;
       }
@@ -113,51 +94,49 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     dismissMenu();
   };
 
-  const runSurfaceAction = (action: (typeof tileContextMenuItems)[number]["action"]) => {
+  const runSurfaceAction = (
+    action: (typeof tileContextMenuItems)[number]["action"],
+  ) => {
     requestSurfaceAction(action);
     dismissMenu();
   };
 
-  const items = useMemo(
-    () =>
-      menu
-        ? menu.type === "tile"
-          ? tileContextMenuItems.map((item) => ({
-              ...item,
-              shortcut: "",
-              action: () => runSurfaceAction(item.action),
-              disabled: false,
-            }))
-          : [
-              {
-                label: t("contextMenu.edit.cut", { defaultValue: "剪切" }),
-                shortcut: "Ctrl+X",
-                action: () => runCommand("cut"),
-                disabled: !menu.hasSelection,
-              },
-              {
-                label: t("contextMenu.edit.copy", { defaultValue: "复制" }),
-                shortcut: "Ctrl+C",
-                action: () => runCommand("copy"),
-                disabled: !menu.hasSelection,
-              },
-              {
-                label: t("contextMenu.edit.paste", { defaultValue: "粘贴" }),
-                shortcut: "Ctrl+V",
-                action: () => runCommand("paste"),
-                disabled: false,
-              },
-              { separator: true as const },
-              {
-                label: t("contextMenu.edit.selectAll", { defaultValue: "全选" }),
-                shortcut: "Ctrl+A",
-                action: () => runCommand("selectAll"),
-                disabled: false,
-              },
-            ]
-        : [],
-    [menu, runCommand, t, tileContextMenuItems],
-  );
+  const items = menu
+    ? menu.type === "tile"
+      ? tileContextMenuItems.map((item) => ({
+          ...item,
+          shortcut: "",
+          action: () => runSurfaceAction(item.action),
+          disabled: false,
+        }))
+      : [
+          {
+            label: "剪切",
+            shortcut: "Ctrl+X",
+            action: () => runCommand("cut"),
+            disabled: !menu.hasSelection,
+          },
+          {
+            label: "复制",
+            shortcut: "Ctrl+C",
+            action: () => runCommand("copy"),
+            disabled: !menu.hasSelection,
+          },
+          {
+            label: "粘贴",
+            shortcut: "Ctrl+V",
+            action: () => runCommand("paste"),
+            disabled: false,
+          },
+          { separator: true as const },
+          {
+            label: "全选",
+            shortcut: "Ctrl+A",
+            action: () => runCommand("selectAll"),
+            disabled: false,
+          },
+        ]
+    : [];
 
   return (
     <>

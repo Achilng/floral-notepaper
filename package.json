@@ -1,53 +1,37 @@
 {
   "name": "floral-notepaper",
-  "version": "1.0.4",
   "private": true,
+  "version": "1.0.2",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
     "test": "vitest run",
-    "lint": "oxlint",
-    "fmt": "oxfmt",
     "preview": "vite preview",
-    "tauri": "tauri",
-    "prepare": "husky"
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tanstack/react-hotkeys": "^0.10.0",
     "@tauri-apps/api": "~2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.0",
+    "@tauri-apps/plugin-notification": "^2.3.3",
     "@tauri-apps/plugin-opener": "^2",
     "chroma-js": "^3.2.0",
-    "i18next": "^26.2.0",
-    "katex": "^0.16.47",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
-    "react-i18next": "^17.0.8",
     "react-markdown": "^10.1.0",
-    "rehype-katex": "^7.0.1",
-    "remark-gfm": "^4.0.1",
-    "remark-math": "^6.0.0"
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.2.4",
     "@tauri-apps/cli": "^2",
     "@types/chroma-js": "^3.1.2",
-    "@types/katex": "^0.16.8",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
-    "husky": "^9.1.7",
-    "lint-staged": "^17.0.5",
-    "oxfmt": "^0.51.0",
-    "oxlint": "^1.66.0",
     "tailwindcss": "^4.2.4",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
     "vitest": "^4.0.0"
-  },
-  "lint-staged": {
-    "*.{ts,tsx,js,jsx,css,json,yml,yaml,html,md}": "oxfmt",
-    "src-tauri/**/*.rs": "cargo fmt --manifest-path src-tauri/Cargo.toml --"
   }
 }

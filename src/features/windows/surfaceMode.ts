@@ -24,7 +24,9 @@ export function getSurfaceTargetBounds(
 }
 
 export function requestSurfaceMode(mode: NoteSurfaceMode): void {
-  window.dispatchEvent(new CustomEvent(NOTE_SURFACE_MODE_EVENT, { detail: { mode } }));
+  window.dispatchEvent(
+    new CustomEvent(NOTE_SURFACE_MODE_EVENT, { detail: { mode } }),
+  );
 }
 
 export function surfaceModeFromEvent(event: Event): NoteSurfaceMode | null {

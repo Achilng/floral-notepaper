@@ -1,21 +1,168 @@
 pub mod desktop;
-pub mod locales;
 pub mod services;
 
-use locales::Locale;
+use rodio::{Decoder, OutputStream, Sink, Source};
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
-use std::path::PathBuf;
-use tauri::{AppHandle, Emitter};
+use std::{
+    fs::{self, File},
+    io::BufReader,
+    path::PathBuf,
+    sync::{
+        mpsc::{channel, Sender},
+        OnceLock,
+    },
+    thread,
+};
+use tauri::{AppHandle, Emitter, Manager};
+use tauri_plugin_dialog::{DialogExt, MessageDialogButtons, MessageDialogKind};
+
+struct ReminderAudio {
+    _stream: OutputStream,
+    sink: Sink,
+}
+
+enum ReminderAudioCommand {
+    Play(Option<String>, Sender<Result<(), String>>),
+    Stop(Sender<Result<(), String>>),
+}
+
+static REMINDER_AUDIO: OnceLock<Sender<ReminderAudioCommand>> = OnceLock::new();
+
+fn reminder_audio_sender() -> &'static Sender<ReminderAudioCommand> {
+    REMINDER_AUDIO.get_or_init(|| {
+        let (tx, rx) = channel::<ReminderAudioCommand>();
+        thread::spawn(move || {
+            let mut current: Option<ReminderAudio> = None;
+            while let Ok(command) = rx.recv() {
+                match command {
+                    ReminderAudioCommand::Play(path, reply) => {
+                        if let Some(audio) = current.take() {
+                            audio.sink.stop();
+                        }
+                        let result = start_reminder_audio(path).map(|audio| {
+                            current = Some(audio);
+                        });
+                        let _ = reply.send(result);
+                    }
+                    ReminderAudioCommand::Stop(reply) => {
+                        if let Some(audio) = current.take() {
+                            audio.sink.stop();
+                        }
+                        let _ = reply.send(Ok(()));
+                    }
+                }
+            }
+        });
+        tx
+    })
+}
+
+fn start_reminder_audio(path: Option<String>) -> Result<ReminderAudio, String> {
+    let (stream, handle) = OutputStream::try_default().map_err(|error| error.to_string())?;
+    let sink = Sink::try_new(&handle).map_err(|error| error.to_string())?;
+
+    if let Some(path) = path.filter(|value| !value.trim().is_empty()) {
+        let file = File::open(&path)
+            .map_err(|error| format!("failed to open ringtone {path}: {error}"))?;
+        let source = Decoder::new(BufReader::new(file))
+            .map_err(|error| format!("failed to decode ringtone {path}: {error}"))?;
+        sink.append(source.repeat_infinite());
+    } else {
+        sink.append(
+            rodio::source::SineWave::new(740.0)
+                .amplify(0.15)
+                .repeat_infinite(),
+        );
+    }
+
+    sink.play();
+    Ok(ReminderAudio {
+        _stream: stream,
+        sink,
+    })
+}
+
 
 #[tauri::command]
-fn app_name() -> Result<String, AppError> {
-    let locale = Locale::from_tag(&default_store()?.load_config()?.locale);
-    Ok(locales::app_name(locale).to_string())
+fn app_name() -> &'static str {
+    "花笺"
 }
 
 #[tauri::command]
 fn notes_list() -> Result<Vec<NoteMetadata>, AppError> {
     default_store()?.list_notes()
+}
+
+#[tauri::command]
+#[allow(dead_code)]
+fn reminder_system_alert(
+    app: AppHandle,
+    message: String,
+    note_title: Option<String>,
+    missed: bool,
+) -> Result<(), AppError> {
+    let title = if missed {
+        "错过的提醒"
+    } else {
+        "提醒时间到了"
+    };
+    let body = match note_title {
+        Some(note_title) if !note_title.trim().is_empty() => {
+            format!("{message}\n\n绑定笔记：{note_title}")
+        }
+        _ => message,
+    };
+
+    app.dialog()
+        .message(body)
+        .title(title)
+        .kind(MessageDialogKind::Info)
+        .buttons(MessageDialogButtons::Ok)
+        .show(|_| {});
+
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_reminder_sound() -> Result<(), AppError> {
+    let (reply_tx, reply_rx) = channel();
+    reminder_audio_sender()
+        .send(ReminderAudioCommand::Stop(reply_tx))
+        .map_err(|error| AppError {
+            code: "audioCommand".into(),
+            message: error.to_string(),
+        })?;
+    reply_rx
+        .recv()
+        .map_err(|error| AppError {
+            code: "audioCommand".into(),
+            message: error.to_string(),
+        })?
+        .map_err(|message| AppError {
+            code: "audioStop".into(),
+            message,
+        })
+}
+
+#[tauri::command]
+fn play_reminder_sound(path: Option<String>) -> Result<(), AppError> {
+    let (reply_tx, reply_rx) = channel();
+    reminder_audio_sender()
+        .send(ReminderAudioCommand::Play(path, reply_tx))
+        .map_err(|error| AppError {
+            code: "audioCommand".into(),
+            message: error.to_string(),
+        })?;
+    reply_rx
+        .recv()
+        .map_err(|error| AppError {
+            code: "audioCommand".into(),
+            message: error.to_string(),
+        })?
+        .map_err(|message| AppError {
+            code: "audioPlay".into(),
+            message,
+        })
 }
 
 #[tauri::command]
@@ -45,13 +192,8 @@ fn notes_delete(app: AppHandle, id: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_import_markdown(
-    app: AppHandle,
-    path: String,
-    category: Option<String>,
-) -> Result<Note, AppError> {
-    let note = default_store()?
-        .import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
+fn notes_import_markdown(app: AppHandle, path: String, category: Option<String>) -> Result<Note, AppError> {
+    let note = default_store()?.import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
     let _ = app.emit("notes-changed", ());
     Ok(note)
 }
@@ -66,7 +208,6 @@ fn read_external_file(path: String) -> Result<String, AppError> {
     std::fs::read_to_string(&path).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
-        details: Default::default(),
     })
 }
 
@@ -75,12 +216,10 @@ fn get_file_modified_time(path: String) -> Result<f64, AppError> {
     let metadata = std::fs::metadata(&path).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
-        details: Default::default(),
     })?;
     let modified = metadata.modified().map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
-        details: Default::default(),
     })?;
     let duration = modified
         .duration_since(std::time::UNIX_EPOCH)
@@ -94,13 +233,11 @@ fn save_external_file(path: String, content: String) -> Result<(), AppError> {
         std::fs::create_dir_all(parent).map_err(|e| AppError {
             code: "io".into(),
             message: e.to_string(),
-            details: Default::default(),
         })?;
     }
     std::fs::write(&path, content).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
-        details: Default::default(),
     })
 }
 
@@ -131,11 +268,7 @@ fn categories_delete(app: AppHandle, name: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_move_category(
-    app: AppHandle,
-    id: String,
-    category: String,
-) -> Result<NoteMetadata, AppError> {
+fn notes_move_category(app: AppHandle, id: String, category: String) -> Result<NoteMetadata, AppError> {
     let result = default_store()?.move_note_to_category(&id, &category)?;
     let _ = app.emit("notes-changed", ());
     Ok(result)
@@ -147,25 +280,49 @@ fn config_get() -> Result<AppConfig, AppError> {
 }
 
 #[tauri::command]
+fn copy_background_image(app: AppHandle, source_path: String) -> Result<String, AppError> {
+    let source = PathBuf::from(source_path.trim());
+    if !source.is_file() {
+        return Err(AppError {
+            code: "invalidSource".into(),
+            message: "background image source not found".into(),
+        });
+    }
+
+    let app_data = app.path().app_data_dir().map_err(|error| AppError {
+        code: "path".into(),
+        message: error.to_string(),
+    })?;
+    let dir = app_data.join("backgrounds");
+    fs::create_dir_all(&dir)?;
+
+    let ext = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("png");
+    let dest = dir.join(format!("bg-{}.{}", uuid::Uuid::new_v4(), ext));
+    fs::copy(&source, &dest)?;
+
+    dest.to_str()
+        .map(str::to_string)
+        .ok_or_else(|| AppError {
+            code: "path".into(),
+            message: "invalid destination path".into(),
+        })
+}
+
+#[tauri::command]
 fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError> {
     let store = default_store()?;
     let previous = store.load_config()?;
-    desktop::apply_runtime_config(&app, &previous, &config).map_err(|error| {
-        match error.downcast::<AppError>() {
-            Ok(app_error) => *app_error,
-            Err(error) => AppError {
-                code: "desktopConfig".into(),
-                message: error.to_string(),
-                details: Default::default(),
-            },
-        }
+    desktop::apply_runtime_config(&app, &previous, &config).map_err(|error| AppError {
+        code: "desktopConfig".into(),
+        message: error.to_string(),
     })?;
-    let saved = store.save_config(config)?;
-    if let Err(error) = desktop::refresh_shell_state(&app, &saved) {
-        eprintln!("failed to refresh desktop shell state: {error}");
-    }
-    let _ = app.emit("config-changed", &saved);
-    Ok(saved)
+    store.save_config(config.clone())?;
+    let _ = app.emit("config-changed", &config);
+    Ok(config)
 }
 
 #[tauri::command]
@@ -192,17 +349,39 @@ async fn open_tile_window(
 }
 
 #[tauri::command]
+async fn open_reminder_alarm_window(
+    app: AppHandle,
+    reminder_id: String,
+) -> Result<String, AppError> {
+    desktop::open_reminder_alarm_window(app, reminder_id).await
+}
+
+#[tauri::command]
 async fn open_note_in_editor(app: AppHandle, note_id: String) -> Result<(), AppError> {
     desktop::show_main_window(&app)?;
     let _ = app.emit("open-note", &note_id);
     Ok(())
 }
 
+#[tauri::command]
+async fn open_main_window(app: AppHandle) -> Result<(), AppError> {
+    desktop::show_main_window(&app)?;
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.unminimize();
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(file_path) = desktop::extract_file_arg(&args) {
                 let _ = app.emit("open-external-file", file_path);
@@ -216,6 +395,8 @@ pub fn run() {
         .on_window_event(desktop::handle_window_event)
         .invoke_handler(tauri::generate_handler![
             app_name,
+            play_reminder_sound,
+            stop_reminder_sound,
             notes_list,
             notes_get,
             notes_create,
@@ -233,10 +414,13 @@ pub fn run() {
             categories_delete,
             config_get,
             config_save,
+            copy_background_image,
             open_notepad_window,
             recycle_notepad_window,
             open_tile_window,
-            open_note_in_editor
+            open_reminder_alarm_window,
+            open_note_in_editor,
+            open_main_window
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

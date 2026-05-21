@@ -1,9 +1,9 @@
 import { describe, expect, test } from "vitest";
-import { getTileContextMenuItems } from "./tileContextMenu";
+import { tileContextMenuItems } from "./tileContextMenu";
 
-describe("getTileContextMenuItems", () => {
+describe("tileContextMenuItems", () => {
   test("offers useful tile actions", () => {
-    expect(getTileContextMenuItems()).toEqual([
+    expect(tileContextMenuItems).toEqual([
       { action: "copy", label: "复制" },
       { action: "save", label: "保存" },
       { action: "switchToPad", label: "转为小窗" },

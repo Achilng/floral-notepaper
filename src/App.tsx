@@ -3,12 +3,12 @@ import "./App.css";
 import { ContextMenuProvider } from "./components/ContextMenu";
 import { MainWindow } from "./components/MainWindow";
 import { NotePad } from "./components/NotePad";
+import { ReminderAlarmWindow } from "./components/ReminderAlarmWindow";
 import { TileShowcase } from "./components/TileShowcase";
 import { getConfig } from "./features/settings/api";
 import { applyTheme, watchSystemTheme } from "./features/settings/theme";
 import type { AppConfig, ThemeOption } from "./features/settings/types";
 import { getInitialRoute } from "./features/windows/windowRoutes";
-import { syncLanguage } from "./locales";
 import { listen } from "@tauri-apps/api/event";
 
 function App() {
@@ -22,7 +22,6 @@ function App() {
         const theme = (config.theme || "system") as ThemeOption;
         applyTheme(theme);
         cleanup = watchSystemTheme(theme);
-        void syncLanguage(config.locale);
       })
       .catch(() => {});
     return () => cleanup();
@@ -33,7 +32,6 @@ function App() {
       const theme = (event.payload.theme || "system") as ThemeOption;
       applyTheme(theme);
       watchSystemTheme(theme);
-      void syncLanguage(event.payload.locale);
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -47,7 +45,8 @@ function App() {
       }
     };
     document.addEventListener("keydown", preventSystemMenu, true);
-    return () => document.removeEventListener("keydown", preventSystemMenu, true);
+    return () =>
+      document.removeEventListener("keydown", preventSystemMenu, true);
   }, []);
 
   return (
@@ -57,8 +56,10 @@ function App() {
           <MainWindow />
         ) : activeView === "notepad" ? (
           <NotePad initialNoteId={route.noteId} />
-        ) : (
+        ) : activeView === "tile" ? (
           <TileShowcase noteId={route.noteId} />
+        ) : (
+          <ReminderAlarmWindow reminderId={route.reminderId ?? ""} />
         )}
       </div>
     </ContextMenuProvider>

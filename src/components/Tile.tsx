@@ -1,20 +1,18 @@
 import chroma from "chroma-js";
 import type { CSSProperties, HTMLAttributes } from "react";
-import { useTranslation } from "react-i18next";
-import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
-import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
+import {
+  DEFAULT_TILE_COLOR,
+  normalizeTileColor,
+} from "../features/settings/tileColor";
 
-export interface TileProps extends Omit<
-  HTMLAttributes<HTMLDivElement>,
-  "color" | "content" | "title"
-> {
+export interface TileProps
+  extends Omit<HTMLAttributes<HTMLDivElement>, "color" | "content" | "title"> {
   title?: string;
   content: string;
   color?: string;
   width?: number | string;
   rotation?: number;
   fontSize?: number;
-  renderMarkdown?: boolean;
 }
 
 const MARK_SIZE = 8;
@@ -73,17 +71,15 @@ export function Tile({
   width = 260,
   rotation = 0,
   fontSize = 14,
-  renderMarkdown = false,
   className = "",
   style,
   children,
   ...divProps
 }: TileProps) {
-  const { t } = useTranslation();
   const tileColor = normalizeTileColor(color);
   const isLightBg = chroma(tileColor).luminance() > 0.18;
   const mixTarget = isLightBg ? "#1a1a18" : "#ffffff";
-  const borderColor = chroma.mix(tileColor, mixTarget, 0.18).alpha(0.55).css();
+  const borderColor = chroma.mix(tileColor, mixTarget, 0.18).alpha(0.3).css();
   const cornerColor = chroma.mix(tileColor, mixTarget, 0.3).alpha(0.26).css();
   const titleColor = chroma.mix(tileColor, mixTarget, 0.4).alpha(0.5).css();
   const contentColor = chroma.mix(tileColor, mixTarget, 0.65).alpha(0.85).css();
@@ -105,32 +101,17 @@ export function Tile({
     >
       <div className="px-4 pt-4 pb-4 h-full overflow-y-auto scrollbar-hidden">
         {title && (
-          <div
-            className="font-display tracking-wide mb-3 leading-snug"
-            style={{ color: titleColor, fontSize: `${fontSize + 1}px` }}
-          >
+          <div className="font-display tracking-wide mb-3 leading-snug" style={{ color: titleColor, fontSize: `${fontSize + 1}px` }}>
             {title}
           </div>
         )}
         {content ? (
-          renderMarkdown ? (
-            <div style={{ color: contentColor }}>
-              <MarkdownPreview content={content} fontSize={fontSize} />
-            </div>
-          ) : (
-            <div
-              className="leading-[1.8] whitespace-pre-wrap font-body"
-              style={{ color: contentColor, fontSize: `${fontSize}px` }}
-            >
-              {content}
-            </div>
-          )
+          <div className="leading-[1.8] whitespace-pre-wrap font-body" style={{ color: contentColor, fontSize: `${fontSize}px` }}>
+            {content}
+          </div>
         ) : (
-          <div
-            className="font-body text-center py-6"
-            style={{ color: emptyColor, fontSize: `${fontSize}px` }}
-          >
-            {t("tile.empty", { defaultValue: "空" })}
+          <div className="font-body text-center py-6" style={{ color: emptyColor, fontSize: `${fontSize}px` }}>
+            空
           </div>
         )}
       </div>
@@ -140,3 +121,4 @@ export function Tile({
     </div>
   );
 }
+

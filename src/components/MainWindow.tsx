@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
-import type { TFunction } from "i18next";
-import { useTranslation } from "react-i18next";
 import { emit, listen } from "@tauri-apps/api/event";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
@@ -13,7 +11,10 @@ import {
 } from "../features/settings/api";
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
+import { BackgroundLayer } from "./BackgroundLayer";
 import { SettingsPanel } from "./SettingsPanel";
+import { ReminderCountdownBadge } from "./ReminderCountdownBadge";
+import { ReminderPanel } from "./ReminderPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
   createNote,
@@ -43,10 +44,36 @@ import {
 } from "../features/notes/noteUtils";
 import type { CategoryGroup } from "../features/notes/noteUtils";
 import {
-  getNoteContextMenuItems,
+  noteContextMenuItems,
   type NoteContextMenuAction,
 } from "../features/notes/noteContextMenu";
-import { openNotepadWindow, openTileWindow } from "../features/windows/api";
+import {
+  openNotepadWindow,
+  openReminderAlarmWindow,
+  openTileWindow,
+} from "../features/windows/api";
+import type { BoundReminderNote, Reminder } from "../features/reminders/types";
+import {
+  deleteReminder,
+  getReminderSurfaceMode,
+  loadReminders,
+  REMINDERS_CHANGED_EVENT,
+  saveReminders,
+  upsertReminder,
+} from "../features/reminders/storage";
+import {
+  collectDueReminders,
+  completeReminder,
+  REMINDER_CHECK_INTERVAL_MS,
+  snoozeReminder,
+} from "../features/reminders/scheduler";
+import { playReminderSound, stopReminderSound } from "../features/reminders/sound";
+import {
+  formatRemainingTime,
+  getActiveReminderForNote,
+  remainingSeconds,
+} from "../features/reminders/countdown";
+import { showReminderNotification } from "../features/reminders/notifications";
 import {
   closeCurrentWindow,
   minimizeCurrentWindow,
@@ -69,22 +96,30 @@ interface CategoryMenuState {
   category: string;
 }
 
-type FormatAction =
-  | "bold"
-  | "italic"
-  | "heading"
-  | "hr"
-  | "ul"
-  | "ol"
-  | "code"
-  | "quote"
-  | "inlineMath"
-  | "blockMath";
+const saveStateLabel: Record<SaveState, string> = {
+  idle: "未选择",
+  dirty: "未保存",
+  saving: "保存中",
+  saved: "已保存",
+  error: "保存失败",
+};
+
+type FormatAction = "bold" | "italic" | "heading" | "hr" | "ul" | "ol" | "code" | "quote";
+
+const toolbarButtons: { label: string; title: string; style: string; action: FormatAction }[] = [
+  { label: "B", title: "粗体", style: "font-bold", action: "bold" },
+  { label: "I", title: "斜体", style: "italic", action: "italic" },
+  { label: "H", title: "标题", style: "font-bold", action: "heading" },
+  { label: "—", title: "分割线", style: "", action: "hr" },
+  { label: "•", title: "无序列表", style: "", action: "ul" },
+  { label: "1.", title: "有序列表", style: "font-mono text-[9px]", action: "ol" },
+  { label: "<>", title: "代码", style: "font-mono text-[9px]", action: "code" },
+  { label: "❝", title: "引用", style: "", action: "quote" },
+];
 
 function applyFormat(
   textarea: HTMLTextAreaElement,
   action: FormatAction,
-  translate: TFunction,
   setContent: (v: string) => void,
   markDirty: () => void,
 ) {
@@ -102,19 +137,17 @@ function applyFormat(
 
   switch (action) {
     case "bold": {
-      const fallback = translate("main.formatSample.boldText", { defaultValue: "粗体文本" });
-      const wrapped = `**${selected || fallback}**`;
+      const wrapped = `**${selected || "粗体文本"}**`;
       result = before + wrapped + after;
       cursorStart = start + 2;
-      cursorEnd = cursorStart + (selected || fallback).length;
+      cursorEnd = cursorStart + (selected || "粗体文本").length;
       break;
     }
     case "italic": {
-      const fallback = translate("main.formatSample.italicText", { defaultValue: "斜体文本" });
-      const wrapped = `*${selected || fallback}*`;
+      const wrapped = `*${selected || "斜体文本"}*`;
       result = before + wrapped + after;
       cursorStart = start + 1;
-      cursorEnd = cursorStart + (selected || fallback).length;
+      cursorEnd = cursorStart + (selected || "斜体文本").length;
       break;
     }
     case "heading": {
@@ -136,10 +169,7 @@ function applyFormat(
         cursorStart = start + 3;
         cursorEnd = cursorStart + selected.length;
       } else {
-        result =
-          before +
-          `## ${translate("main.formatSample.headingText", { defaultValue: "标题" })}` +
-          after;
+        result = before + "## 标题" + after;
         cursorStart = start + 3;
         cursorEnd = cursorStart + 2;
       }
@@ -154,37 +184,29 @@ function applyFormat(
     }
     case "ul": {
       if (selected.includes("\n")) {
-        const lines = selected
-          .split("\n")
-          .map((l) => `- ${l}`)
-          .join("\n");
+        const lines = selected.split("\n").map((l) => `- ${l}`).join("\n");
         result = before + lines + after;
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const fallback = translate("main.formatSample.listItem", { defaultValue: "列表项" });
-        const item = `- ${selected || fallback}`;
+        const item = `- ${selected || "列表项"}`;
         result = before + item + after;
         cursorStart = start + 2;
-        cursorEnd = cursorStart + (selected || fallback).length;
+        cursorEnd = cursorStart + (selected || "列表项").length;
       }
       break;
     }
     case "ol": {
       if (selected.includes("\n")) {
-        const lines = selected
-          .split("\n")
-          .map((l, i) => `${i + 1}. ${l}`)
-          .join("\n");
+        const lines = selected.split("\n").map((l, i) => `${i + 1}. ${l}`).join("\n");
         result = before + lines + after;
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const fallback = translate("main.formatSample.listItem", { defaultValue: "列表项" });
-        const item = `1. ${selected || fallback}`;
+        const item = `1. ${selected || "列表项"}`;
         result = before + item + after;
         cursorStart = start + 3;
-        cursorEnd = cursorStart + (selected || fallback).length;
+        cursorEnd = cursorStart + (selected || "列表项").length;
       }
       break;
     }
@@ -195,44 +217,25 @@ function applyFormat(
         cursorStart = start + 4;
         cursorEnd = cursorStart + selected.length;
       } else {
-        const fallback = translate("main.formatSample.codeText", { defaultValue: "代码" });
-        const wrapped = `\`${selected || fallback}\``;
+        const wrapped = `\`${selected || "代码"}\``;
         result = before + wrapped + after;
         cursorStart = start + 1;
-        cursorEnd = cursorStart + (selected || fallback).length;
+        cursorEnd = cursorStart + (selected || "代码").length;
       }
       break;
     }
     case "quote": {
       if (selected.includes("\n")) {
-        const lines = selected
-          .split("\n")
-          .map((l) => `> ${l}`)
-          .join("\n");
+        const lines = selected.split("\n").map((l) => `> ${l}`).join("\n");
         result = before + lines + after;
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const fallback = translate("main.formatSample.quoteText", { defaultValue: "引用文本" });
-        const item = `> ${selected || fallback}`;
+        const item = `> ${selected || "引用文本"}`;
         result = before + item + after;
         cursorStart = start + 2;
-        cursorEnd = cursorStart + (selected || fallback).length;
+        cursorEnd = cursorStart + (selected || "引用文本").length;
       }
-      break;
-    }
-    case "inlineMath": {
-      const wrapped = `$${selected || "E=mc^2"}$`;
-      result = before + wrapped + after;
-      cursorStart = start + 1;
-      cursorEnd = cursorStart + (selected || "E=mc^2").length;
-      break;
-    }
-    case "blockMath": {
-      const wrapped = `\n$$\n${selected || "x^2 + y^2 = r^2"}\n$$\n`;
-      result = before + wrapped + after;
-      cursorStart = start + 4;
-      cursorEnd = cursorStart + (selected || "x^2 + y^2 = r^2").length;
       break;
     }
   }
@@ -265,7 +268,6 @@ export function MainWindow({
   initialSettingsOpen = false,
   initialConfig = undefined,
 }: MainWindowProps = {}) {
-  const { t } = useTranslation();
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
   const [externalFiles, setExternalFiles] = useState<ExternalFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -283,7 +285,12 @@ export function MainWindow({
   const [noteMenu, setNoteMenu] = useState<NoteMenuState | null>(null);
   const [noteMenuClosing, setNoteMenuClosing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
-  const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(initialConfig ?? null);
+  const [reminderPanelOpen, setReminderPanelOpen] = useState(false);
+  const [reminders, setReminders] = useState<Reminder[]>([]);
+  const [reminderNow, setReminderNow] = useState(Date.now());
+  const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(
+    initialConfig ?? null,
+  );
   const [savedNotesDir, setSavedNotesDir] = useState<string | null>(
     initialConfig?.notesDir ?? null,
   );
@@ -301,24 +308,17 @@ export function MainWindow({
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
-  const [splitRatio, setSplitRatio] = useState(0.5);
-  const [isResizingSplit, setIsResizingSplit] = useState(false);
-  const splitContainerRef = useRef<HTMLDivElement>(null);
   const [categoryMenu, setCategoryMenu] = useState<CategoryMenuState | null>(null);
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
-  const saveStateRef = useRef(saveState);
-  saveStateRef.current = saveState;
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
     [notes, selectedId],
   );
-  const selectedNoteRef = useRef(selectedNote);
-  selectedNoteRef.current = selectedNote;
 
   const selectedExternalFile = useMemo(
     () => externalFiles.find((f) => f.id === selectedId) ?? null,
@@ -327,107 +327,36 @@ export function MainWindow({
 
   const isExternal = selectedExternalFile !== null;
 
+  const boundReminderNote = useMemo<BoundReminderNote | null>(() => {
+    if (!selectedNote || isExternal) return null;
+    return {
+      id: selectedNote.id,
+      title: title.trim() || getDisplayTitle(selectedNote),
+    };
+  }, [isExternal, selectedNote, title]);
+
+  const activeNoteReminder = useMemo(
+    () =>
+      getActiveReminderForNote(
+        reminders,
+        boundReminderNote?.id ?? null,
+        reminderNow,
+      ),
+    [boundReminderNote?.id, reminderNow, reminders],
+  );
+  const activeNoteReminderText = activeNoteReminder
+    ? formatRemainingTime(remainingSeconds(activeNoteReminder.remindAt, reminderNow))
+    : null;
+
   const noteMenuTarget = useMemo(
     () => notes.find((note) => note.id === noteMenu?.noteId) ?? null,
     [noteMenu?.noteId, notes],
   );
-  const noteContextMenuItems = useMemo(() => getNoteContextMenuItems(t), [t]);
-  const saveStateLabel = useMemo<Record<SaveState, string>>(
-    () => ({
-      idle: t("main.statusBar.saveState.idle", { defaultValue: "未选择" }),
-      dirty: t("main.statusBar.saveState.dirty", { defaultValue: "未保存" }),
-      saving: t("main.statusBar.saveState.saving", { defaultValue: "保存中" }),
-      saved: t("main.statusBar.saveState.saved", { defaultValue: "已保存" }),
-      error: t("main.statusBar.saveState.error", { defaultValue: "保存失败" }),
-    }),
-    [t],
-  );
-  const toolbarButtons = useMemo<
-    { label: string; title: string; style: string; action: FormatAction }[]
-  >(
-    () => [
-      {
-        label: "B",
-        title: t("main.toolbar.bold", { defaultValue: "粗体" }),
-        style: "font-bold",
-        action: "bold",
-      },
-      {
-        label: "I",
-        title: t("main.toolbar.italic", { defaultValue: "斜体" }),
-        style: "italic",
-        action: "italic",
-      },
-      {
-        label: "H",
-        title: t("main.toolbar.heading", { defaultValue: "标题" }),
-        style: "font-bold",
-        action: "heading",
-      },
-      {
-        label: "—",
-        title: t("main.toolbar.hr", { defaultValue: "分割线" }),
-        style: "",
-        action: "hr",
-      },
-      {
-        label: "•",
-        title: t("main.toolbar.ul", { defaultValue: "无序列表" }),
-        style: "",
-        action: "ul",
-      },
-      {
-        label: "1.",
-        title: t("main.toolbar.ol", { defaultValue: "有序列表" }),
-        style: "font-mono text-[9px]",
-        action: "ol",
-      },
-      {
-        label: "<>",
-        title: t("main.toolbar.code", { defaultValue: "代码" }),
-        style: "font-mono text-[9px]",
-        action: "code",
-      },
-      {
-        label: "❝",
-        title: t("main.toolbar.quote", { defaultValue: "引用" }),
-        style: "",
-        action: "quote",
-      },
-      {
-        label: "∑",
-        title: t("main.toolbar.inlineMath", { defaultValue: "行内公式" }),
-        style: "font-mono text-[11px]",
-        action: "inlineMath",
-      },
-      {
-        label: "∫",
-        title: t("main.toolbar.blockMath", { defaultValue: "块级公式" }),
-        style: "font-mono text-[11px]",
-        action: "blockMath",
-      },
-    ],
-    [t],
-  );
-  const viewModeOptions = useMemo(
-    () => [
-      {
-        value: "edit" as ViewMode,
-        label: t("settings.defaultView.edit", { defaultValue: "编辑" }),
-      },
-      {
-        value: "split" as ViewMode,
-        label: t("settings.defaultView.split", { defaultValue: "分栏" }),
-      },
-      {
-        value: "preview" as ViewMode,
-        label: t("settings.defaultView.preview", { defaultValue: "预览" }),
-      },
-    ],
-    [t],
-  );
 
-  const filteredNotes = useMemo(() => filterNotes(notes, searchQuery), [notes, searchQuery]);
+  const filteredNotes = useMemo(
+    () => filterNotes(notes, searchQuery),
+    [notes, searchQuery],
+  );
 
   const categoryGroups = useMemo(
     () => groupNotesByCategory(filteredNotes, categories),
@@ -457,7 +386,9 @@ export function MainWindow({
       const next = exists
         ? current.map((item) => (item.id === metadata.id ? metadata : item))
         : [metadata, ...current];
-      return [...next].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
+      return [...next].sort((left, right) =>
+        right.updatedAt.localeCompare(left.updatedAt),
+      );
     });
   }, []);
 
@@ -472,7 +403,10 @@ export function MainWindow({
   );
 
   const refreshNotes = useCallback(async () => {
-    const [loadedNotes, loadedCategories] = await Promise.all([listNotes(), listCategories()]);
+    const [loadedNotes, loadedCategories] = await Promise.all([
+      listNotes(),
+      listCategories(),
+    ]);
     setNotes(loadedNotes);
     setCategories(loadedCategories);
     return loadedNotes;
@@ -493,7 +427,7 @@ export function MainWindow({
         getFileModifiedTime(filePath),
       ]);
       const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
-      const displayTitle = fileName.replace(/\.(md|txt)$/i, "");
+      const displayTitle = fileName.replace(/\.md$/i, "");
 
       setExternalFiles((current) => {
         if (current.some((f) => f.id === filePath)) {
@@ -560,19 +494,7 @@ export function MainWindow({
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
       void refreshNotes().then((loaded) => {
-        if (!selectedId) return;
-        const stillExists = loaded.some((n) => n.id === selectedId);
-        if (stillExists) {
-          if (saveStateRef.current !== "dirty") {
-            void getNote(selectedId)
-              .then((note) => {
-                setTitle(note.title);
-                setContent(note.content);
-                setSaveState("saved");
-              })
-              .catch(() => undefined);
-          }
-        } else if (selectedNoteRef.current) {
+        if (selectedId && !loaded.some((n) => n.id === selectedId)) {
           if (loaded[0]) {
             void loadNote(loaded[0].id);
           } else {
@@ -585,14 +507,6 @@ export function MainWindow({
       void unlisten.then((fn) => fn());
     };
   }, [refreshNotes, selectedId, loadNote, clearCurrentNote]);
-
-  useEffect(() => {
-    function handleFocus() {
-      void refreshNotes();
-    }
-    window.addEventListener("focus", handleFocus);
-    return () => window.removeEventListener("focus", handleFocus);
-  }, [refreshNotes]);
 
   useEffect(() => {
     const unlisten = listen<string>("open-external-file", (event) => {
@@ -611,6 +525,17 @@ export function MainWindow({
       void unlisten.then((fn) => fn());
     };
   }, [loadNote]);
+
+  useEffect(() => {
+    const unlisten = listen("open-reminder-panel", () => {
+      setSettingsOpen(false);
+      setReminderPanelOpen(true);
+      setReminders(loadReminders());
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     if (!selectedExternalFile) return;
@@ -704,15 +629,7 @@ export function MainWindow({
       setErrorMessage(getErrorMessage(error));
       return null;
     }
-  }, [
-    content,
-    isExternal,
-    replaceNoteMetadata,
-    selectedExternalFile,
-    selectedId,
-    selectedNote,
-    title,
-  ]);
+  }, [content, isExternal, replaceNoteMetadata, selectedExternalFile, selectedId, selectedNote, title]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -739,14 +656,7 @@ export function MainWindow({
     }, 900);
 
     return () => window.clearTimeout(timer);
-  }, [
-    isExternal,
-    saveCurrentNote,
-    saveState,
-    selectedId,
-    settingsConfig?.noteAutoSave,
-    settingsConfig?.externalFileAutoSave,
-  ]);
+  }, [isExternal, saveCurrentNote, saveState, selectedId, settingsConfig?.noteAutoSave, settingsConfig?.externalFileAutoSave]);
 
   const handleNewNote = async () => {
     setErrorMessage(null);
@@ -764,6 +674,7 @@ export function MainWindow({
       setSettingsOpen(false);
       return;
     }
+    setReminderPanelOpen(false);
     setSettingsOpen(true);
     if (settingsConfig) return;
 
@@ -840,6 +751,96 @@ export function MainWindow({
     setSettingsOpen(false);
   }, []);
 
+  const handleOpenReminderPanel = useCallback(() => {
+    setSettingsOpen(false);
+    setReminderPanelOpen((open) => !open);
+  }, []);
+
+  const processReminderSnapshot = useCallback((source: Reminder[]) => {
+    const { due, reminders: nextReminders } = collectDueReminders(source);
+    if (due.length > 0) {
+      due.forEach((item) => {
+        void showReminderNotification(item);
+        if (!getReminderSurfaceMode(item.reminder.noteId)) {
+          void openReminderAlarmWindow(item.reminder.id);
+        }
+      });
+      void playReminderSound(due[0].reminder);
+    }
+    saveReminders(nextReminders);
+    setReminders(nextReminders);
+  }, []);
+
+  useEffect(() => {
+    const loaded = loadReminders();
+    processReminderSnapshot(loaded);
+
+    const interval = window.setInterval(() => {
+      processReminderSnapshot(loadReminders());
+    }, REMINDER_CHECK_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
+  }, [processReminderSnapshot]);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => {
+      setReminderNow(Date.now());
+      setReminders(loadReminders());
+    }, 1000);
+    return () => {
+      window.clearInterval(interval);
+      void stopReminderSound();
+    };
+  }, []);
+
+  useEffect(() => {
+    const refresh = () => setReminders(loadReminders());
+    const handleStorage = (event: StorageEvent) => {
+      if (event.key === "floral-notepaper.reminders") refresh();
+    };
+    window.addEventListener(REMINDERS_CHANGED_EVENT, refresh);
+    window.addEventListener("storage", handleStorage);
+    const unlisten = listen("reminders-changed", refresh);
+    return () => {
+      window.removeEventListener(REMINDERS_CHANGED_EVENT, refresh);
+      window.removeEventListener("storage", handleStorage);
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  const handleCreateReminder = useCallback((reminder: Reminder) => {
+    setReminders(upsertReminder(reminder));
+  }, []);
+
+  const handleDeleteReminder = useCallback((id: string) => {
+    void stopReminderSound();
+    setReminders(deleteReminder(id));
+  }, []);
+
+  const handleCompleteReminder = useCallback((id: string) => {
+    void stopReminderSound();
+    const next = completeReminder(loadReminders(), id);
+    saveReminders(next);
+    setReminders(next);
+  }, []);
+
+  const handleSnoozeReminder = useCallback((reminder: Reminder) => {
+    void stopReminderSound();
+    const next = snoozeReminder(loadReminders(), reminder, 5);
+    saveReminders(next);
+    setReminders(next);
+  }, []);
+
+  const handleOpenReminderNote = useCallback((noteId: string) => {
+    void loadNote(noteId)
+      .then(() => {
+        setReminderPanelOpen(false);
+      })
+      .catch((error) => {
+        setErrorMessage(getErrorMessage(error));
+      });
+  }, [loadNote]);
+
   const handleImportNote = async () => {
     setErrorMessage(null);
     try {
@@ -908,10 +909,7 @@ export function MainWindow({
   const handleRemoveExternalFile = async (id: string) => {
     if (selectedId === id && saveState === "dirty") {
       const shouldSave = window.confirm(
-        t("main.confirm.unsavedExternalFile", {
-          title: title || t("common.untitledFile", { defaultValue: "未命名文件" }),
-          defaultValue: "「{{title}}」有未保存的更改，是否保存到原文件？",
-        }),
+        `「${title || "未命名文件"}」有未保存的更改，是否保存到原文件？`,
       );
       if (shouldSave) {
         const saved = await saveCurrentNote();
@@ -942,7 +940,10 @@ export function MainWindow({
     }
   };
 
-  const handleOpenNoteMenu = (event: MouseEvent<HTMLElement>, noteId: string) => {
+  const handleOpenNoteMenu = (
+    event: MouseEvent<HTMLElement>,
+    noteId: string,
+  ) => {
     event.preventDefault();
     event.stopPropagation();
 
@@ -1116,31 +1117,6 @@ export function MainWindow({
     };
   }, [isResizingSidebar]);
 
-  useEffect(() => {
-    if (!isResizingSplit) return;
-
-    document.body.style.userSelect = "none";
-    document.body.style.cursor = "col-resize";
-
-    const onMouseMove = (e: globalThis.MouseEvent) => {
-      const container = splitContainerRef.current;
-      if (!container) return;
-      const rect = container.getBoundingClientRect();
-      const ratio = (e.clientX - rect.left) / rect.width;
-      setSplitRatio(Math.min(Math.max(ratio, 0.2), 0.8));
-    };
-    const onMouseUp = () => setIsResizingSplit(false);
-
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
-    return () => {
-      document.removeEventListener("mousemove", onMouseMove);
-      document.removeEventListener("mouseup", onMouseUp);
-      document.body.style.userSelect = "";
-      document.body.style.cursor = "";
-    };
-  }, [isResizingSplit]);
-
   const handlePinEntry = async () => {
     if (!selectedId) return;
     if (saveState === "dirty") {
@@ -1161,7 +1137,9 @@ export function MainWindow({
   };
 
   const toggleMaximize = () => {
-    void toggleMaximizeCurrentWindow().then(() => isCurrentWindowMaximized().then(setIsMaximized));
+    void toggleMaximizeCurrentWindow().then(() =>
+      isCurrentWindowMaximized().then(setIsMaximized),
+    );
   };
 
   const handleTitleBarDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -1178,14 +1156,16 @@ export function MainWindow({
   };
 
   const handleClose = () => {
+    void stopReminderSound();
     void closeCurrentWindow();
   };
 
   return (
     <div className="w-full h-screen flex flex-col">
-      <div className="noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
+      <div className="relative noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
+        <BackgroundLayer config={settingsConfig} />
         <div
-          className="flex items-center justify-between pl-5 pr-0 h-11 bg-paper/60 border-b border-paper-deep/30 shrink-0 select-none cursor-default"
+          className="relative z-10 flex items-center justify-between pl-5 pr-0 h-11 bg-paper/55 backdrop-blur-[1px] border-b border-paper-deep/30 shrink-0 select-none cursor-default"
           onMouseDown={handleTitleBarDrag}
           onDoubleClick={handleTitleBarDoubleClick}
         >
@@ -1195,9 +1175,7 @@ export function MainWindow({
             </span>
             <span className="text-[11px] text-ink-ghost font-body">—</span>
             <span className="text-[11px] text-ink-faint font-body truncate max-w-[240px]">
-              {title ||
-                selectedNote?.preview ||
-                t("common.untitledNote", { defaultValue: "无标题笔记" })}
+              {title || selectedNote?.preview || "无标题笔记"}
             </span>
           </div>
           <div className="flex items-center">
@@ -1209,7 +1187,7 @@ export function MainWindow({
             <button
               onClick={() => void handleOpenNotepad()}
               className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer"
-              title={t("main.window.quickNotepad", { defaultValue: "快捷便签" })}
+              title="快捷便签"
             >
               <svg
                 width="14"
@@ -1226,9 +1204,34 @@ export function MainWindow({
               </svg>
             </button>
             <button
+              onClick={handleOpenReminderPanel}
+              className={`w-10 h-11 flex items-center justify-center transition-all cursor-pointer ${
+                reminderPanelOpen
+                  ? "text-bamboo bg-bamboo-mist/50"
+                  : "text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50"
+              }`}
+              title="提醒中心"
+            >
+              <svg
+                width="14"
+                height="14"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+              >
+                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 7 3 9H3c0-2 3-2 3-9" />
+                <path d="M10 21h4" />
+                <path d="M4 4 2 6" />
+                <path d="M22 6 20 4" />
+              </svg>
+            </button>
+            <button
               onClick={() => void handleOpenSettings()}
               className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-              title={t("main.window.settings", { defaultValue: "设置" })}
+              title="设置"
             >
               <svg
                 width="14"
@@ -1250,7 +1253,7 @@ export function MainWindow({
             <button
               onClick={handleMinimize}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={t("main.window.minimize", { defaultValue: "最小化" })}
+              title="最小化"
             >
               <svg width="12" height="12" viewBox="0 0 12 12">
                 <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
@@ -1259,33 +1262,15 @@ export function MainWindow({
             <button
               onClick={handleMaximize}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={
-                isMaximized
-                  ? t("main.window.restore", { defaultValue: "还原" })
-                  : t("main.window.maximize", { defaultValue: "最大化" })
-              }
+              title={isMaximized ? "还原" : "最大化"}
             >
               {isMaximized ? (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
                   <rect x="3" y="3" width="7" height="7" rx="1" />
                   <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
                 </svg>
               ) : (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                >
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.2">
                   <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
                 </svg>
               )}
@@ -1293,24 +1278,16 @@ export function MainWindow({
             <button
               onClick={handleClose}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
-              title={t("main.window.close", { defaultValue: "关闭" })}
+              title="关闭"
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
                 <path d="M2 2l8 8M10 2l-8 8" />
               </svg>
             </button>
           </div>
         </div>
 
-        <div className="flex flex-1 min-h-0">
+        <div className="relative z-10 flex flex-1 min-h-0">
           <div
             className={`border-r border-paper-deep/30 bg-paper/40 flex flex-col shrink-0 ${
               sidebarCollapsed ? "w-0 overflow-hidden transition-all duration-[600ms]" : ""
@@ -1336,14 +1313,14 @@ export function MainWindow({
                   type="text"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder={t("main.sidebar.searchPlaceholder", { defaultValue: "搜索笔记…" })}
+                  placeholder="搜索笔记…"
                   className="flex-1 text-[12px] font-body text-ink placeholder:text-ink-ghost/60 bg-transparent"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
                     className="text-ink-ghost hover:text-ink-faint transition-colors cursor-pointer"
-                    title={t("main.sidebar.clearSearch", { defaultValue: "清空搜索" })}
+                    title="清空搜索"
                   >
                     <svg
                       width="10"
@@ -1378,7 +1355,7 @@ export function MainWindow({
                 >
                   <path d="M12 5v14M5 12h14" />
                 </svg>
-                <span>{t("main.sidebar.newNote", { defaultValue: "新建笔记" })}</span>
+                <span>新建笔记</span>
               </button>
               <button
                 onClick={() => void handleImportNote()}
@@ -1394,41 +1371,24 @@ export function MainWindow({
                   strokeLinecap="round"
                   strokeLinejoin="round"
                 >
-                  <path d="M12 3v12" />
-                  <path d="m7 10 5 5 5-5" />
-                  <path d="M5 21h14" />
+                  <path d="M12 21V9" />
+                  <path d="m7 16 5 5 5-5" />
+                  <path d="M5 3h14" />
                 </svg>
-                <span>{t("main.sidebar.importMarkdown", { defaultValue: "导入 Markdown" })}</span>
+                <span>导入 Markdown</span>
               </button>
             </div>
 
             <div className="flex items-center justify-between px-5 pb-1.5 shrink-0">
               <span className="text-[10px] text-ink-ghost font-mono tracking-wider uppercase">
-                {t("common.noteCount", {
-                  count: filteredNotes.length,
-                  defaultValue: "{{count}} 篇笔记",
-                })}
-                {externalFiles.length > 0
-                  ? ` · ${t("common.externalFileCount", {
-                      count: externalFiles.length,
-                      defaultValue: "{{count}} 个外部文件",
-                    })}`
-                  : ""}
+                {filteredNotes.length} 篇笔记{externalFiles.length > 0 ? ` · ${externalFiles.length} 个外部文件` : ""}
               </span>
               <button
                 onClick={() => setShowCategoryInput(true)}
                 className="text-[10px] text-ink-ghost hover:text-bamboo transition-colors cursor-pointer"
-                title={t("main.category.new", { defaultValue: "新建分类" })}
+                title="新建分类"
               >
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
                   <path d="M12 5v14M5 12h14" />
                 </svg>
               </button>
@@ -1449,7 +1409,7 @@ export function MainWindow({
                     }
                   }}
                   onBlur={() => void handleCreateCategory()}
-                  placeholder={t("main.category.placeholder", { defaultValue: "输入分类名…" })}
+                  placeholder="输入分类名…"
                   className="w-full px-2.5 h-7 rounded-lg text-[12px] font-body text-ink bg-paper-warm/80 border border-paper-deep/40 focus:border-bamboo/30 placeholder:text-ink-ghost/60"
                 />
               </div>
@@ -1460,7 +1420,7 @@ export function MainWindow({
                 {externalFiles.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-[10px] text-ink-ghost/50 font-mono tracking-wider uppercase">
-                      {t("main.externalFiles.title", { defaultValue: "外部文件" })}
+                      外部文件
                     </div>
                     {externalFiles.map((file) => {
                       const isSelected = file.id === selectedId;
@@ -1480,11 +1440,9 @@ export function MainWindow({
                                 : "bg-transparent"
                           }`}
                         >
-                          <div
-                            className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                              isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                            }`}
-                          />
+                          <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
+                            isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
+                          }`} />
 
                           <div className="flex items-baseline justify-between mb-0.5">
                             <span
@@ -1492,17 +1450,7 @@ export function MainWindow({
                                 isSelected ? "text-bamboo" : "text-ink-soft"
                               }`}
                             >
-                              <svg
-                                width="12"
-                                height="12"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                className="shrink-0 opacity-60"
-                              >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-60">
                                 <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
                                 <polyline points="14 2 14 8 20 8" />
                               </svg>
@@ -1514,17 +1462,9 @@ export function MainWindow({
                                 handleRemoveExternalFile(file.id);
                               }}
                               className="opacity-0 group-hover:opacity-100 text-ink-ghost hover:text-red-400 transition-all p-0.5"
-                              title={t("main.externalFiles.remove", { defaultValue: "从列表移除" })}
+                              title="从列表移除"
                             >
-                              <svg
-                                width="12"
-                                height="12"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2"
-                                strokeLinecap="round"
-                              >
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
                                 <line x1="18" y1="6" x2="6" y2="18" />
                                 <line x1="6" y1="6" x2="18" y2="18" />
                               </svg>
@@ -1546,7 +1486,9 @@ export function MainWindow({
                       <div
                         key="__uncategorized__"
                         className={`rounded-lg transition-all duration-200 ${
-                          dragOverCategory === "" ? "bg-bamboo/10 ring-1 ring-bamboo/20" : ""
+                          dragOverCategory === ""
+                            ? "bg-bamboo/10 ring-1 ring-bamboo/20"
+                            : ""
                         }`}
                         onDragOver={(e) => {
                           e.preventDefault();
@@ -1588,26 +1530,21 @@ export function MainWindow({
                                     : "bg-transparent"
                               }`}
                             >
-                              <div
-                                className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                                  isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
-                                }`}
-                              />
+                              <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
+                                isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
+                              }`} />
                               <div className="flex items-baseline justify-between mb-0.5">
-                                <span
-                                  className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
-                                    isSelected ? "text-bamboo" : "text-ink-soft"
-                                  }`}
-                                >
-                                  {getDisplayTitle(note, t)}
+                                <span className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
+                                  isSelected ? "text-bamboo" : "text-ink-soft"
+                                }`}>
+                                  {getDisplayTitle(note)}
                                 </span>
                                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
                                   {formatShortDate(note.updatedAt)}
                                 </span>
                               </div>
                               <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                                {note.preview ||
-                                  t("common.blankNote", { defaultValue: "空白笔记" })}
+                                {note.preview || "空白笔记"}
                               </p>
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
@@ -1615,10 +1552,7 @@ export function MainWindow({
                                 </span>
                                 <span className="text-[10px] text-ink-ghost/40">·</span>
                                 <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                  {t("common.wordCount", {
-                                    count: note.wordCount,
-                                    defaultValue: "{{count}} 字",
-                                  })}
+                                  {note.wordCount} 字
                                 </span>
                               </div>
                             </div>
@@ -1631,7 +1565,7 @@ export function MainWindow({
                   const isCollapsed = collapsedCategories.has(group.category);
 
                   return (
-                    <div key={group.category} className="px-2 mb-0.5">
+                    <div key={group.category} className="px-2 mb-1.5">
                       <div
                         className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg group/cat cursor-pointer select-none transition-all duration-200 ${
                           dragOverCategory === group.category
@@ -1734,74 +1668,66 @@ export function MainWindow({
                         >
                           {group.notes.length === 0 ? (
                             <div className="px-3 py-3 text-center text-[11px] text-ink-ghost/50">
-                              {t("main.category.emptyFolder", { defaultValue: "空文件夹" })}
+                              空文件夹
                             </div>
-                          ) : (
-                            group.notes.map((note) => {
-                              const isSelected = note.id === selectedId;
-                              const isHovered = note.id === hoveredId;
+                          ) : group.notes.map((note) => {
+                            const isSelected = note.id === selectedId;
+                            const isHovered = note.id === hoveredId;
 
-                              return (
-                                <div
-                                  key={note.id}
-                                  draggable
-                                  onDragStart={(e) => {
-                                    e.dataTransfer.setData("text/plain", note.id);
-                                    e.dataTransfer.effectAllowed = "move";
-                                  }}
-                                  onClick={() => void handleSelectNote(note.id)}
-                                  onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
-                                  onMouseEnter={() => setHoveredId(note.id)}
-                                  onMouseLeave={() => setHoveredId(null)}
-                                  className={`w-full text-left rounded-lg mx-1 px-2.5 py-2 transition-all duration-[600ms] cursor-pointer group relative ${
-                                    isSelected
-                                      ? "bg-bamboo-mist/70"
-                                      : isHovered
-                                        ? "bg-paper-warm/70"
-                                        : "bg-transparent"
-                                  }`}
-                                  style={{ width: "calc(100% - 8px)" }}
-                                >
-                                  <div
-                                    className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
-                                      isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
+                            return (
+                              <div
+                                key={note.id}
+                                draggable
+                                onDragStart={(e) => {
+                                  e.dataTransfer.setData("text/plain", note.id);
+                                  e.dataTransfer.effectAllowed = "move";
+                                }}
+                                onClick={() => void handleSelectNote(note.id)}
+                                onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
+                                onMouseEnter={() => setHoveredId(note.id)}
+                                onMouseLeave={() => setHoveredId(null)}
+                                className={`w-full text-left rounded-lg mx-1 px-2.5 py-2 transition-all duration-[600ms] cursor-pointer group relative ${
+                                  isSelected
+                                    ? "bg-bamboo-mist/70"
+                                    : isHovered
+                                      ? "bg-paper-warm/70"
+                                      : "bg-transparent"
+                                }`}
+                                style={{ width: "calc(100% - 8px)" }}
+                              >
+                                <div className={`absolute left-0 top-1/2 -translate-y-1/2 w-[3px] rounded-r-full bg-bamboo/60 transition-all duration-[600ms] ${
+                                  isSelected ? "h-5 opacity-100" : "h-0 opacity-0"
+                                }`} />
+
+                                <div className="flex items-baseline justify-between mb-0.5">
+                                  <span
+                                    className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
+                                      isSelected ? "text-bamboo" : "text-ink-soft"
                                     }`}
-                                  />
-
-                                  <div className="flex items-baseline justify-between mb-0.5">
-                                    <span
-                                      className={`text-[13px] font-display font-medium truncate pr-2 transition-colors ${
-                                        isSelected ? "text-bamboo" : "text-ink-soft"
-                                      }`}
-                                    >
-                                      {getDisplayTitle(note, t)}
-                                    </span>
-                                    <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
-                                      {formatShortDate(note.updatedAt)}
-                                    </span>
-                                  </div>
-
-                                  <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                                    {note.preview ||
-                                      t("common.blankNote", { defaultValue: "空白笔记" })}
-                                  </p>
-
-                                  <div className="flex items-center gap-2 mt-1">
-                                    <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                      {formatTime(note.updatedAt)}
-                                    </span>
-                                    <span className="text-[10px] text-ink-ghost/40">·</span>
-                                    <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                      {t("common.wordCount", {
-                                        count: note.wordCount,
-                                        defaultValue: "{{count}} 字",
-                                      })}
-                                    </span>
-                                  </div>
+                                  >
+                                    {getDisplayTitle(note)}
+                                  </span>
+                                  <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
+                                    {formatShortDate(note.updatedAt)}
+                                  </span>
                                 </div>
-                              );
-                            })
-                          )}
+
+                                <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
+                                  {note.preview || "空白笔记"}
+                                </p>
+
+                                <div className="flex items-center gap-2 mt-1">
+                                  <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
+                                    {formatTime(note.updatedAt)}
+                                  </span>
+                                  <span className="text-[10px] text-ink-ghost/40">·</span>
+                                  <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
+                                    {note.wordCount} 字
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
                         </div>
                       </div>
                     </div>
@@ -1810,9 +1736,7 @@ export function MainWindow({
 
                 {!isLoading && filteredNotes.length === 0 && externalFiles.length === 0 && (
                   <div className="px-3 py-8 text-center text-[12px] text-ink-ghost leading-relaxed">
-                    {searchQuery
-                      ? t("main.search.noResults", { defaultValue: "没有匹配的笔记" })
-                      : t("main.search.empty", { defaultValue: "还没有笔记" })}
+                    {searchQuery ? "没有匹配的笔记" : "还没有笔记"}
                   </div>
                 )}
               </div>
@@ -1827,9 +1751,7 @@ export function MainWindow({
                 setIsResizingSidebar(true);
               }}
             >
-              <div
-                className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSidebar ? "" : "group-hover:bg-bamboo/5"}`}
-              />
+              <div className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSidebar ? "" : "group-hover:bg-bamboo/5"}`} />
             </div>
           )}
 
@@ -1839,11 +1761,7 @@ export function MainWindow({
                 <button
                   onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-                  title={
-                    sidebarCollapsed
-                      ? t("main.window.expandSidebar", { defaultValue: "展开侧栏" })
-                      : t("main.window.collapseSidebar", { defaultValue: "收起侧栏" })
-                  }
+                  title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
                 >
                   <svg
                     width="14"
@@ -1866,7 +1784,7 @@ export function MainWindow({
                   onClick={() => void handlePinEntry()}
                   disabled={!selectedId}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={t("main.editor.pinToTile", { defaultValue: "钉为磁贴" })}
+                  title="钉为磁贴"
                 >
                   <svg
                     width="13"
@@ -1888,8 +1806,8 @@ export function MainWindow({
                   onClick={handleUndo}
                   disabled={!selectedId}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={t("main.editor.undo", { defaultValue: "撤销（Ctrl+Z）" })}
-                  aria-label={t("main.editor.undoLabel", { defaultValue: "撤销" })}
+                  title="撤销（Ctrl+Z）"
+                  aria-label="撤销"
                 >
                   <svg
                     data-testid="main-editor-undo-icon"
@@ -1912,18 +1830,14 @@ export function MainWindow({
                   onClick={() => void saveCurrentNote()}
                   disabled={!selectedId || saveState === "saving"}
                   className="px-2.5 h-7 flex items-center justify-center rounded-lg text-[11px] text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title={t("common.save", { defaultValue: "保存" })}
+                  title="保存"
                 >
-                  {t("common.save", { defaultValue: "保存" })}
+                  保存
                 </button>
 
                 {deleteConfirm ? (
-                  <div
-                    className={`flex items-center gap-1 ml-1 ${deleteExiting ? "animate-delete-confirm-exit" : "animate-delete-confirm"}`}
-                  >
-                    <span className="text-[11px] text-red-400 whitespace-nowrap">
-                      {t("main.editor.confirmDelete", { defaultValue: "确认删除？" })}
-                    </span>
+                  <div className={`flex items-center gap-1 ml-1 ${deleteExiting ? "animate-delete-confirm-exit" : "animate-delete-confirm"}`}>
+                    <span className="text-[11px] text-red-400 whitespace-nowrap">确认删除？</span>
                     <button
                       onClick={() => {
                         setDeleteExiting(true);
@@ -1935,7 +1849,7 @@ export function MainWindow({
                       }}
                       className="px-2 h-6 rounded-md text-[11px] text-cloud bg-red-400 hover:bg-red-500 transition-colors cursor-pointer whitespace-nowrap"
                     >
-                      {t("common.delete", { defaultValue: "删除" })}
+                      删除
                     </button>
                     <button
                       onClick={() => {
@@ -1947,7 +1861,7 @@ export function MainWindow({
                       }}
                       className="px-2 h-6 rounded-md text-[11px] text-ink-faint hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer"
                     >
-                      {t("common.cancel", { defaultValue: "取消" })}
+                      取消
                     </button>
                   </div>
                 ) : (
@@ -1955,7 +1869,7 @@ export function MainWindow({
                     onClick={() => setDeleteConfirm(true)}
                     disabled={!selectedId}
                     className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-red-400 hover:bg-danger-bg transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    title={t("noteMenu.delete", { defaultValue: "删除笔记" })}
+                    title="删除笔记"
                   >
                     <svg
                       width="13"
@@ -1975,17 +1889,19 @@ export function MainWindow({
               </div>
 
               <SlidingButtonGroup
-                options={viewModeOptions}
+                options={[
+                  { value: "edit" as ViewMode, label: "编辑" },
+                  { value: "split" as ViewMode, label: "分栏" },
+                  { value: "preview" as ViewMode, label: "预览" },
+                ]}
                 value={viewMode}
                 onChange={setViewMode}
                 buttonClassName="px-3 py-1"
               />
             </div>
 
-            <div
-              key={noteTransitionKey}
-              className="animate-note-enter px-6 pt-4 pb-2 shrink-0 border-b border-paper-deep/15"
-            >
+            <div key={noteTransitionKey} className="animate-note-enter px-6 pt-4 pb-2 shrink-0 border-b border-paper-deep/15">
+              <div className="flex items-start gap-3">
               <input
                 type="text"
                 value={title}
@@ -1999,24 +1915,28 @@ export function MainWindow({
                     contentRef.current?.focus();
                   }
                 }}
-                placeholder={t("common.untitledNote", { defaultValue: "无标题笔记" })}
+                placeholder="无标题笔记"
                 disabled={!selectedId}
-                className="w-full text-[20px] font-display font-bold text-ink placeholder:text-ink-ghost/50 tracking-wide disabled:opacity-60"
+                className="min-w-0 flex-1 text-[20px] font-display font-bold text-ink placeholder:text-ink-ghost/50 tracking-wide disabled:opacity-60"
               />
+              {activeNoteReminderText && (
+                <ReminderCountdownBadge
+                  value={activeNoteReminderText}
+                  className="mt-0.5 shrink-0"
+                />
+              )}
+              </div>
               <div className="flex items-center gap-3 mt-1.5">
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums truncate max-w-[200px]">
                   {selectedExternalFile
-                    ? t("main.externalFile.label", {
-                        path: selectedExternalFile.filePath,
-                        defaultValue: "外部文件 · {{path}}",
-                      })
+                    ? `外部文件 · ${selectedExternalFile.filePath}`
                     : selectedNote
                       ? `${formatShortDate(selectedNote.updatedAt)} ${formatTime(selectedNote.updatedAt)}`
                       : "--"}
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">·</span>
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {t("common.wordCount", { count: charCount, defaultValue: "{{count}} 字" })}
+                  {charCount} 字
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">·</span>
                 <span
@@ -2034,21 +1954,20 @@ export function MainWindow({
               </div>
             </div>
 
-            <div
-              key={viewMode}
-              ref={splitContainerRef}
-              className="flex-1 flex min-h-0 animate-view-fade"
-            >
+            <div key={viewMode} className="flex-1 flex min-h-0 animate-view-fade">
               {!selectedId && !isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-[13px] text-ink-ghost">
-                  {t("main.editor.emptyHint", { defaultValue: "选择或新建一篇笔记" })}
+                  选择或新建一篇笔记
                 </div>
               ) : (
                 <>
                   {(viewMode === "edit" || viewMode === "split") && (
                     <div
-                      className="flex flex-col min-h-0 shrink-0"
-                      style={{ width: viewMode === "split" ? `${splitRatio * 100}%` : "100%" }}
+                      className={`flex flex-col min-h-0 ${
+                        viewMode === "split"
+                          ? "w-1/2 border-r border-paper-deep/20"
+                          : "w-full"
+                      }`}
                     >
                       <div className="flex items-center gap-0.5 px-4 pt-2 pb-1 shrink-0">
                         {toolbarButtons.map((button) => (
@@ -2058,13 +1977,7 @@ export function MainWindow({
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               if (contentRef.current) {
-                                applyFormat(
-                                  contentRef.current,
-                                  button.action,
-                                  t,
-                                  setContent,
-                                  markDirty,
-                                );
+                                applyFormat(contentRef.current, button.action, setContent, markDirty);
                               }
                             }}
                             className={`w-6 h-6 flex items-center justify-center rounded text-[11px] text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer ${button.style}`}
@@ -2074,7 +1987,7 @@ export function MainWindow({
                         ))}
                       </div>
 
-                      <div className="flex-1 overflow-hidden px-5 pb-4">
+                      <div className="flex-1 overflow-y-auto px-5 pb-4">
                         <textarea
                           ref={contentRef}
                           value={content}
@@ -2084,9 +1997,7 @@ export function MainWindow({
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-mono placeholder:text-ink-ghost/40"
                           style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
-                          placeholder={t("main.editor.contentPlaceholder", {
-                            defaultValue: "开始写作……",
-                          })}
+                          placeholder="开始写作……"
                           spellCheck={false}
                           disabled={!selectedId}
                         />
@@ -2094,32 +2005,16 @@ export function MainWindow({
                     </div>
                   )}
 
-                  {viewMode === "split" && (
-                    <div
-                      className={`w-1.5 shrink-0 cursor-col-resize group relative flex items-center justify-center ${isResizingSplit ? "bg-bamboo/30" : "hover:bg-bamboo/20"} transition-colors`}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        setIsResizingSplit(true);
-                      }}
-                    >
-                      <div
-                        className={`absolute inset-y-0 -left-1.5 -right-1.5 ${isResizingSplit ? "" : "group-hover:bg-bamboo/5"}`}
-                      />
-                      {/* 拖拽手柄指示器 */}
-                      <div className="relative z-10 flex flex-col gap-[3px] opacity-0 group-hover:opacity-100 transition-opacity">
-                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
-                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
-                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
-                      </div>
-                    </div>
-                  )}
-
                   {(viewMode === "preview" || viewMode === "split") && (
-                    <div className="flex flex-col min-h-0 min-w-0 flex-1">
+                    <div
+                      className={`flex flex-col min-h-0 ${
+                        viewMode === "split" ? "w-1/2" : "w-full"
+                      }`}
+                    >
                       {viewMode === "split" && (
                         <div className="px-4 pt-2.5 pb-1 shrink-0">
                           <span className="text-[10px] text-ink-ghost/60 font-mono tracking-widest uppercase">
-                            {t("main.editor.previewLabel", { defaultValue: "Preview" })}
+                            Preview
                           </span>
                         </div>
                       )}
@@ -2128,10 +2023,7 @@ export function MainWindow({
                           viewMode === "preview" ? "pt-3" : "pt-1"
                         }`}
                       >
-                        <MarkdownPreview
-                          content={content}
-                          fontSize={settingsConfig?.fontSize ?? 14}
-                        />
+                        <MarkdownPreview content={content} fontSize={settingsConfig?.fontSize ?? 14} />
                       </div>
                     </div>
                   )}
@@ -2142,33 +2034,28 @@ export function MainWindow({
             <div className="flex items-center justify-between px-4 h-7 border-t border-paper-deep/20 bg-paper/30 shrink-0">
               <div className="flex items-center gap-3">
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {t("main.statusBar.lineNumber", {
-                    count: lineCount,
-                    defaultValue: "Ln {{count}}",
-                  })}
+                  Ln {lineCount}
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">|</span>
                 <span className="text-[10px] text-ink-ghost font-mono">
-                  {t("main.statusBar.format", { defaultValue: "Markdown + LaTeX" })}
+                  Markdown
                 </span>
               </div>
               <div className="flex items-center gap-3">
                 <span className="text-[10px] text-ink-ghost font-mono">
-                  {t("main.statusBar.encoding", { defaultValue: "UTF-8" })}
+                  UTF-8
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">|</span>
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {t("main.statusBar.byteSize", { size: byteSize, defaultValue: "{{size}} KB" })}
+                  {byteSize} KB
                 </span>
               </div>
             </div>
           </div>
           {settingsConfig && (
-            <div
-              className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden h-full ${
-                settingsOpen ? "w-[360px]" : "w-0"
-              }`}
-            >
+            <div className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden h-full ${
+              settingsOpen ? "w-[360px]" : "w-0"
+            }`}>
               <div className="w-[360px] h-full">
                 <SettingsPanel
                   config={settingsConfig}
@@ -2179,6 +2066,22 @@ export function MainWindow({
               </div>
             </div>
           )}
+          <div className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden h-full ${
+            reminderPanelOpen ? "w-[340px]" : "w-0"
+          }`}>
+            <div className="w-[340px] h-full">
+              <ReminderPanel
+                reminders={reminders}
+                boundNote={boundReminderNote}
+                onCreate={handleCreateReminder}
+                onDelete={handleDeleteReminder}
+                onComplete={handleCompleteReminder}
+                onSnooze={handleSnoozeReminder}
+                onOpenNote={handleOpenReminderNote}
+                onClose={() => setReminderPanelOpen(false)}
+              />
+            </div>
+          </div>
         </div>
       </div>
       {noteMenu && noteMenuTarget && (
@@ -2209,25 +2112,16 @@ export function MainWindow({
                 onClick={() => setNoteMenuMode("main")}
                 className="w-full flex items-center gap-1.5 px-3 py-1.5 text-[12px] font-body text-ink-ghost hover:bg-paper-warm transition-colors cursor-pointer border-b border-paper-deep/20"
               >
-                <svg
-                  width="10"
-                  height="10"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
-                <span>{t("common.back", { defaultValue: "返回" })}</span>
+                <span>返回</span>
               </button>
               <button
                 onClick={() => void handleMoveNote(noteMenuTarget.id, "")}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
               >
-                {t("main.category.uncategorized", { defaultValue: "未分类" })}
+                未分类
               </button>
               {categories.map((cat) => (
                 <button
@@ -2252,10 +2146,7 @@ export function MainWindow({
           {categoryMenuConfirmDelete ? (
             <div className="animate-menu-slide-left">
               <div className="px-3 py-1.5 text-[11px] font-body text-ink-faint border-b border-paper-deep/20">
-                {t("main.category.confirmDelete", {
-                  category: categoryMenu.category,
-                  defaultValue: "确认删除「{{category}}」？",
-                })}
+                确认删除「{categoryMenu.category}」？
               </div>
               <button
                 onClick={() => {
@@ -2264,13 +2155,13 @@ export function MainWindow({
                 }}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer"
               >
-                {t("main.category.confirmDeleteAction", { defaultValue: "确认删除" })}
+                确认删除
               </button>
               <button
                 onClick={() => setCategoryMenuConfirmDelete(false)}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
               >
-                {t("common.cancel", { defaultValue: "取消" })}
+                取消
               </button>
             </div>
           ) : (
@@ -2283,13 +2174,13 @@ export function MainWindow({
                 }}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
               >
-                {t("main.category.rename", { defaultValue: "重命名" })}
+                重命名
               </button>
               <button
                 onClick={() => setCategoryMenuConfirmDelete(true)}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer border-t border-paper-deep/20"
               >
-                {t("main.category.delete", { defaultValue: "删除分类" })}
+                删除分类
               </button>
             </div>
           )}

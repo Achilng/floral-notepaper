@@ -1,16 +1,15 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "花笺",
-  "version": "1.0.4",
+  "version": "1.0.2",
   "identifier": "com.floral-notepaper.app",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "npm.cmd run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "taskkill /F /IM floral-notepaper.exe 2>nul & taskkill /F /IM 花笺.exe 2>nul & npm run build",
+    "beforeBuildCommand": "npm.cmd run build",
     "frontendDist": "../dist"
   },
   "app": {
-    "macOSPrivateApi": true,
     "windows": [
       {
         "label": "main",
@@ -25,21 +24,21 @@
       }
     ],
     "security": {
-      "csp": null
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$APPDATA/backgrounds/**"]
+      },
+      "csp": "default-src 'self' ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost https://asset.localhost data: blob:; style-src 'self' 'unsafe-inline'; connect-src 'self' http://localhost:1420 ws://localhost:1420 http://ipc.localhost https://ipc.localhost"
     }
   },
   "bundle": {
     "active": true,
-    "targets": ["app", "dmg", "nsis"],
-    "macOS": {
-      "minimumSystemVersion": "15.0"
-    },
+    "targets": "nsis",
     "windows": {
       "nsis": {
         "installMode": "both",
         "languages": ["SimpChinese"],
         "displayLanguageSelector": false,
-        "installerIcon": "icons/icon.ico",
         "installerHooks": "nsis-hooks.nsh"
       }
     },
@@ -48,12 +47,6 @@
         "ext": ["md", "markdown"],
         "name": "Markdown Document",
         "description": "Markdown document file",
-        "role": "Editor"
-      },
-      {
-        "ext": ["txt"],
-        "name": "Text Document",
-        "description": "Plain text file",
         "role": "Editor"
       }
     ],

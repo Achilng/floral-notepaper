@@ -2,19 +2,18 @@ import type { ThemeOption } from "./types";
 
 function resolveTheme(option: ThemeOption): "light" | "dark" {
   if (option === "system") {
-    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+    return window.matchMedia("(prefers-color-scheme: dark)").matches
+      ? "dark"
+      : "light";
   }
   return option;
 }
 
 export function applyTheme(option: ThemeOption): void {
   const root = document.documentElement;
-  const resolved = resolveTheme(option);
-  if (root.getAttribute("data-theme") !== resolved) {
-    root.classList.add("theme-transition");
-    root.setAttribute("data-theme", resolved);
-    setTimeout(() => root.classList.remove("theme-transition"), 400);
-  }
+  root.classList.add("theme-transition");
+  root.setAttribute("data-theme", resolveTheme(option));
+  setTimeout(() => root.classList.remove("theme-transition"), 400);
 }
 
 let systemListener: (() => void) | null = null;

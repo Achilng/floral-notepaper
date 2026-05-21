@@ -1,15 +1,10 @@
 import { useState, useCallback } from "react";
-import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import remarkMath from "remark-math";
-import rehypeKatex from "rehype-katex";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Components } from "react-markdown";
-import "katex/dist/katex.min.css";
 
 function CodeBlock({ children }: { children: React.ReactNode }) {
-  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -27,9 +22,7 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
         onClick={handleCopy}
         className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-paper-deep/30 text-ink-ghost opacity-0 group-hover:opacity-100 hover:bg-paper-deep/50 hover:text-ink-soft transition-all cursor-pointer"
       >
-        {copied
-          ? t("markdown.copied", { defaultValue: "已复制" })
-          : t("markdown.copy", { defaultValue: "复制" })}
+        {copied ? "已复制" : "复制"}
       </button>
       {children}
     </pre>
@@ -52,33 +45,38 @@ interface MarkdownPreviewProps {
   fontSize?: number;
 }
 
-const remarkPlugins = [remarkGfm, remarkMath];
-const rehypePlugins = [rehypeKatex];
+const remarkPlugins = [remarkGfm];
 
 const components: Components = {
   h1: ({ children }) => (
-    <h1 className="text-[1.57em] font-display font-bold text-ink mt-6 mb-4 tracking-wide">
+    <h1 className="text-[22px] font-display font-bold text-ink mt-6 mb-4 tracking-wide">
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-[1.21em] font-display font-bold text-ink mt-7 mb-3 tracking-wide">
+    <h2 className="text-[17px] font-display font-bold text-ink mt-7 mb-3 tracking-wide">
       {children}
     </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-[1.07em] font-display font-bold text-ink mt-5 mb-2 tracking-wide">
+    <h3 className="text-[15px] font-display font-bold text-ink mt-5 mb-2 tracking-wide">
       {children}
     </h3>
   ),
   h4: ({ children }) => (
-    <h4 className="text-[1em] font-display font-semibold text-ink mt-4 mb-2 tracking-wide">
+    <h4 className="text-[14px] font-display font-semibold text-ink mt-4 mb-2 tracking-wide">
       {children}
     </h4>
   ),
-  p: ({ children }) => <p className="text-ink-soft leading-[1.9]">{children}</p>,
-  strong: ({ children }) => <strong className="font-semibold text-ink">{children}</strong>,
-  em: ({ children }) => <em className="italic text-bamboo-light">{children}</em>,
+  p: ({ children }) => (
+    <p className="text-ink-soft leading-[1.9]">{children}</p>
+  ),
+  strong: ({ children }) => (
+    <strong className="font-semibold text-ink">{children}</strong>
+  ),
+  em: ({ children }) => (
+    <em className="italic text-bamboo-light">{children}</em>
+  ),
   blockquote: ({ children }) => (
     <blockquote className="border-l-2 border-bamboo/40 pl-4 my-3 text-ink-soft/80 italic leading-[1.9]">
       {children}
@@ -90,11 +88,13 @@ const components: Components = {
     </ul>
   ),
   ol: ({ children }) => (
-    <ol className="ml-4 text-ink-soft leading-[1.9] list-decimal list-outside marker:text-bamboo/50 marker:font-mono marker:text-[0.85em]">
+    <ol className="ml-4 text-ink-soft leading-[1.9] list-decimal list-outside marker:text-bamboo/50 marker:font-mono marker:text-[12px]">
       {children}
     </ol>
   ),
-  li: ({ children }) => <li className="text-ink-soft leading-[1.9]">{children}</li>,
+  li: ({ children }) => (
+    <li className="text-ink-soft leading-[1.9]">{children}</li>
+  ),
   hr: () => (
     <hr className="my-6 border-none h-px bg-gradient-to-r from-transparent via-paper-deep to-transparent" />
   ),
@@ -102,13 +102,13 @@ const components: Components = {
     const isBlock = className?.startsWith("language-") || String(children).includes("\n");
     if (isBlock) {
       return (
-        <code className="text-[0.85em] font-mono text-ink-soft leading-[1.8] whitespace-pre">
+        <code className="text-[12px] font-mono text-ink-soft leading-[1.8] whitespace-pre">
           {children}
         </code>
       );
     }
     return (
-      <code className="px-1.5 py-0.5 text-[0.85em] font-mono bg-paper-warm rounded text-bamboo">
+      <code className="px-1.5 py-0.5 text-[12px] font-mono bg-paper-warm rounded text-bamboo">
         {children}
       </code>
     );
@@ -128,40 +128,38 @@ const components: Components = {
   ),
   table: ({ children }) => (
     <div className="my-3 overflow-x-auto">
-      <table className="w-full text-[0.93em] border-collapse border border-paper-deep/50">
-        {children}
-      </table>
+      <table className="w-full text-[13px] border-collapse">{children}</table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="text-left px-3 py-1.5 border border-paper-deep/40 font-semibold text-ink text-[0.85em] bg-paper-warm/50">
+    <th className="text-left px-3 py-1.5 border-b border-paper-deep/30 font-semibold text-ink text-[12px]">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="px-3 py-1.5 border border-paper-deep/35 text-ink-soft">{children}</td>
+    <td className="px-3 py-1.5 border-b border-paper-deep/15 text-ink-soft">
+      {children}
+    </td>
   ),
   input: ({ checked, ...props }) => (
-    <input {...props} checked={checked} disabled className="mr-1.5 accent-bamboo" />
+    <input
+      {...props}
+      checked={checked}
+      disabled
+      className="mr-1.5 accent-bamboo"
+    />
   ),
 };
 
 export function MarkdownPreview({ content, fontSize = 14 }: MarkdownPreviewProps) {
-  const { t } = useTranslation();
   return (
-    <div className="font-body" style={{ fontSize: `${fontSize}px` }}>
+    <div className="max-w-[560px] font-body" style={{ fontSize: `${fontSize}px` }}>
       {content.trim() ? (
-        <Markdown
-          remarkPlugins={remarkPlugins}
-          rehypePlugins={rehypePlugins}
-          components={components}
-        >
+        <Markdown remarkPlugins={remarkPlugins} components={components}>
           {content}
         </Markdown>
       ) : (
-        <p className="text-ink-ghost leading-[1.9]">
-          {t("markdown.emptyHint", { defaultValue: "预览区会显示当前笔记内容" })}
-        </p>
+        <p className="text-ink-ghost leading-[1.9]">预览区会显示当前笔记内容</p>
       )}
     </div>
   );

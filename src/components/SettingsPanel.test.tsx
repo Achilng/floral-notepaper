@@ -3,7 +3,6 @@ import { describe, expect, test, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
 
 const config = {
-  locale: "zh-CN",
   notesDir: "D:\\Notes\\花笺",
   globalShortcut: "Ctrl+Space",
   closeToTray: true,
@@ -17,10 +16,6 @@ const config = {
   fontSize: 14,
   surfaceFontSize: 14,
   externalFileAutoSave: true,
-  rememberSurfaceSize: true,
-  tileCtrlClose: true,
-  toggleVisibilityShortcut: "",
-  tileRenderMarkdown: false,
 };
 
 describe("SettingsPanel", () => {

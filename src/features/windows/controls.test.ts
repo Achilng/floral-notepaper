@@ -23,6 +23,9 @@ describe("window controls", () => {
 
     expect(show).toHaveBeenCalledTimes(1);
     expect(setFocus).toHaveBeenCalledTimes(1);
-    expect(show.mock.invocationCallOrder[0]).toBeLessThan(setFocus.mock.invocationCallOrder[0]);
+    expect(show.mock.invocationCallOrder[0]).toBeLessThan(
+      setFocus.mock.invocationCallOrder[0],
+    );
   });
+
 });

@@ -1,17 +1,14 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
     env, fmt, fs, io,
-    path::{Component, Path, PathBuf},
+    path::{Path, PathBuf},
 };
 use uuid::Uuid;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
-    #[serde(default = "default_locale")]
-    pub locale: String,
     pub notes_dir: String,
     pub global_shortcut: String,
     pub close_to_tray: bool,
@@ -33,18 +30,20 @@ pub struct AppConfig {
     pub surface_font_size: u32,
     #[serde(default = "default_external_file_auto_save")]
     pub external_file_auto_save: bool,
-    #[serde(default = "default_remember_surface_size")]
-    pub remember_surface_size: bool,
-    #[serde(default = "default_tile_ctrl_close")]
-    pub tile_ctrl_close: bool,
     #[serde(default)]
-    pub tile_render_markdown: bool,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface_width: Option<u32>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub surface_height: Option<u32>,
-    #[serde(default = "default_toggle_visibility_shortcut")]
-    pub toggle_visibility_shortcut: String,
+    pub background_image_path: String,
+    #[serde(default = "default_background_fit")]
+    pub background_fit: String,
+    #[serde(default = "default_background_dim")]
+    pub background_dim: f64,
+    #[serde(default = "default_background_blur")]
+    pub background_blur: f64,
+    #[serde(default = "default_background_scale")]
+    pub background_scale: f64,
+    #[serde(default = "default_background_position")]
+    pub background_position_x: f64,
+    #[serde(default = "default_background_position")]
+    pub background_position_y: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -89,8 +88,6 @@ pub struct Note {
 pub struct AppError {
     pub code: String,
     pub message: String,
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub details: BTreeMap<String, String>,
 }
 
 impl AppError {
@@ -98,38 +95,11 @@ impl AppError {
         Self {
             code: code.into(),
             message: message.into(),
-            details: BTreeMap::new(),
         }
     }
 
-    fn with_detail(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
-        self.details.insert(key.into(), value.into());
-        self
-    }
-
-    fn note_not_found(id: &str) -> Self {
-        Self::new("noteNotFound", format!("Note {id} was not found")).with_detail("noteId", id)
-    }
-
-    fn unsupported_file() -> Self {
-        Self::new("unsupportedFile", "只支持导入 .md 文件")
-    }
-
-    fn category_name_empty() -> Self {
-        Self::new("categoryNameEmpty", "分类名不能为空")
-    }
-
-    fn category_name_invalid_chars() -> Self {
-        Self::new("categoryNameInvalidChars", "分类名不能包含特殊字符")
-    }
-
-    fn category_not_found(name: &str) -> Self {
-        Self::new("categoryNotFound", format!("分类「{name}」不存在")).with_detail("category", name)
-    }
-
-    fn category_already_exists(name: &str) -> Self {
-        Self::new("categoryAlreadyExists", format!("分类「{name}」已存在"))
-            .with_detail("category", name)
+    fn not_found(message: impl Into<String>) -> Self {
+        Self::new("notFound", message)
     }
 }
 
@@ -182,83 +152,11 @@ fn default_base_dir() -> Result<PathBuf, AppError> {
         }
     }
 
-    #[cfg(target_os = "macos")]
-    if let Ok(home) = env::var("HOME") {
-        return Ok(PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("花笺"));
-    }
-
     if let Ok(user_profile) = env::var("USERPROFILE") {
         return Ok(PathBuf::from(user_profile).join("Documents").join("花笺"));
     }
 
     Ok(env::current_dir()?.join("data"))
-}
-
-fn is_filesystem_root(path: &Path) -> bool {
-    let path = path.to_string_lossy();
-    let trimmed = path.trim_end_matches(['/', '\\']);
-    if trimmed.is_empty() {
-        return true;
-    }
-    // Windows drive root: "C:" or "D:" etc.
-    if trimmed.len() == 2 {
-        let bytes = trimmed.as_bytes();
-        if bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
-            return true;
-        }
-    }
-    false
-}
-
-fn ensure_notes_suffix(dir: &str) -> String {
-    let path = Path::new(dir);
-    if path.file_name().and_then(|n| n.to_str()) == Some("notes") {
-        return dir.to_string();
-    }
-    path.join("notes").to_string_lossy().to_string()
-}
-
-fn is_safe_notes_dir(path: &Path) -> Result<(), AppError> {
-    if is_filesystem_root(path) {
-        return Err(AppError::new(
-            "unsafePath",
-            "不能将磁盘根目录设为笔记目录，请选择一个子文件夹",
-        ));
-    }
-
-    let normalized = path.to_string_lossy().to_lowercase();
-    let blocked = [
-        "\\windows",
-        "\\program files",
-        "\\program files (x86)",
-        "\\system32",
-        "\\syswow64",
-    ];
-    for suffix in &blocked {
-        if normalized.ends_with(suffix) {
-            return Err(AppError::new(
-                "unsafePath",
-                format!("不能将系统目录「{}」设为笔记目录", path.display()),
-            ));
-        }
-    }
-
-    // Must have at least 2 real path components (e.g. D:\Something, not just D:\)
-    let real_components = path
-        .components()
-        .filter(|c| matches!(c, Component::Normal(_)))
-        .count();
-    if real_components == 0 {
-        return Err(AppError::new(
-            "unsafePath",
-            "笔记目录路径不合法，请选择一个具体的文件夹",
-        ));
-    }
-
-    Ok(())
 }
 
 impl NoteStore {
@@ -287,41 +185,29 @@ impl NoteStore {
             return Ok(config);
         }
 
-        let mut config: AppConfig = serde_json::from_str(&fs::read_to_string(&path)?)?;
-        if is_safe_notes_dir(Path::new(&config.notes_dir)).is_err() {
-            config.notes_dir = self.default_config().notes_dir;
-            write_json_atomic(&path, &config)?;
-        }
+        let config: AppConfig = serde_json::from_str(&fs::read_to_string(path)?)?;
         fs::create_dir_all(&config.notes_dir)?;
         Ok(config)
     }
 
-    pub fn save_config(&self, mut config: AppConfig) -> Result<AppConfig, AppError> {
+    pub fn save_config(&self, config: AppConfig) -> Result<(), AppError> {
         self.ensure_base_dir()?;
-        config.notes_dir = ensure_notes_suffix(&config.notes_dir);
-        is_safe_notes_dir(Path::new(&config.notes_dir))?;
         fs::create_dir_all(&config.notes_dir)?;
-        write_json_atomic(&self.config_path(), &config)?;
-        Ok(config)
+        write_json_atomic(&self.config_path(), &config)
     }
 
     pub fn list_notes(&self) -> Result<Vec<NoteMetadata>, AppError> {
         self.ensure_storage()?;
         let mut metadata = self.load_metadata()?.notes;
-        metadata.retain(|note| {
-            self.note_path_in_category(&note.file_name, &note.category)
-                .exists()
-        });
-        metadata.sort_by_key(|note| std::cmp::Reverse(note.updated_at));
+        metadata.retain(|note| self.note_path_in_category(&note.file_name, &note.category).exists());
+        metadata.sort_by(|left, right| right.updated_at.cmp(&left.updated_at));
         Ok(metadata)
     }
 
     pub fn read_note(&self, id: &str) -> Result<Note, AppError> {
         self.ensure_storage()?;
         let metadata = self.find_metadata(id)?;
-        let content = fs::read_to_string(
-            self.note_path_in_category(&metadata.file_name, &metadata.category),
-        )?;
+        let content = fs::read_to_string(self.note_path_in_category(&metadata.file_name, &metadata.category))?;
         Ok(Note {
             id: metadata.id,
             title: metadata.title,
@@ -380,7 +266,7 @@ impl NoteStore {
             .notes
             .iter_mut()
             .find(|note| note.id == id)
-            .ok_or_else(|| AppError::note_not_found(id))?;
+            .ok_or_else(|| AppError::not_found(format!("Note {id} was not found")))?;
 
         let old_file_name = note.file_name.clone();
         let old_category = note.category.clone();
@@ -398,8 +284,7 @@ impl NoteStore {
         if old_file_name != new_file_name || old_category != new_category {
             let old_path = self.note_path_in_category(&old_file_name, &old_category);
             if old_path.exists() && old_path != new_path {
-                trash::delete(&old_path)
-                    .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
+                fs::remove_file(old_path)?;
             }
         }
 
@@ -432,28 +317,23 @@ impl NoteStore {
             .notes
             .iter()
             .position(|note| note.id == id)
-            .ok_or_else(|| AppError::note_not_found(id))?;
+            .ok_or_else(|| AppError::not_found(format!("Note {id} was not found")))?;
         let metadata = metadata_file.notes.remove(index);
         let path = self.note_path_in_category(&metadata.file_name, &metadata.category);
         if path.exists() {
-            trash::delete(&path)
-                .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
+            fs::remove_file(&path)?;
         }
         self.save_metadata(&metadata_file)
     }
 
     pub fn import_markdown_file(&self, path: &Path, category: &str) -> Result<Note, AppError> {
         if !is_markdown_path(path) {
-            return Err(AppError::unsupported_file());
+            return Err(AppError::new("unsupportedFile", "只支��导入 .md 文件"));
         }
 
         let content = fs::read_to_string(path)?;
         let title = imported_markdown_title(path, &content);
-        self.create_note(SaveNoteRequest {
-            title,
-            content,
-            category: category.to_string(),
-        })
+        self.create_note(SaveNoteRequest { title, content, category: category.to_string() })
     }
 
     pub fn export_markdown_file(&self, id: &str, path: &Path) -> Result<(), AppError> {
@@ -482,10 +362,7 @@ impl NoteStore {
     pub fn create_category(&self, name: &str) -> Result<(), AppError> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(AppError::category_name_empty());
-        }
-        if name.contains('/') || name.contains('\\') || name.contains(':') || name.contains("..") {
-            return Err(AppError::category_name_invalid_chars());
+            return Err(AppError::new("invalidCategory", "分类名不能为空"));
         }
         let notes_dir = self.notes_dir()?;
         let path = notes_dir.join(name);
@@ -496,23 +373,16 @@ impl NoteStore {
     pub fn rename_category(&self, old_name: &str, new_name: &str) -> Result<(), AppError> {
         let new_name = new_name.trim();
         if new_name.is_empty() {
-            return Err(AppError::category_name_empty());
-        }
-        if new_name.contains('/')
-            || new_name.contains('\\')
-            || new_name.contains(':')
-            || new_name.contains("..")
-        {
-            return Err(AppError::category_name_invalid_chars());
+            return Err(AppError::new("invalidCategory", "分类名不能为空"));
         }
         let notes_dir = self.notes_dir()?;
         let old_path = notes_dir.join(old_name);
         let new_path = notes_dir.join(new_name);
         if !old_path.exists() {
-            return Err(AppError::category_not_found(old_name));
+            return Err(AppError::not_found(format!("分类「{old_name}」不存在")));
         }
         if new_path.exists() {
-            return Err(AppError::category_already_exists(new_name));
+            return Err(AppError::new("conflict", format!("分类「{new_name}」已存在")));
         }
         fs::rename(&old_path, &new_path)?;
 
@@ -529,70 +399,39 @@ impl NoteStore {
     pub fn delete_category(&self, name: &str) -> Result<(), AppError> {
         let notes_dir = self.notes_dir()?;
         let category_path = notes_dir.join(name);
-        let dir_exists = category_path.exists();
+        if !category_path.exists() {
+            return Err(AppError::not_found(format!("分类「{name}」不存在")));
+        }
 
-        if dir_exists {
-            // Safety: ensure the category path is actually inside notes_dir
-            let canon_notes = fs::canonicalize(&notes_dir).unwrap_or_else(|_| notes_dir.clone());
-            let canon_cat =
-                fs::canonicalize(&category_path).unwrap_or_else(|_| category_path.clone());
-            if !canon_cat.starts_with(&canon_notes) || canon_cat == canon_notes {
-                return Err(AppError::new(
-                    "unsafePath",
-                    format!(
-                        "拒绝删除「{}」：路径不在笔记目录内",
-                        category_path.display()
-                    ),
-                ));
-            }
-
-            // Move all notes in this category to uncategorized (root)
-            let mut metadata_file = self.load_metadata()?;
-            for note in &mut metadata_file.notes {
-                if note.category == name {
-                    let old_path = category_path.join(&note.file_name);
-                    let new_path = notes_dir.join(&note.file_name);
-                    if old_path.exists() {
-                        fs::rename(&old_path, &new_path)?;
-                    }
-                    note.category = String::new();
+        // Move all notes in this category to uncategorized (root)
+        let mut metadata_file = self.load_metadata()?;
+        for note in &mut metadata_file.notes {
+            if note.category == name {
+                let old_path = category_path.join(&note.file_name);
+                let new_path = notes_dir.join(&note.file_name);
+                if old_path.exists() {
+                    fs::rename(&old_path, &new_path)?;
                 }
+                note.category = String::new();
             }
-            self.save_metadata(&metadata_file)?;
+        }
+        self.save_metadata(&metadata_file)?;
 
-            // Move to recycle bin instead of permanent deletion
-            trash::delete(&category_path)
-                .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
-        } else {
-            // Directory already gone (manually deleted outside the app);
-            // clean up any stale metadata references.
-            let mut metadata_file = self.load_metadata()?;
-            let mut changed = false;
-            for note in &mut metadata_file.notes {
-                if note.category == name {
-                    note.category = String::new();
-                    changed = true;
-                }
-            }
-            if changed {
-                self.save_metadata(&metadata_file)?;
-            }
+        // Remove the now-empty directory
+        if category_path.exists() {
+            fs::remove_dir_all(&category_path)?;
         }
         Ok(())
     }
 
-    pub fn move_note_to_category(
-        &self,
-        id: &str,
-        new_category: &str,
-    ) -> Result<NoteMetadata, AppError> {
+    pub fn move_note_to_category(&self, id: &str, new_category: &str) -> Result<NoteMetadata, AppError> {
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let note = metadata_file
             .notes
             .iter_mut()
             .find(|note| note.id == id)
-            .ok_or_else(|| AppError::note_not_found(id))?;
+            .ok_or_else(|| AppError::not_found(format!("Note {id} was not found")))?;
 
         let old_category = note.category.clone();
         if old_category == new_category {
@@ -616,11 +455,7 @@ impl NoteStore {
 
     fn default_config(&self) -> AppConfig {
         AppConfig {
-            locale: default_locale(),
             notes_dir: self.base_dir.join("notes").to_string_lossy().to_string(),
-            #[cfg(target_os = "macos")]
-            global_shortcut: "Option+Space".into(),
-            #[cfg(not(target_os = "macos"))]
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
             autostart: false,
@@ -633,12 +468,13 @@ impl NoteStore {
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
             external_file_auto_save: default_external_file_auto_save(),
-            remember_surface_size: default_remember_surface_size(),
-            tile_ctrl_close: default_tile_ctrl_close(),
-            tile_render_markdown: false,
-            surface_width: None,
-            surface_height: None,
-            toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
+            background_image_path: String::new(),
+            background_fit: default_background_fit(),
+            background_dim: default_background_dim(),
+            background_blur: default_background_blur(),
+            background_scale: default_background_scale(),
+            background_position_x: default_background_position(),
+            background_position_y: default_background_position(),
         }
     }
 
@@ -677,7 +513,7 @@ impl NoteStore {
             .notes
             .into_iter()
             .find(|note| note.id == id)
-            .ok_or_else(|| AppError::note_not_found(id))
+            .ok_or_else(|| AppError::not_found(format!("Note {id} was not found")))
     }
 
     fn file_name_for(&self, id: &str, title: &str) -> String {
@@ -738,12 +574,7 @@ impl NoteStore {
         Ok(MetadataFile { notes })
     }
 
-    fn scan_dir_for_notes(
-        &self,
-        dir: &Path,
-        category: &str,
-        notes: &mut Vec<NoteMetadata>,
-    ) -> Result<(), AppError> {
+    fn scan_dir_for_notes(&self, dir: &Path, category: &str, notes: &mut Vec<NoteMetadata>) -> Result<(), AppError> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -915,20 +746,24 @@ fn default_external_file_auto_save() -> bool {
     true
 }
 
-fn default_remember_surface_size() -> bool {
-    true
+fn default_background_fit() -> String {
+    "cover".into()
 }
 
-fn default_tile_ctrl_close() -> bool {
-    true
+fn default_background_dim() -> f64 {
+    0.25
 }
 
-fn default_toggle_visibility_shortcut() -> String {
-    String::new()
+fn default_background_blur() -> f64 {
+    0.0
 }
 
-fn default_locale() -> String {
-    "zh-CN".into()
+fn default_background_scale() -> f64 {
+    1.0
+}
+
+fn default_background_position() -> f64 {
+    50.0
 }
 
 #[cfg(test)]
@@ -1036,22 +871,17 @@ mod tests {
         let store = NoteStore::new(test_root("config"));
 
         let default_config = store.load_config().expect("load default config");
-        #[cfg(target_os = "macos")]
-        assert_eq!(default_config.global_shortcut, "Option+Space");
-        #[cfg(not(target_os = "macos"))]
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
         assert!(default_config.note_auto_save);
         assert!(default_config.note_surface_auto_save);
         assert_eq!(default_config.tile_color, "#f6f3ec");
         assert_eq!(default_config.tile_color_mode, "system");
         assert_eq!(default_config.theme, "system");
-        assert_eq!(default_config.locale, "zh-CN");
-        assert!(default_config.notes_dir.ends_with("notes"));
+        assert!(default_config.notes_dir.ends_with(r"\notes"));
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
         let saved = AppConfig {
-            locale: "en-US".into(),
-            notes_dir: custom_notes_dir.join("notes").to_string_lossy().to_string(),
+            notes_dir: custom_notes_dir.to_string_lossy().to_string(),
             global_shortcut: "Alt+Space".into(),
             close_to_tray: false,
             autostart: true,
@@ -1064,12 +894,13 @@ mod tests {
             font_size: 16,
             surface_font_size: 16,
             external_file_auto_save: true,
-            remember_surface_size: true,
-            tile_ctrl_close: true,
-            tile_render_markdown: false,
-            surface_width: None,
-            surface_height: None,
-            toggle_visibility_shortcut: String::new(),
+            background_image_path: String::new(),
+            background_fit: "cover".into(),
+            background_dim: 0.25,
+            background_blur: 0.0,
+            background_scale: 1.0,
+            background_position_x: 50.0,
+            background_position_y: 50.0,
         };
 
         store.save_config(saved.clone()).expect("save config");
@@ -1106,7 +937,6 @@ mod tests {
         assert_eq!(loaded.tile_color, "#f6f3ec");
         assert_eq!(loaded.tile_color_mode, "system");
         assert_eq!(loaded.theme, "system");
-        assert_eq!(loaded.locale, "zh-CN");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
     }
@@ -1125,13 +955,7 @@ mod tests {
 
         assert_eq!(imported.title, "导入标题");
         assert_eq!(imported.content, source_content);
-        assert_eq!(
-            store
-                .read_note(&imported.id)
-                .expect("read imported")
-                .content,
-            source_content
-        );
+        assert_eq!(store.read_note(&imported.id).expect("read imported").content, source_content);
     }
 
     #[test]

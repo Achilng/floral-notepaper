@@ -1,7 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { chooseNotesDirectory, getConfig, normalizeViewMode, saveConfig } from "./api";
+import {
+  chooseNotesDirectory,
+  getConfig,
+  normalizeViewMode,
+  saveConfig,
+} from "./api";
 import type { AppConfig } from "./types";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -23,7 +28,6 @@ describe("settings api", () => {
 
   test("gets config through Rust", async () => {
     const config: AppConfig = {
-      locale: "zh-CN",
       notesDir: "D:\\notes",
       globalShortcut: "Ctrl+Space",
       closeToTray: true,
@@ -37,10 +41,6 @@ describe("settings api", () => {
       fontSize: 14,
       surfaceFontSize: 14,
       externalFileAutoSave: true,
-      rememberSurfaceSize: true,
-      tileCtrlClose: true,
-      toggleVisibilityShortcut: "",
-      tileRenderMarkdown: false,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -51,7 +51,6 @@ describe("settings api", () => {
 
   test("saves config through Rust", async () => {
     const config: AppConfig = {
-      locale: "zh-CN",
       notesDir: "D:\\notes",
       globalShortcut: "Alt+Space",
       closeToTray: false,
@@ -65,10 +64,6 @@ describe("settings api", () => {
       fontSize: 16,
       surfaceFontSize: 16,
       externalFileAutoSave: true,
-      rememberSurfaceSize: true,
-      tileCtrlClose: true,
-      toggleVisibilityShortcut: "",
-      tileRenderMarkdown: false,
     };
     mockedInvoke.mockResolvedValue(config);
 
