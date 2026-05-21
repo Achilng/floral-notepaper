@@ -1332,6 +1332,12 @@ fn parse_configured_shortcut(field: &str, value: &str) -> Result<Shortcut, Box<d
         return Err(Box::new(AppError {
             code: "shortcutConflict".into(),
             message: conflict.message,
+            details: [
+                ("field".to_string(), field.to_string()),
+                ("shortcut".to_string(), value.to_string()),
+            ]
+            .into_iter()
+            .collect(),
         }));
     }
 

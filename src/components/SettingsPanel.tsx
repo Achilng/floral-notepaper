@@ -196,7 +196,7 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
           />
           <div className="space-y-1.5">
             <label className="block text-[11px] font-body text-ink-faint/70 px-0.5">
-              {t("settings.quickNoteShortcut", { defaultValue: "呼出小窗快捷键" })}
+              {t("settings.quickNoteShortcut", { defaultValue: "快捷记录快捷键" })}
             </label>
             <ShortcutRecorder
               value={config.globalShortcut}
