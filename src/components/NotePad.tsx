@@ -42,6 +42,10 @@ import {
   surfaceModeFromEvent,
 } from "../features/windows/surfaceMode";
 import type { NoteSurfaceMode } from "../features/windows/surfaceMode";
+import {
+  emitTileWindowUnpinned,
+  tileSurfaceModeUnpinNoteId,
+} from "../features/windows/tileWindowEvents";
 import { Tile } from "./Tile";
 
 type OpenMode = "new" | "open";
@@ -313,20 +317,29 @@ export function NotePad({
     [content, editingNoteId, title],
   );
 
-  const switchSurfaceMode = useCallback(async (nextMode: NoteSurfaceMode) => {
-    setSurfaceMode(nextMode);
+  const tileNoteId = editingNoteId ?? initialNoteId ?? "";
 
-    try {
-      if (nextMode === "tile") {
-        await setCurrentWindowAlwaysOnTop(true);
+  const switchSurfaceMode = useCallback(
+    async (nextMode: NoteSurfaceMode) => {
+      const unpinnedNoteId = tileSurfaceModeUnpinNoteId(surfaceMode, nextMode, tileNoteId);
+      setSurfaceMode(nextMode);
+      if (unpinnedNoteId) {
+        void emitTileWindowUnpinned(unpinnedNoteId).catch(() => undefined);
       }
 
-      const currentBounds = await getCurrentWindowBounds();
-      await animateCurrentWindowBounds(getSurfaceTargetBounds(nextMode, currentBounds));
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    }
-  }, []);
+      try {
+        if (nextMode === "tile") {
+          await setCurrentWindowAlwaysOnTop(true);
+        }
+
+        const currentBounds = await getCurrentWindowBounds();
+        await animateCurrentWindowBounds(getSurfaceTargetBounds(nextMode, currentBounds));
+      } catch (error) {
+        setErrorMessage(getErrorMessage(error));
+      }
+    },
+    [surfaceMode, tileNoteId],
+  );
 
   useEffect(() => {
     function handleSurfaceModeRequest(event: Event) {
@@ -472,7 +485,6 @@ export function NotePad({
   };
 
   const isTile = surfaceMode === "tile";
-  const tileNoteId = editingNoteId ?? initialNoteId ?? "";
   const tileTitle = title.trim();
   const enterClass = hasEnteredOnce.current ? "" : "animate-window-enter";
   const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : enterClass}`;

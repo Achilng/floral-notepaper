@@ -617,6 +617,14 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         return;
     }
 
+    if matches!(event, WindowEvent::CloseRequested { .. })
+        && should_save_surface_size_before_close(window.label())
+    {
+        if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+            save_surface_size(&webview);
+        }
+    }
+
     if window.label() != MAIN_WINDOW_LABEL {
         return;
     }
@@ -866,6 +874,10 @@ fn save_surface_size(window: &tauri::WebviewWindow) {
     config.surface_width = Some(w);
     config.surface_height = Some(h);
     let _ = store.save_config(config);
+}
+
+fn should_save_surface_size_before_close(label: &str) -> bool {
+    label.starts_with("notepad-") || label.starts_with("tile-")
 }
 
 fn schedule_notepad_prewarm(app: &AppHandle) {
@@ -1834,6 +1846,14 @@ mod tests {
             dynamic_window_visual_options("main"),
             DynamicWindowVisualOptions { transparent: true }
         );
+    }
+
+    #[test]
+    fn saves_surface_size_before_notepad_and_tile_windows_close() {
+        assert!(should_save_surface_size_before_close("notepad-note-1"));
+        assert!(should_save_surface_size_before_close("tile-note-1"));
+        assert!(!should_save_surface_size_before_close(MAIN_WINDOW_LABEL));
+        assert!(!should_save_surface_size_before_close("settings"));
     }
 
     #[cfg(target_os = "macos")]

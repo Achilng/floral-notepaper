@@ -54,6 +54,11 @@ import {
   isCurrentWindowMaximized,
   startCurrentWindowDrag,
 } from "../features/windows/controls";
+import {
+  TILE_WINDOW_CLOSED_EVENT,
+  TILE_WINDOW_UNPINNED_EVENT,
+  syncPinnedTileIds,
+} from "../features/windows/tileWindowEvents";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -605,12 +610,17 @@ export function MainWindow({
   }, []);
 
   useEffect(() => {
-    const unlisten = listen<string>("tile-window-closed", (event) => {
-      setPinnedTileIds((previous) => {
-        const next = new Set(previous);
-        next.delete(event.payload);
-        return next;
-      });
+    const unlisten = listen<string>(TILE_WINDOW_CLOSED_EVENT, (event) => {
+      setPinnedTileIds((previous) => syncPinnedTileIds(previous, event.payload, false));
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    const unlisten = listen<string>(TILE_WINDOW_UNPINNED_EVENT, (event) => {
+      setPinnedTileIds((previous) => syncPinnedTileIds(previous, event.payload, false));
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -1157,13 +1167,7 @@ export function MainWindow({
     try {
       const pinned = await toggleTileWindow(selectedId);
       setPinnedTileIds((previous) => {
-        const next = new Set(previous);
-        if (pinned) {
-          next.add(selectedId);
-        } else {
-          next.delete(selectedId);
-        }
-        return next;
+        return syncPinnedTileIds(previous, selectedId, pinned);
       });
     } catch (error) {
       setErrorMessage(getErrorMessage(error));
