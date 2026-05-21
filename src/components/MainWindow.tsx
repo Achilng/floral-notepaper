@@ -2100,10 +2100,8 @@ export function MainWindow({
                         </div>
                       )}
                       <div
-                        className={`flex-1 overflow-y-auto pb-6 ${
-                          viewMode === "preview"
-                            ? "pt-3 px-[max(2rem,calc((100%-720px)/2))]"
-                            : "pt-1 px-6"
+                        className={`flex-1 overflow-y-auto px-6 pb-6 ${
+                          viewMode === "preview" ? "pt-3" : "pt-1"
                         }`}
                       >
                         <MarkdownPreview
