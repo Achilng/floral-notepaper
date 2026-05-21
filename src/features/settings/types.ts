@@ -9,6 +9,7 @@ export interface AppConfig {
   globalShortcut: string;
   closeToTray: boolean;
   autostart: boolean;
+  autoCheckUpdates: boolean;
   defaultViewMode: string;
   noteAutoSave: boolean;
   noteSurfaceAutoSave: boolean;

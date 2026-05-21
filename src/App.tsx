@@ -7,6 +7,7 @@ import { TileShowcase } from "./components/TileShowcase";
 import { getConfig } from "./features/settings/api";
 import { applyTheme, watchSystemTheme } from "./features/settings/theme";
 import type { AppConfig, ThemeOption } from "./features/settings/types";
+import { checkForAppUpdate } from "./features/update/checker";
 import { getInitialRoute } from "./features/windows/windowRoutes";
 import { listen } from "@tauri-apps/api/event";
 
@@ -16,15 +17,23 @@ function App() {
 
   useEffect(() => {
     let cleanup = () => {};
+    let cancelled = false;
     getConfig()
       .then((config) => {
+        if (cancelled) return;
         const theme = (config.theme || "system") as ThemeOption;
         applyTheme(theme);
         cleanup = watchSystemTheme(theme);
+        if (activeView === "main" && config.autoCheckUpdates) {
+          void checkForAppUpdate();
+        }
       })
       .catch(() => {});
-    return () => cleanup();
-  }, []);
+    return () => {
+      cancelled = true;
+      cleanup();
+    };
+  }, [activeView]);
 
   useEffect(() => {
     const unlisten = listen<AppConfig>("config-changed", (event) => {

@@ -12,6 +12,7 @@ describe("MainWindow settings", () => {
           globalShortcut: "Ctrl+Space",
           closeToTray: true,
           autostart: false,
+          autoCheckUpdates: true,
           defaultViewMode: "split",
           noteAutoSave: true,
           noteSurfaceAutoSave: true,

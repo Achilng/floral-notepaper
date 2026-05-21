@@ -2,7 +2,7 @@ pub mod desktop;
 pub mod services;
 
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
-use std::path::PathBuf;
+use std::{env, fs, path::PathBuf};
 use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
@@ -152,6 +152,51 @@ fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError>
 }
 
 #[tauri::command]
+async fn download_update_asset(url: String, file_name: String) -> Result<String, AppError> {
+    let sanitized_name = PathBuf::from(&file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .filter(|name| !name.trim().is_empty())
+        .ok_or_else(|| AppError {
+            code: "invalidUpdateAsset".into(),
+            message: "无效的更新安装包文件名".into(),
+        })?
+        .to_string();
+
+    let bytes = reqwest::get(&url)
+        .await
+        .map_err(|error| AppError {
+            code: "updateDownload".into(),
+            message: error.to_string(),
+        })?
+        .error_for_status()
+        .map_err(|error| AppError {
+            code: "updateDownload".into(),
+            message: error.to_string(),
+        })?
+        .bytes()
+        .await
+        .map_err(|error| AppError {
+            code: "updateDownload".into(),
+            message: error.to_string(),
+        })?;
+
+    let updates_dir = env::temp_dir().join("floral-notepaper-updates");
+    fs::create_dir_all(&updates_dir).map_err(|error| AppError {
+        code: "updateDownload".into(),
+        message: error.to_string(),
+    })?;
+
+    let destination = updates_dir.join(sanitized_name);
+    fs::write(&destination, &bytes).map_err(|error| AppError {
+        code: "updateDownload".into(),
+        message: error.to_string(),
+    })?;
+
+    Ok(destination.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 async fn open_notepad_window(
     app: AppHandle,
     note_id: Option<String>,
@@ -216,6 +261,7 @@ pub fn run() {
             categories_delete,
             config_get,
             config_save,
+            download_update_asset,
             open_notepad_window,
             recycle_notepad_window,
             open_tile_window,

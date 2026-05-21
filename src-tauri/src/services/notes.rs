@@ -13,6 +13,8 @@ pub struct AppConfig {
     pub global_shortcut: String,
     pub close_to_tray: bool,
     pub autostart: bool,
+    #[serde(default = "default_auto_check_updates")]
+    pub auto_check_updates: bool,
     pub default_view_mode: String,
     #[serde(default = "default_note_auto_save")]
     pub note_auto_save: bool,
@@ -581,6 +583,7 @@ impl NoteStore {
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
             autostart: false,
+            auto_check_updates: default_auto_check_updates(),
             default_view_mode: "split".into(),
             note_auto_save: true,
             note_surface_auto_save: true,
@@ -844,6 +847,10 @@ fn default_note_auto_save() -> bool {
     true
 }
 
+fn default_auto_check_updates() -> bool {
+    true
+}
+
 fn default_note_surface_auto_save() -> bool {
     true
 }
@@ -993,6 +1000,7 @@ mod tests {
         assert_eq!(default_config.global_shortcut, "Option+Space");
         #[cfg(not(target_os = "macos"))]
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
+        assert!(default_config.auto_check_updates);
         assert!(default_config.note_auto_save);
         assert!(default_config.note_surface_auto_save);
         assert_eq!(default_config.tile_color, "#f6f3ec");
@@ -1006,6 +1014,7 @@ mod tests {
             global_shortcut: "Alt+Space".into(),
             close_to_tray: false,
             autostart: true,
+            auto_check_updates: false,
             default_view_mode: "preview".into(),
             note_auto_save: false,
             note_surface_auto_save: false,
@@ -1052,6 +1061,7 @@ mod tests {
 
         let loaded = store.load_config().expect("load legacy config");
 
+        assert!(loaded.auto_check_updates);
         assert!(loaded.note_auto_save);
         assert!(loaded.note_surface_auto_save);
         assert_eq!(loaded.tile_color, "#f6f3ec");

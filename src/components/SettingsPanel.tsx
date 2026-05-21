@@ -108,6 +108,11 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             onChange={(checked) => setConfigValue("autostart", checked)}
           />
           <ToggleRow
+            label="启动时自动检查更新"
+            checked={config.autoCheckUpdates}
+            onChange={(checked) => setConfigValue("autoCheckUpdates", checked)}
+          />
+          <ToggleRow
             label="自动保存笔记"
             checked={config.noteAutoSave}
             onChange={(checked) => setConfigValue("noteAutoSave", checked)}
