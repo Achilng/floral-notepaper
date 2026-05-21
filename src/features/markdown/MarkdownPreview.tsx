@@ -128,16 +128,18 @@ const components: Components = {
   ),
   table: ({ children }) => (
     <div className="my-3 overflow-x-auto">
-      <table className="w-full text-[0.93em] border-collapse">{children}</table>
+      <table className="w-full text-[0.93em] border-collapse border border-paper-deep/50">
+        {children}
+      </table>
     </div>
   ),
   th: ({ children }) => (
-    <th className="text-left px-3 py-1.5 border-b border-paper-deep/30 font-semibold text-ink text-[0.85em]">
+    <th className="text-left px-3 py-1.5 border border-paper-deep/40 font-semibold text-ink text-[0.85em] bg-paper-warm/50">
       {children}
     </th>
   ),
   td: ({ children }) => (
-    <td className="px-3 py-1.5 border-b border-paper-deep/15 text-ink-soft">{children}</td>
+    <td className="px-3 py-1.5 border border-paper-deep/35 text-ink-soft">{children}</td>
   ),
   input: ({ checked, ...props }) => (
     <input {...props} checked={checked} disabled className="mr-1.5 accent-bamboo" />

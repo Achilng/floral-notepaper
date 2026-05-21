@@ -322,11 +322,15 @@ export function MainWindow({
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
+  const saveStateRef = useRef(saveState);
+  saveStateRef.current = saveState;
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
     [notes, selectedId],
   );
+  const selectedNoteRef = useRef(selectedNote);
+  selectedNoteRef.current = selectedNote;
 
   const selectedExternalFile = useMemo(
     () => externalFiles.find((f) => f.id === selectedId) ?? null,
@@ -568,7 +572,19 @@ export function MainWindow({
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
       void refreshNotes().then((loaded) => {
-        if (selectedId && !loaded.some((n) => n.id === selectedId)) {
+        if (!selectedId) return;
+        const stillExists = loaded.some((n) => n.id === selectedId);
+        if (stillExists) {
+          if (saveStateRef.current !== "dirty") {
+            void getNote(selectedId)
+              .then((note) => {
+                setTitle(note.title);
+                setContent(note.content);
+                setSaveState("saved");
+              })
+              .catch(() => undefined);
+          }
+        } else if (selectedNoteRef.current) {
           if (loaded[0]) {
             void loadNote(loaded[0].id);
           } else {
@@ -581,6 +597,14 @@ export function MainWindow({
       void unlisten.then((fn) => fn());
     };
   }, [refreshNotes, selectedId, loadNote, clearCurrentNote]);
+
+  useEffect(() => {
+    function handleFocus() {
+      void refreshNotes();
+    }
+    window.addEventListener("focus", handleFocus);
+    return () => window.removeEventListener("focus", handleFocus);
+  }, [refreshNotes]);
 
   useEffect(() => {
     const unlisten = listen<string>("open-external-file", (event) => {
@@ -2079,15 +2103,21 @@ export function MainWindow({
 
                   {viewMode === "split" && (
                     <div
-                      className={`w-1 shrink-0 cursor-col-resize group relative ${isResizingSplit ? "bg-bamboo/30" : "hover:bg-bamboo/20"} transition-colors`}
+                      className={`w-1.5 shrink-0 cursor-col-resize group relative flex items-center justify-center ${isResizingSplit ? "bg-bamboo/30" : "hover:bg-bamboo/20"} transition-colors`}
                       onMouseDown={(e) => {
                         e.preventDefault();
                         setIsResizingSplit(true);
                       }}
                     >
                       <div
-                        className={`absolute inset-y-0 -left-1 -right-1 ${isResizingSplit ? "" : "group-hover:bg-bamboo/5"}`}
+                        className={`absolute inset-y-0 -left-1.5 -right-1.5 ${isResizingSplit ? "" : "group-hover:bg-bamboo/5"}`}
                       />
+                      {/* 拖拽手柄指示器 */}
+                      <div className="relative z-10 flex flex-col gap-[3px] opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
+                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
+                        <div className="w-[3px] h-[3px] rounded-full bg-ink-ghost/60" />
+                      </div>
                     </div>
                   )}
 

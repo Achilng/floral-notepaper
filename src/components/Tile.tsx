@@ -83,7 +83,7 @@ export function Tile({
   const tileColor = normalizeTileColor(color);
   const isLightBg = chroma(tileColor).luminance() > 0.18;
   const mixTarget = isLightBg ? "#1a1a18" : "#ffffff";
-  const borderColor = chroma.mix(tileColor, mixTarget, 0.18).alpha(0.3).css();
+  const borderColor = chroma.mix(tileColor, mixTarget, 0.18).alpha(0.55).css();
   const cornerColor = chroma.mix(tileColor, mixTarget, 0.3).alpha(0.26).css();
   const titleColor = chroma.mix(tileColor, mixTarget, 0.4).alpha(0.5).css();
   const contentColor = chroma.mix(tileColor, mixTarget, 0.65).alpha(0.85).css();
