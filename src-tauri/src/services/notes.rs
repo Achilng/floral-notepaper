@@ -529,41 +529,54 @@ impl NoteStore {
     pub fn delete_category(&self, name: &str) -> Result<(), AppError> {
         let notes_dir = self.notes_dir()?;
         let category_path = notes_dir.join(name);
-        if !category_path.exists() {
-            return Err(AppError::category_not_found(name));
-        }
+        let dir_exists = category_path.exists();
 
-        // Safety: ensure the category path is actually inside notes_dir
-        let canon_notes = fs::canonicalize(&notes_dir).unwrap_or_else(|_| notes_dir.clone());
-        let canon_cat = fs::canonicalize(&category_path).unwrap_or_else(|_| category_path.clone());
-        if !canon_cat.starts_with(&canon_notes) || canon_cat == canon_notes {
-            return Err(AppError::new(
-                "unsafePath",
-                format!(
-                    "拒绝删除「{}」：路径不在笔记目录内",
-                    category_path.display()
-                ),
-            ));
-        }
-
-        // Move all notes in this category to uncategorized (root)
-        let mut metadata_file = self.load_metadata()?;
-        for note in &mut metadata_file.notes {
-            if note.category == name {
-                let old_path = category_path.join(&note.file_name);
-                let new_path = notes_dir.join(&note.file_name);
-                if old_path.exists() {
-                    fs::rename(&old_path, &new_path)?;
-                }
-                note.category = String::new();
+        if dir_exists {
+            // Safety: ensure the category path is actually inside notes_dir
+            let canon_notes = fs::canonicalize(&notes_dir).unwrap_or_else(|_| notes_dir.clone());
+            let canon_cat =
+                fs::canonicalize(&category_path).unwrap_or_else(|_| category_path.clone());
+            if !canon_cat.starts_with(&canon_notes) || canon_cat == canon_notes {
+                return Err(AppError::new(
+                    "unsafePath",
+                    format!(
+                        "拒绝删除「{}」：路径不在笔记目录内",
+                        category_path.display()
+                    ),
+                ));
             }
-        }
-        self.save_metadata(&metadata_file)?;
 
-        // Move to recycle bin instead of permanent deletion
-        if category_path.exists() {
+            // Move all notes in this category to uncategorized (root)
+            let mut metadata_file = self.load_metadata()?;
+            for note in &mut metadata_file.notes {
+                if note.category == name {
+                    let old_path = category_path.join(&note.file_name);
+                    let new_path = notes_dir.join(&note.file_name);
+                    if old_path.exists() {
+                        fs::rename(&old_path, &new_path)?;
+                    }
+                    note.category = String::new();
+                }
+            }
+            self.save_metadata(&metadata_file)?;
+
+            // Move to recycle bin instead of permanent deletion
             trash::delete(&category_path)
                 .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
+        } else {
+            // Directory already gone (manually deleted outside the app);
+            // clean up any stale metadata references.
+            let mut metadata_file = self.load_metadata()?;
+            let mut changed = false;
+            for note in &mut metadata_file.notes {
+                if note.category == name {
+                    note.category = String::new();
+                    changed = true;
+                }
+            }
+            if changed {
+                self.save_metadata(&metadata_file)?;
+            }
         }
         Ok(())
     }
