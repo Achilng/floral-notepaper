@@ -22,7 +22,7 @@
       "selectAll": "全選"
     },
     "tile": {
-      "close": "關閉",
+      "close": "取消釘屏",
       "copy": "複製",
       "save": "儲存",
       "switchToPad": "轉為小窗"
@@ -192,7 +192,7 @@
       "zhHK": "繁體中文"
     },
     "notesDir": "筆記目錄",
-    "quickNoteShortcut": "呼出小窗快捷鍵",
+    "quickNoteShortcut": "快捷記錄快捷鍵",
     "rememberSurfaceSize": "記住小窗尺寸",
     "selectFolder": "選擇資料夾",
     "shortcut": {

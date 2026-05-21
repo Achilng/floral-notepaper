@@ -7,6 +7,19 @@ use std::{
 };
 use uuid::Uuid;
 
+#[cfg(target_os = "macos")]
+const DEFAULT_MACOS_GLOBAL_SHORTCUT: &str = "Command+Option+N";
+#[cfg(target_os = "macos")]
+const LEGACY_MACOS_GLOBAL_SHORTCUTS: [&str; 5] = [
+    "Option+Space",
+    "Alt+Space",
+    "Ctrl+Option+Space",
+    "Control+Option+Space",
+    "Ctrl+Alt+Space",
+];
+#[cfg(target_os = "macos")]
+const MACOS_SHORTCUT_MIGRATION_MARKER: &str = ".macos-shortcut-default-v3";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
@@ -278,12 +291,18 @@ impl NoteStore {
         self.base_dir.join("config.json")
     }
 
+    #[cfg(target_os = "macos")]
+    fn macos_shortcut_migration_path(&self) -> PathBuf {
+        self.base_dir.join(MACOS_SHORTCUT_MIGRATION_MARKER)
+    }
+
     pub fn load_config(&self) -> Result<AppConfig, AppError> {
         self.ensure_base_dir()?;
         let path = self.config_path();
         if !path.exists() {
             let config = self.default_config();
             self.save_config(config.clone())?;
+            self.mark_macos_shortcut_migration_handled()?;
             return Ok(config);
         }
 
@@ -293,6 +312,9 @@ impl NoteStore {
             write_json_atomic(&path, &config)?;
         }
         fs::create_dir_all(&config.notes_dir)?;
+        if self.migrate_macos_shortcut_default(&mut config)? {
+            write_json_atomic(&path, &config)?;
+        }
         Ok(config)
     }
 
@@ -619,7 +641,7 @@ impl NoteStore {
             locale: default_locale(),
             notes_dir: self.base_dir.join("notes").to_string_lossy().to_string(),
             #[cfg(target_os = "macos")]
-            global_shortcut: "Option+Space".into(),
+            global_shortcut: DEFAULT_MACOS_GLOBAL_SHORTCUT.into(),
             #[cfg(not(target_os = "macos"))]
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
@@ -644,6 +666,40 @@ impl NoteStore {
 
     fn ensure_base_dir(&self) -> Result<(), AppError> {
         fs::create_dir_all(&self.base_dir)?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn migrate_macos_shortcut_default(&self, config: &mut AppConfig) -> Result<bool, AppError> {
+        let migration_path = self.macos_shortcut_migration_path();
+        if migration_path.exists() {
+            return Ok(false);
+        }
+
+        let should_migrate = LEGACY_MACOS_GLOBAL_SHORTCUTS
+            .iter()
+            .any(|shortcut| shortcuts_equal(shortcut, &config.global_shortcut));
+        if should_migrate {
+            config.global_shortcut = DEFAULT_MACOS_GLOBAL_SHORTCUT.into();
+        }
+
+        self.mark_macos_shortcut_migration_handled()?;
+        Ok(should_migrate)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn migrate_macos_shortcut_default(&self, _config: &mut AppConfig) -> Result<bool, AppError> {
+        Ok(false)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn mark_macos_shortcut_migration_handled(&self) -> Result<(), AppError> {
+        fs::write(self.macos_shortcut_migration_path(), "done")?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn mark_macos_shortcut_migration_handled(&self) -> Result<(), AppError> {
         Ok(())
     }
 
@@ -789,6 +845,19 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), AppErro
     }
     fs::rename(temp_path, path)?;
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn shortcuts_equal(left: &str, right: &str) -> bool {
+    fn normalize(value: &str) -> String {
+        value
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .flat_map(|ch| ch.to_lowercase())
+            .collect()
+    }
+
+    normalize(left) == normalize(right)
 }
 
 fn safe_file_stem(title: &str) -> String {
@@ -1037,7 +1106,7 @@ mod tests {
 
         let default_config = store.load_config().expect("load default config");
         #[cfg(target_os = "macos")]
-        assert_eq!(default_config.global_shortcut, "Option+Space");
+        assert_eq!(default_config.global_shortcut, "Command+Option+N");
         #[cfg(not(target_os = "macos"))]
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
         assert!(default_config.note_auto_save);
@@ -1109,6 +1178,99 @@ mod tests {
         assert_eq!(loaded.locale, "zh-CN");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migrates_legacy_macos_shortcut_default_once() {
+        let store = NoteStore::new(test_root("legacy-macos-shortcut"));
+        let notes_dir = store.base_dir().join("notes");
+        fs::create_dir_all(store.base_dir()).expect("create base dir");
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(
+            store.config_path(),
+            format!(
+                r#"{{
+  "notesDir": "{}",
+  "globalShortcut": "Option+Space",
+  "closeToTray": true,
+  "autostart": false,
+  "defaultViewMode": "split"
+}}"#,
+                notes_dir.to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .expect("write legacy config");
+
+        let migrated = store.load_config().expect("load legacy config");
+
+        assert_eq!(migrated.global_shortcut, "Command+Option+N");
+        assert!(store.macos_shortcut_migration_path().exists());
+
+        let mut manual = migrated;
+        manual.global_shortcut = "Option+Space".into();
+        store
+            .save_config(manual.clone())
+            .expect("save manual config");
+
+        let loaded = store.load_config().expect("reload manual config");
+        assert_eq!(loaded.global_shortcut, "Option+Space");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migrates_previous_macos_shortcut_default() {
+        let store = NoteStore::new(test_root("previous-macos-shortcut"));
+        let notes_dir = store.base_dir().join("notes");
+        fs::create_dir_all(store.base_dir()).expect("create base dir");
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(
+            store.config_path(),
+            format!(
+                r#"{{
+  "notesDir": "{}",
+  "globalShortcut": "Ctrl+Option+Space",
+  "closeToTray": true,
+  "autostart": false,
+  "defaultViewMode": "split"
+}}"#,
+                notes_dir.to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .expect("write previous config");
+
+        let migrated = store.load_config().expect("load previous config");
+
+        assert_eq!(migrated.global_shortcut, "Command+Option+N");
+        assert!(store.macos_shortcut_migration_path().exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn leaves_custom_macos_shortcut_unchanged() {
+        let store = NoteStore::new(test_root("custom-macos-shortcut"));
+        let notes_dir = store.base_dir().join("notes");
+        fs::create_dir_all(store.base_dir()).expect("create base dir");
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(
+            store.config_path(),
+            format!(
+                r#"{{
+  "notesDir": "{}",
+  "globalShortcut": "Command+K",
+  "closeToTray": true,
+  "autostart": false,
+  "defaultViewMode": "split"
+}}"#,
+                notes_dir.to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .expect("write custom config");
+
+        let loaded = store.load_config().expect("load custom config");
+
+        assert_eq!(loaded.global_shortcut, "Command+K");
+        assert!(store.macos_shortcut_migration_path().exists());
     }
 
     #[test]

@@ -2,7 +2,7 @@ use crate::{
     locales::{self, Locale},
     services::notes::{default_store, AppConfig, AppError},
 };
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::{
     error::Error,
     sync::{
@@ -88,6 +88,14 @@ pub struct ShortcutSpec {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DynamicWindowVisualOptions {
     pub transparent: bool,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct ShortcutCheckResult {
+    pub available: bool,
+    pub conflict_type: String,
+    pub message: String,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -554,6 +562,14 @@ pub async fn open_tile_window(
     open_tile_window_now(&app, &note_id, bounds)
 }
 
+pub async fn toggle_tile_window(
+    app: AppHandle,
+    note_id: String,
+    bounds: Option<WindowBounds>,
+) -> Result<bool, AppError> {
+    toggle_tile_window_now(&app, &note_id, bounds)
+}
+
 pub fn extract_file_arg(args: &[String]) -> Option<String> {
     args.iter()
         .find(|arg| {
@@ -592,6 +608,23 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
 }
 
 pub fn handle_window_event(window: &Window, event: &WindowEvent) {
+    if matches!(event, WindowEvent::Destroyed) {
+        if let Some(note_id) = window.label().strip_prefix("tile-") {
+            let _ = window
+                .app_handle()
+                .emit("tile-window-closed", note_id.to_string());
+        }
+        return;
+    }
+
+    if matches!(event, WindowEvent::CloseRequested { .. })
+        && should_save_surface_size_before_close(window.label())
+    {
+        if let Some(webview) = window.app_handle().get_webview_window(window.label()) {
+            save_surface_size(&webview);
+        }
+    }
+
     if window.label() != MAIN_WINDOW_LABEL {
         return;
     }
@@ -712,7 +745,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
         return Ok(());
     }
 
-    open_or_focus_window(
+    let label = open_or_focus_window(
         app,
         MAIN_WINDOW_LABEL,
         WindowOpenOptions {
@@ -731,6 +764,11 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
             bounds: None,
         },
     )?;
+    if let Some(window) = app.get_webview_window(&label) {
+        window.unminimize()?;
+        window.show()?;
+        window.set_focus()?;
+    }
     Ok(())
 }
 
@@ -836,6 +874,10 @@ fn save_surface_size(window: &tauri::WebviewWindow) {
     config.surface_width = Some(w);
     config.surface_height = Some(h);
     let _ = store.save_config(config);
+}
+
+fn should_save_surface_size_before_close(label: &str) -> bool {
+    label.starts_with("notepad-") || label.starts_with("tile-")
 }
 
 fn schedule_notepad_prewarm(app: &AppHandle) {
@@ -983,6 +1025,21 @@ fn open_tile_window_now(
     )
 }
 
+fn toggle_tile_window_now(
+    app: &AppHandle,
+    note_id: &str,
+    bounds: Option<WindowBounds>,
+) -> Result<bool, AppError> {
+    let label = tile_window_label(note_id);
+    if let Some(window) = app.get_webview_window(&label) {
+        window.close()?;
+        return Ok(false);
+    }
+
+    open_tile_window_now(app, note_id, bounds)?;
+    Ok(true)
+}
+
 fn open_or_focus_window(
     app: &AppHandle,
     label: &str,
@@ -1049,10 +1106,11 @@ fn tile_window_label(note_id: &str) -> String {
 }
 
 fn dynamic_window_visual_options(label: &str) -> DynamicWindowVisualOptions {
-    let is_note_surface = label.starts_with("notepad-") || label.starts_with("tile-");
+    let is_app_surface =
+        label == MAIN_WINDOW_LABEL || label.starts_with("notepad-") || label.starts_with("tile-");
 
     DynamicWindowVisualOptions {
-        transparent: is_note_surface,
+        transparent: is_app_surface,
     }
 }
 
@@ -1158,10 +1216,111 @@ fn register_configured_global_shortcut(app: &AppHandle) {
     };
 
     if let Err(error) = install_global_shortcut_bindings(app, &config, false) {
-        let msg = format!("failed to register global shortcuts: {error}");
+        let msg = format!("快捷键注册失败：{error}");
         eprintln!("{msg}");
         let _ = app.emit("shortcut-register-failed", &msg);
     }
+}
+
+pub fn check_global_shortcut(
+    app: &AppHandle,
+    shortcut_config: &str,
+) -> Result<ShortcutCheckResult, AppError> {
+    let Some(shortcut) = shortcut_from_config(shortcut_config).and_then(to_tauri_shortcut) else {
+        return Ok(shortcut_check_result(
+            false,
+            "invalid",
+            format!("快捷键 {shortcut_config} 不受支持"),
+        ));
+    };
+
+    if let Some(conflict) = system_shortcut_conflict(shortcut_config) {
+        return Ok(conflict);
+    }
+
+    if app.global_shortcut().is_registered(shortcut) {
+        return Ok(shortcut_check_result(
+            true,
+            "current",
+            format!("快捷键 {shortcut_config} 当前正在使用"),
+        ));
+    }
+
+    match app.global_shortcut().register(shortcut) {
+        Ok(()) => {
+            if let Err(error) = app.global_shortcut().unregister(shortcut) {
+                return Ok(shortcut_check_result(
+                    false,
+                    "unknown",
+                    format!("检测完成，但释放临时快捷键失败：{error}"),
+                ));
+            }
+
+            Ok(shortcut_check_result(
+                true,
+                "none",
+                format!("快捷键 {shortcut_config} 未检测到冲突"),
+            ))
+        }
+        Err(error) => Ok(shortcut_check_result(
+            false,
+            "registered",
+            format!("快捷键 {shortcut_config} 注册失败，可能已被系统或其他应用占用：{error}"),
+        )),
+    }
+}
+
+fn shortcut_check_result(
+    available: bool,
+    conflict_type: impl Into<String>,
+    message: impl Into<String>,
+) -> ShortcutCheckResult {
+    ShortcutCheckResult {
+        available,
+        conflict_type: conflict_type.into(),
+        message: message.into(),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn system_shortcut_conflict(shortcut_config: &str) -> Option<ShortcutCheckResult> {
+    let spec = shortcut_from_config(shortcut_config)?;
+    let message = if shortcut_matches(&spec, false, false, false, true, ShortcutKey::Space) {
+        Some("与 macOS 系统快捷键 Spotlight 冲突")
+    } else if shortcut_matches(&spec, false, true, false, true, ShortcutKey::Space) {
+        Some("与 macOS 系统快捷键 Finder 搜索窗口冲突")
+    } else if shortcut_matches(&spec, true, false, false, false, ShortcutKey::Space)
+        || shortcut_matches(&spec, true, true, false, false, ShortcutKey::Space)
+    {
+        Some("与 macOS 输入法切换快捷键冲突")
+    } else if shortcut_matches(&spec, false, true, false, false, ShortcutKey::Space) {
+        Some("Option+Space 容易与输入法或系统服务快捷键冲突")
+    } else {
+        None
+    }?;
+
+    Some(shortcut_check_result(false, "system", message))
+}
+
+#[cfg(not(target_os = "macos"))]
+fn system_shortcut_conflict(_shortcut_config: &str) -> Option<ShortcutCheckResult> {
+    None
+}
+
+#[cfg(target_os = "macos")]
+fn shortcut_matches(
+    spec: &ShortcutSpec,
+    ctrl: bool,
+    alt: bool,
+    shift: bool,
+    meta: bool,
+    key: ShortcutKey,
+) -> bool {
+    spec.ctrl == ctrl
+        && spec.alt == alt
+        && spec.shift == shift
+        && spec.meta == meta
+        && spec.key == key
 }
 
 #[cfg(not(desktop))]
@@ -1169,6 +1328,19 @@ fn register_configured_global_shortcut(_app: &AppHandle) {}
 
 #[cfg(desktop)]
 fn parse_configured_shortcut(field: &str, value: &str) -> Result<Shortcut, Box<dyn Error>> {
+    if let Some(conflict) = system_shortcut_conflict(value) {
+        return Err(Box::new(AppError {
+            code: "shortcutConflict".into(),
+            message: conflict.message,
+            details: [
+                ("field".to_string(), field.to_string()),
+                ("shortcut".to_string(), value.to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        }));
+    }
+
     shortcut_from_config(value)
         .and_then(to_tauri_shortcut)
         .ok_or_else(|| {
@@ -1545,7 +1717,7 @@ mod tests {
         let config = AppConfig {
             locale: "zh-CN".into(),
             notes_dir: "D:\\notes".into(),
-            global_shortcut: "Ctrl+Space".into(),
+            global_shortcut: "Ctrl+Shift+K".into(),
             close_to_tray: true,
             autostart: false,
             default_view_mode: "split".into(),
@@ -1562,7 +1734,7 @@ mod tests {
             tile_render_markdown: false,
             surface_width: None,
             surface_height: None,
-            toggle_visibility_shortcut: "Ctrl+Space".into(),
+            toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
         };
 
         let error = match shortcut_bindings_from_config(&config) {
@@ -1675,8 +1847,25 @@ mod tests {
         );
         assert_eq!(
             dynamic_window_visual_options("main"),
-            DynamicWindowVisualOptions { transparent: false }
+            DynamicWindowVisualOptions { transparent: true }
         );
+    }
+
+    #[test]
+    fn saves_surface_size_before_notepad_and_tile_windows_close() {
+        assert!(should_save_surface_size_before_close("notepad-note-1"));
+        assert!(should_save_surface_size_before_close("tile-note-1"));
+        assert!(!should_save_surface_size_before_close(MAIN_WINDOW_LABEL));
+        assert!(!should_save_surface_size_before_close("settings"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn detects_known_macos_system_shortcut_conflicts() {
+        let conflict = system_shortcut_conflict("Command+Space").expect("conflict");
+
+        assert_eq!(conflict.conflict_type, "system");
+        assert!(conflict.message.contains("Spotlight"));
     }
 
     #[test]

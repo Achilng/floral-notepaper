@@ -41,6 +41,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const isWindows =
+      navigator.userAgent.includes("Windows") || navigator.platform.toLowerCase().startsWith("win");
+    if (!isWindows) return;
+
     const preventSystemMenu = (e: KeyboardEvent) => {
       if (e.altKey && e.code === "Space") {
         e.preventDefault();
@@ -52,7 +56,7 @@ function App() {
 
   return (
     <ContextMenuProvider>
-      <div className="h-screen font-body text-ink overflow-hidden">
+      <div className="app-window-shell h-screen font-body text-ink overflow-hidden">
         {activeView === "main" ? (
           <MainWindow />
         ) : activeView === "notepad" ? (

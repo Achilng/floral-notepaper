@@ -18,9 +18,18 @@
   --color-shadow-deep: rgba(26, 26, 24, 0.12);
   --color-danger-bg: #fef2f2;
 
-  --font-display: "Noto Serif SC", "Source Han Serif SC", Georgia, serif;
-  --font-body: "Noto Sans SC", "Source Han Sans SC", system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", "Fira Code", monospace;
+  --font-display:
+    -apple-system, BlinkMacSystemFont, "SF Pro Display", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-body:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "SF Mono", "Menlo", "JetBrains Mono", "Fira Code", monospace;
+}
+
+:root {
+  --app-window-radius: 14px;
+  --app-surface-radius: 14px;
 }
 
 :root[data-theme="dark"] {
@@ -76,6 +85,121 @@ html.theme-transition .sliding-highlight {
 html {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  background: transparent;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: transparent;
+  overflow: hidden;
+  font-family: var(--font-body);
+}
+
+.app-window-shell {
+  background: transparent;
+}
+
+.app-main-frame {
+  border-radius: var(--app-window-radius);
+}
+
+.app-surface-frame {
+  border-radius: var(--app-surface-radius);
+}
+
+.mac-window-controls {
+  height: 100%;
+}
+
+.mac-traffic-button {
+  position: relative;
+  width: 12px;
+  height: 12px;
+  padding: 0;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  cursor: default;
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.05);
+}
+
+.mac-traffic-close {
+  background: #ff5f57;
+  border-color: #e0443e;
+}
+
+.mac-traffic-minimize {
+  background: #ffbd2e;
+  border-color: #dea123;
+}
+
+.mac-traffic-zoom {
+  background: #28c840;
+  border-color: #1aab29;
+}
+
+.mac-traffic-button::before,
+.mac-traffic-button::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  opacity: 0;
+  background: rgba(50, 39, 32, 0.68);
+  transform-origin: center;
+  transition: opacity 0.12s ease;
+}
+
+.mac-window-controls:hover .mac-traffic-button::before,
+.mac-window-controls:hover .mac-traffic-button::after {
+  opacity: 1;
+}
+
+.mac-traffic-close::before,
+.mac-traffic-close::after {
+  width: 6px;
+  height: 1px;
+  margin-left: -3px;
+  margin-top: -0.5px;
+}
+
+.mac-traffic-close::before {
+  transform: rotate(45deg);
+}
+
+.mac-traffic-close::after {
+  transform: rotate(-45deg);
+}
+
+.mac-traffic-minimize::before {
+  width: 6px;
+  height: 1px;
+  margin-left: -3px;
+  margin-top: -0.5px;
+}
+
+.mac-traffic-minimize::after {
+  display: none;
+}
+
+.mac-traffic-zoom::before {
+  width: 5px;
+  height: 5px;
+  margin-left: -2.5px;
+  margin-top: -2.5px;
+  background: transparent;
+  border: 1px solid rgba(28, 84, 36, 0.72);
+  border-radius: 1px;
+}
+
+.mac-traffic-zoom::after {
+  display: none;
 }
 
 ::-webkit-scrollbar {

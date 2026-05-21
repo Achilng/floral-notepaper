@@ -23,7 +23,7 @@ export function getTileContextMenuItems(translate: TFunction = t): TileContextMe
     },
     {
       action: "close",
-      label: translate("contextMenu.tile.close", { defaultValue: "关闭" }),
+      label: translate("contextMenu.tile.close", { defaultValue: "取消钉屏" }),
       tone: "danger",
     },
   ];

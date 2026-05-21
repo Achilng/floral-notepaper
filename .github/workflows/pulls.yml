@@ -20,8 +20,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: pr-checks-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}
-  cancel-in-progress: true
+  group: pr-checks-${{ github.event.pull_request.number || github.event.issue.number || github.run_id }}-${{ github.event_name == 'issue_comment' && github.event.comment.body != '/run-checks' && github.run_id || 'checks' }}
+  cancel-in-progress: ${{ github.event_name != 'issue_comment' || github.event.comment.body == '/run-checks' }}
 
 jobs:
   detect-changes:
@@ -455,7 +455,6 @@ jobs:
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: "24"
-          cache: npm
 
       - name: Setup Rust
         if: ${{ github.event_name != 'issue_comment' || needs.detect-changes.outputs.build == 'true' }}

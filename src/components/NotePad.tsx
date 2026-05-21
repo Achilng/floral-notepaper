@@ -14,6 +14,7 @@ import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   animateCurrentWindowBounds,
+  closeCurrentWindow,
   getCurrentWindowBounds,
   recycleCurrentNotepad,
   setCurrentWindowAlwaysOnTop,
@@ -41,6 +42,10 @@ import {
   surfaceModeFromEvent,
 } from "../features/windows/surfaceMode";
 import type { NoteSurfaceMode } from "../features/windows/surfaceMode";
+import {
+  emitTileWindowUnpinned,
+  tileSurfaceModeUnpinNoteId,
+} from "../features/windows/tileWindowEvents";
 import { Tile } from "./Tile";
 
 type OpenMode = "new" | "open";
@@ -313,20 +318,29 @@ export function NotePad({
     [content, editingNoteId, title],
   );
 
-  const switchSurfaceMode = useCallback(async (nextMode: NoteSurfaceMode) => {
-    setSurfaceMode(nextMode);
+  const tileNoteId = editingNoteId ?? initialNoteId ?? "";
 
-    try {
-      if (nextMode === "tile") {
-        await setCurrentWindowAlwaysOnTop(true);
+  const switchSurfaceMode = useCallback(
+    async (nextMode: NoteSurfaceMode) => {
+      const unpinnedNoteId = tileSurfaceModeUnpinNoteId(surfaceMode, nextMode, tileNoteId);
+      setSurfaceMode(nextMode);
+      if (unpinnedNoteId) {
+        void emitTileWindowUnpinned(unpinnedNoteId).catch(() => undefined);
       }
 
-      const currentBounds = await getCurrentWindowBounds();
-      await animateCurrentWindowBounds(getSurfaceTargetBounds(nextMode, currentBounds));
-    } catch (error) {
-      setErrorMessage(getErrorMessage(error));
-    }
-  }, []);
+      try {
+        if (nextMode === "tile") {
+          await setCurrentWindowAlwaysOnTop(true);
+        }
+
+        const currentBounds = await getCurrentWindowBounds();
+        await animateCurrentWindowBounds(getSurfaceTargetBounds(nextMode, currentBounds));
+      } catch (error) {
+        setErrorMessage(getErrorMessage(error));
+      }
+    },
+    [surfaceMode, tileNoteId],
+  );
 
   useEffect(() => {
     function handleSurfaceModeRequest(event: Event) {
@@ -393,11 +407,12 @@ export function NotePad({
 
   const handleClose = useCallback(() => {
     setIsExiting(true);
-    void recycleCurrentNotepad().catch((error) => {
+    const closeSurface = surfaceMode === "tile" ? closeCurrentWindow : recycleCurrentNotepad;
+    void closeSurface().catch((error) => {
       setIsExiting(false);
       setErrorMessage(getErrorMessage(error));
     });
-  }, []);
+  }, [surfaceMode]);
 
   const copyTileContent = useCallback(async () => {
     setErrorMessage(null);
@@ -471,12 +486,11 @@ export function NotePad({
   };
 
   const isTile = surfaceMode === "tile";
-  const tileNoteId = editingNoteId ?? initialNoteId ?? "";
   const tileTitle = title.trim();
   const enterClass = hasEnteredOnce.current ? "" : "animate-window-enter";
   const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : enterClass}`;
   const padSurfaceClassName =
-    "relative noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/70 rounded-xl shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
+    "app-surface-frame relative noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/70 shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
 
   return (
     <div className={surfaceWrapperClassName}>
@@ -494,6 +508,26 @@ export function NotePad({
           data-note-id={tileNoteId}
           onMouseDown={handleDrag}
         >
+          <button
+            type="button"
+            aria-label="取消钉屏"
+            title="取消钉屏"
+            onMouseDown={(event) => event.stopPropagation()}
+            onClick={() => void handleClose()}
+            className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-ink-ghost/70 hover:text-red-400 hover:bg-danger-bg/80 transition-colors cursor-pointer"
+          >
+            <svg
+              width="12"
+              height="12"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.5"
+              strokeLinecap="round"
+            >
+              <path d="M18 6L6 18M6 6l12 12" />
+            </svg>
+          </button>
           <SurfaceResizeHandles />
         </Tile>
       ) : (

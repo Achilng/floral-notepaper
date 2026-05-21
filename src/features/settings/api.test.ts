@@ -1,7 +1,13 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { chooseNotesDirectory, getConfig, normalizeViewMode, saveConfig } from "./api";
+import {
+  checkGlobalShortcut,
+  chooseNotesDirectory,
+  getConfig,
+  normalizeViewMode,
+  saveConfig,
+} from "./api";
 import type { AppConfig } from "./types";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -75,6 +81,21 @@ describe("settings api", () => {
     await expect(saveConfig(config)).resolves.toBe(config);
 
     expect(invoke).toHaveBeenCalledWith("config_save", { config });
+  });
+
+  test("checks global shortcut availability through Rust", async () => {
+    const result = {
+      available: false,
+      conflictType: "system",
+      message: "与 macOS 系统快捷键冲突",
+    };
+    mockedInvoke.mockResolvedValue(result);
+
+    await expect(checkGlobalShortcut("Command+Space")).resolves.toBe(result);
+
+    expect(invoke).toHaveBeenCalledWith("global_shortcut_check", {
+      shortcut: "Command+Space",
+    });
   });
 
   test("normalizes supported view modes and falls back to split", () => {

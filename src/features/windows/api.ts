@@ -18,6 +18,10 @@ export function openTileWindow(noteId: string, bounds?: WindowBounds): Promise<s
   return invoke("open_tile_window", { noteId, bounds: bounds ?? null });
 }
 
+export function toggleTileWindow(noteId: string, bounds?: WindowBounds): Promise<boolean> {
+  return invoke("toggle_tile_window", { noteId, bounds: bounds ?? null });
+}
+
 export function openNoteInEditor(noteId: string): Promise<void> {
   return invoke("open_note_in_editor", { noteId });
 }

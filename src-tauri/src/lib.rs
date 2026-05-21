@@ -169,6 +169,14 @@ fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError>
 }
 
 #[tauri::command]
+fn global_shortcut_check(
+    app: AppHandle,
+    shortcut: String,
+) -> Result<desktop::ShortcutCheckResult, AppError> {
+    desktop::check_global_shortcut(&app, &shortcut)
+}
+
+#[tauri::command]
 async fn open_notepad_window(
     app: AppHandle,
     note_id: Option<String>,
@@ -189,6 +197,15 @@ async fn open_tile_window(
     bounds: Option<desktop::WindowBounds>,
 ) -> Result<String, AppError> {
     desktop::open_tile_window(app, note_id, bounds).await
+}
+
+#[tauri::command]
+async fn toggle_tile_window(
+    app: AppHandle,
+    note_id: String,
+    bounds: Option<desktop::WindowBounds>,
+) -> Result<bool, AppError> {
+    desktop::toggle_tile_window(app, note_id, bounds).await
 }
 
 #[tauri::command]
@@ -233,9 +250,11 @@ pub fn run() {
             categories_delete,
             config_get,
             config_save,
+            global_shortcut_check,
             open_notepad_window,
             recycle_notepad_window,
             open_tile_window,
+            toggle_tile_window,
             open_note_in_editor
         ])
         .run(tauri::generate_context!())
