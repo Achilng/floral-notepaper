@@ -23,6 +23,7 @@ describe("settings api", () => {
 
   test("gets config through Rust", async () => {
     const config: AppConfig = {
+      locale: "zh-CN",
       notesDir: "D:\\notes",
       globalShortcut: "Ctrl+Space",
       closeToTray: true,
@@ -50,6 +51,7 @@ describe("settings api", () => {
 
   test("saves config through Rust", async () => {
     const config: AppConfig = {
+      locale: "zh-CN",
       notesDir: "D:\\notes",
       globalShortcut: "Alt+Space",
       closeToTray: false,

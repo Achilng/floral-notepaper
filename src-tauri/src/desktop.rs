@@ -1,4 +1,7 @@
-use crate::services::notes::{default_store, AppConfig, AppError};
+use crate::{
+    locales::{self, Locale},
+    services::notes::{default_store, AppConfig, AppError},
+};
 use serde::Deserialize;
 use std::{
     error::Error,
@@ -11,7 +14,7 @@ use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
-    WebviewWindowBuilder, Window, WindowEvent,
+    WebviewWindowBuilder, Window, WindowEvent, Wry,
 };
 use uuid::Uuid;
 
@@ -21,6 +24,7 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const TRAY_ID: &str = "main-tray";
 const TRAY_SHOW_MAIN_ID: &str = "show-main";
 const TRAY_QUICK_NOTE_ID: &str = "quick-note";
 const TRAY_TOGGLE_CLOSE_TO_TRAY_ID: &str = "toggle-close-to-tray";
@@ -259,34 +263,118 @@ pub fn tray_menu_action(id: &str) -> Option<TrayMenuAction> {
     }
 }
 
-pub fn tray_menu_specs(close_to_tray: bool, autostart: bool) -> Vec<TrayMenuSpec> {
+pub fn tray_menu_specs(locale: Locale, close_to_tray: bool, autostart: bool) -> Vec<TrayMenuSpec> {
     vec![
         TrayMenuSpec {
             id: TRAY_SHOW_MAIN_ID,
-            label: "打开主窗口",
+            label: locales::tray_show_main_label(locale),
             checked: None,
         },
         TrayMenuSpec {
             id: TRAY_QUICK_NOTE_ID,
-            label: "快速记录",
+            label: locales::tray_quick_note_label(locale),
             checked: None,
         },
         TrayMenuSpec {
             id: TRAY_TOGGLE_CLOSE_TO_TRAY_ID,
-            label: "关闭到托盘",
+            label: locales::tray_toggle_close_to_tray_label(locale),
             checked: Some(close_to_tray),
         },
         TrayMenuSpec {
             id: TRAY_TOGGLE_AUTOSTART_ID,
-            label: "开机自启动",
+            label: locales::tray_toggle_autostart_label(locale),
             checked: Some(autostart),
         },
         TrayMenuSpec {
             id: TRAY_QUIT_ID,
-            label: "退出",
+            label: locales::tray_quit_label(locale),
             checked: None,
         },
     ]
+}
+
+fn locale_from_config(config: &AppConfig) -> Locale {
+    Locale::from_tag(&config.locale)
+}
+
+fn configured_locale() -> Locale {
+    load_config()
+        .map(|config| locale_from_config(&config))
+        .unwrap_or_default()
+}
+
+fn build_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<Menu<Wry>, Box<dyn Error>> {
+    let locale = locale_from_config(config);
+    let autostart = autostart_enabled(app, config.autostart);
+    let specs = tray_menu_specs(locale, config.close_to_tray, autostart);
+
+    let show_main = MenuItem::with_id(app, specs[0].id, specs[0].label, true, None::<&str>)?;
+    let quick_note = MenuItem::with_id(app, specs[1].id, specs[1].label, true, None::<&str>)?;
+    let close_to_tray = CheckMenuItem::with_id(
+        app,
+        specs[2].id,
+        specs[2].label,
+        true,
+        specs[2].checked.unwrap_or(false),
+        None::<&str>,
+    )?;
+    let autostart = CheckMenuItem::with_id(
+        app,
+        specs[3].id,
+        specs[3].label,
+        true,
+        specs[3].checked.unwrap_or(false),
+        None::<&str>,
+    )?;
+    let separator = PredefinedMenuItem::separator(app)?;
+    let quit = MenuItem::with_id(app, specs[4].id, specs[4].label, true, None::<&str>)?;
+
+    Ok(Menu::with_items(
+        app,
+        &[
+            &show_main,
+            &quick_note,
+            &close_to_tray,
+            &autostart,
+            &separator,
+            &quit,
+        ],
+    )?)
+}
+
+fn refresh_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
+    let Some(tray) = app.tray_by_id(TRAY_ID) else {
+        return Ok(());
+    };
+
+    let menu = build_tray_menu(app, config)?;
+    tray.set_menu(Some(menu))?;
+    tray.set_tooltip(Some(locales::tray_tooltip(locale_from_config(config))))?;
+    Ok(())
+}
+
+fn refresh_window_titles(app: &AppHandle, config: &AppConfig) -> Result<(), AppError> {
+    let locale = locale_from_config(config);
+
+    if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        window.set_title(locales::main_window_title(locale))?;
+    }
+
+    for (label, window) in app.webview_windows() {
+        if label.starts_with("notepad-") {
+            window.set_title(locales::notepad_window_title(locale))?;
+        } else if label.starts_with("tile-") {
+            window.set_title(locales::tile_window_title(locale))?;
+        }
+    }
+
+    Ok(())
+}
+
+pub fn refresh_shell_state(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
+    refresh_window_titles(app, config)?;
+    refresh_tray_menu(app, config)?;
+    Ok(())
 }
 
 pub fn shortcut_from_config(value: &str) -> Option<ShortcutSpec> {
@@ -540,48 +628,16 @@ fn main_window_close_action(app_is_exiting: bool, close_to_tray: bool) -> MainWi
 
 fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
     let config = load_config()?;
-    let autostart = autostart_enabled(app.handle(), config.autostart);
-    let specs = tray_menu_specs(config.close_to_tray, autostart);
+    let menu = build_tray_menu(app.handle(), &config)?;
+    let locale = locale_from_config(&config);
 
-    let show_main = MenuItem::with_id(app, specs[0].id, specs[0].label, true, None::<&str>)?;
-    let quick_note = MenuItem::with_id(app, specs[1].id, specs[1].label, true, None::<&str>)?;
-    let close_to_tray = CheckMenuItem::with_id(
-        app,
-        specs[2].id,
-        specs[2].label,
-        true,
-        specs[2].checked.unwrap_or(false),
-        None::<&str>,
-    )?;
-    let autostart = CheckMenuItem::with_id(
-        app,
-        specs[3].id,
-        specs[3].label,
-        true,
-        specs[3].checked.unwrap_or(false),
-        None::<&str>,
-    )?;
-    let separator = PredefinedMenuItem::separator(app)?;
-    let quit = MenuItem::with_id(app, specs[4].id, specs[4].label, true, None::<&str>)?;
-    let menu = Menu::with_items(
-        app,
-        &[
-            &show_main,
-            &quick_note,
-            &close_to_tray,
-            &autostart,
-            &separator,
-            &quit,
-        ],
-    )?;
-
-    TrayIconBuilder::new()
+    TrayIconBuilder::with_id(TRAY_ID)
         .icon(
             app.default_window_icon()
                 .expect("missing default window icon")
                 .clone(),
         )
-        .tooltip("花笺")
+        .tooltip(locales::tray_tooltip(locale))
         .menu(&menu)
         .show_menu_on_left_click(cfg!(target_os = "macos"))
         .on_menu_event(|app, event| {
@@ -613,12 +669,19 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
             open_notepad_window_now(app, None, None)?;
         }
         Some(TrayMenuAction::ToggleCloseToTray) => {
-            let store = default_store()?;
-            let mut config = store.load_config()?;
-            config.close_to_tray = !config.close_to_tray;
-            store.save_config(config)?;
+            let config = toggle_close_to_tray(app)?;
+            if let Err(error) = refresh_shell_state(app, &config) {
+                eprintln!("failed to refresh desktop shell state after tray toggle: {error}");
+            }
+            let _ = app.emit("config-changed", &config);
         }
-        Some(TrayMenuAction::ToggleAutostart) => toggle_autostart(app)?,
+        Some(TrayMenuAction::ToggleAutostart) => {
+            let config = toggle_autostart(app)?;
+            if let Err(error) = refresh_shell_state(app, &config) {
+                eprintln!("failed to refresh desktop shell state after tray toggle: {error}");
+            }
+            let _ = app.emit("config-changed", &config);
+        }
         Some(TrayMenuAction::Quit) => {
             mark_app_exiting(app);
             app.exit(0);
@@ -629,10 +692,20 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
     Ok(())
 }
 
+fn toggle_close_to_tray(_app: &AppHandle) -> Result<AppConfig, Box<dyn Error>> {
+    let store = default_store()?;
+    let mut config = store.load_config()?;
+    config.close_to_tray = !config.close_to_tray;
+    store.save_config(config.clone())?;
+    Ok(config)
+}
+
 pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     clear_hidden_window_state(app);
+    let locale = configured_locale();
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        window.set_title(locales::main_window_title(locale))?;
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
@@ -644,7 +717,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
         MAIN_WINDOW_LABEL,
         WindowOpenOptions {
             url: "index.html".to_string(),
-            title: "花笺".to_string(),
+            title: locales::main_window_title(locale).to_string(),
             specs: WindowSizeSpec {
                 width: 1180.0,
                 height: 760.0,
@@ -673,6 +746,7 @@ fn open_notepad_window_now(
         }
     }
 
+    let locale = configured_locale();
     let label = notepad_window_label(note_id);
     let specs = saved_surface_specs(app);
     let url = match note_id {
@@ -685,7 +759,7 @@ fn open_notepad_window_now(
         &label,
         WindowOpenOptions {
             url,
-            title: "花笺便签".to_string(),
+            title: locales::notepad_window_title(locale).to_string(),
             specs,
             decorations: false,
             always_on_top: true,
@@ -700,8 +774,10 @@ fn activate_pooled_notepad(app: &AppHandle, bounds: Option<WindowBounds>) -> Opt
     let pool = app.try_state::<NotepadPool>()?;
     let label = pool.take()?;
     let window = app.get_webview_window(&label)?;
+    let locale = configured_locale();
 
     let specs = saved_surface_specs(app);
+    let _ = window.set_title(locales::notepad_window_title(locale));
     let _ = window.set_size(tauri::LogicalSize::new(specs.width, specs.height));
     let _ = apply_window_bounds(&window, bounds);
     let _ = window.show();
@@ -786,6 +862,7 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     let pool = app.try_state::<NotepadPool>().ok_or_else(|| AppError {
         code: "noPool".into(),
         message: "notepad pool not initialized".into(),
+        details: Default::default(),
     })?;
 
     if !pool.is_below_capacity() {
@@ -795,13 +872,14 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     let label = notepad_window_label(None);
     let specs = notepad_window_specs();
     let visual_options = dynamic_window_visual_options(&label);
+    let locale = configured_locale();
 
     WebviewWindowBuilder::new(
         app,
         &label,
         WebviewUrl::App("index.html?view=notepad&standby=1".into()),
     )
-    .title("花笺便签")
+    .title(locales::notepad_window_title(locale))
     .inner_size(specs.width, specs.height)
     .min_inner_size(specs.min_width, specs.min_height)
     .resizable(true)
@@ -883,6 +961,7 @@ fn open_tile_window_now(
     note_id: &str,
     bounds: Option<WindowBounds>,
 ) -> Result<String, AppError> {
+    let locale = configured_locale();
     let label = tile_window_label(note_id);
     let url = format!("index.html?view=tile&noteId={note_id}");
 
@@ -893,7 +972,7 @@ fn open_tile_window_now(
         &label,
         WindowOpenOptions {
             url,
-            title: "花笺磁贴".to_string(),
+            title: locales::tile_window_title(locale).to_string(),
             specs,
             decorations: false,
             always_on_top: true,
@@ -914,6 +993,7 @@ fn open_or_focus_window(
     let visual_options = dynamic_window_visual_options(label);
 
     if let Some(window) = app.get_webview_window(label) {
+        window.set_title(&opts.title)?;
         apply_window_bounds(&window, opts.bounds)?;
         window.set_shadow(opts.shadow)?;
         window.unminimize()?;
@@ -1095,18 +1175,21 @@ fn parse_configured_shortcut(field: &str, value: &str) -> Result<Shortcut, Box<d
             Box::new(AppError {
                 code: "unsupportedShortcut".into(),
                 message: format!("unsupported {field} shortcut config: {value}"),
+                details: [("field".to_string(), field.to_string())]
+                    .into_iter()
+                    .collect(),
             }) as Box<dyn Error>
         })
 }
 
 #[cfg(desktop)]
 fn shortcut_bindings_from_config(config: &AppConfig) -> Result<ShortcutBindings, Box<dyn Error>> {
-    let open_notepad = parse_configured_shortcut("global", &config.global_shortcut)?;
+    let open_notepad = parse_configured_shortcut("globalShortcut", &config.global_shortcut)?;
     let toggle_visibility = if config.toggle_visibility_shortcut.is_empty() {
         None
     } else {
         Some(parse_configured_shortcut(
-            "visibility toggle",
+            "toggleVisibilityShortcut",
             &config.toggle_visibility_shortcut,
         )?)
     };
@@ -1118,6 +1201,7 @@ fn shortcut_bindings_from_config(config: &AppConfig) -> Result<ShortcutBindings,
         return Err(Box::new(AppError {
             code: "duplicateShortcut".into(),
             message: "visibility toggle shortcut must differ from global shortcut".into(),
+            details: Default::default(),
         }));
     }
 
@@ -1140,10 +1224,10 @@ fn install_global_shortcut_bindings(
     }
 
     if let Some(shortcut) = &bindings.open_notepad {
-        app.global_shortcut().register(shortcut.clone())?;
+        app.global_shortcut().register(*shortcut)?;
     }
     if let Some(shortcut) = &bindings.toggle_visibility {
-        app.global_shortcut().register(shortcut.clone())?;
+        app.global_shortcut().register(*shortcut)?;
     }
 
     if let Some(state) = app.try_state::<RuntimeState>() {
@@ -1292,14 +1376,14 @@ fn autostart_enabled(_app: &AppHandle, fallback: bool) -> bool {
     fallback
 }
 
-fn toggle_autostart(app: &AppHandle) -> Result<(), Box<dyn Error>> {
+fn toggle_autostart(app: &AppHandle) -> Result<AppConfig, Box<dyn Error>> {
     let store = default_store()?;
     let mut config = store.load_config()?;
     let next_enabled = !config.autostart;
     apply_autostart(app, next_enabled)?;
     config.autostart = next_enabled;
-    store.save_config(config)?;
-    Ok(())
+    store.save_config(config.clone())?;
+    Ok(config)
 }
 
 #[cfg(desktop)]
@@ -1346,7 +1430,7 @@ mod tests {
 
     #[test]
     fn builds_tray_menu_specs_with_configured_checked_state() {
-        let specs = tray_menu_specs(true, false);
+        let specs = tray_menu_specs(Locale::ZhCn, true, false);
         let ids: Vec<_> = specs.iter().map(|spec| spec.id).collect();
 
         assert_eq!(
@@ -1459,6 +1543,7 @@ mod tests {
     #[test]
     fn rejects_duplicate_shortcut_bindings() {
         let config = AppConfig {
+            locale: "zh-CN".into(),
             notes_dir: "D:\\notes".into(),
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
@@ -1472,6 +1557,11 @@ mod tests {
             font_size: 14,
             surface_font_size: 14,
             external_file_auto_save: true,
+            remember_surface_size: true,
+            tile_ctrl_close: true,
+            tile_render_markdown: false,
+            surface_width: None,
+            surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Space".into(),
         };
 
@@ -1494,6 +1584,7 @@ mod tests {
     #[test]
     fn detects_runtime_config_changes() {
         let previous = AppConfig {
+            locale: "zh-CN".into(),
             notes_dir: "D:\\notes".into(),
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
@@ -1515,6 +1606,7 @@ mod tests {
             toggle_visibility_shortcut: String::new(),
         };
         let next = AppConfig {
+            locale: "en-US".into(),
             notes_dir: "D:\\other-notes".into(),
             global_shortcut: "Alt+Space".into(),
             close_to_tray: false,

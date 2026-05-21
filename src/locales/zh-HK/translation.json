@@ -1,0 +1,223 @@
+{
+  "common": {
+    "back": "返回",
+    "blankNote": "空白筆記",
+    "cancel": "取消",
+    "default": "預設",
+    "delete": "刪除",
+    "externalFileCount": "{{count}} 個外部檔案",
+    "noteCount": "{{count}} 篇筆記",
+    "operationFailed": "操作失敗",
+    "save": "儲存",
+    "untitledNote": "無標題筆記",
+    "untitledFile": "未命名檔案",
+    "wordCount": "{{count}} 字",
+    "wordCountUnit": "字"
+  },
+  "contextMenu": {
+    "edit": {
+      "copy": "複製",
+      "cut": "剪下",
+      "paste": "貼上",
+      "selectAll": "全選"
+    },
+    "tile": {
+      "close": "關閉",
+      "copy": "複製",
+      "save": "儲存",
+      "switchToPad": "轉為小窗"
+    }
+  },
+  "errors": {
+    "categoryAlreadyExists": "分類「{{category}}」已存在",
+    "categoryNameEmpty": "分類名稱不能為空",
+    "categoryNameInvalidChars": "分類名稱不能包含特殊字元",
+    "categoryNotFound": "分類「{{category}}」不存在",
+    "desktopConfig": "桌面配置更新失敗",
+    "duplicateShortcut": "顯示／隱藏視窗快捷鍵不能與呼出小窗快捷鍵重複",
+    "noPool": "便箋視窗池尚未初始化",
+    "noteNotFound": "找不到該筆記",
+    "unsupportedFile": "僅支援匯入 .md 檔案",
+    "unsupportedShortcut": "{{field}} 配置無效",
+    "unsupportedShortcutGeneric": "快捷鍵配置無效"
+  },
+  "markdown": {
+    "copied": "已複製",
+    "copy": "複製",
+    "emptyHint": "預覽區會顯示目前筆記內容"
+  },
+  "main": {
+    "category": {
+      "confirmDelete": "確認刪除「{{category}}」？",
+      "confirmDeleteAction": "確認刪除",
+      "delete": "刪除分類",
+      "emptyFolder": "空資料夾",
+      "new": "新增分類",
+      "placeholder": "輸入分類名稱…",
+      "rename": "重新命名",
+      "uncategorized": "未分類"
+    },
+    "confirm": {
+      "unsavedExternalFile": "「{{title}}」有未儲存的變更，是否儲存到原檔案？"
+    },
+    "editor": {
+      "confirmDelete": "確認刪除？",
+      "contentPlaceholder": "開始寫作……",
+      "emptyHint": "選擇或新增一篇筆記",
+      "pinToTile": "釘為磁貼",
+      "previewLabel": "預覽",
+      "undo": "還原（Ctrl+Z）",
+      "undoLabel": "還原"
+    },
+    "externalFile": {
+      "label": "外部檔案 · {{path}}"
+    },
+    "externalFiles": {
+      "remove": "從清單移除",
+      "title": "外部檔案"
+    },
+    "formatSample": {
+      "boldText": "粗體文字",
+      "codeText": "程式碼",
+      "headingText": "標題",
+      "italicText": "斜體文字",
+      "listItem": "清單項目",
+      "quoteText": "引用文字"
+    },
+    "search": {
+      "empty": "還沒有筆記",
+      "noResults": "沒有符合的筆記"
+    },
+    "sidebar": {
+      "clearSearch": "清除搜尋",
+      "importMarkdown": "匯入 Markdown",
+      "newNote": "新增筆記",
+      "searchPlaceholder": "搜尋筆記…"
+    },
+    "statusBar": {
+      "byteSize": "{{size}} KB",
+      "encoding": "UTF-8",
+      "format": "Markdown + LaTeX",
+      "lineNumber": "第 {{count}} 行",
+      "saveState": {
+        "dirty": "未儲存",
+        "error": "儲存失敗",
+        "idle": "尚未選取",
+        "saved": "已儲存",
+        "saving": "儲存中"
+      }
+    },
+    "toolbar": {
+      "blockMath": "區塊公式",
+      "bold": "粗體",
+      "code": "程式碼",
+      "heading": "標題",
+      "hr": "分隔線",
+      "inlineMath": "行內公式",
+      "italic": "斜體",
+      "ol": "有序清單",
+      "quote": "引用",
+      "ul": "無序清單"
+    },
+    "window": {
+      "close": "關閉",
+      "collapseSidebar": "摺疊側欄",
+      "expandSidebar": "展開側欄",
+      "maximize": "最大化",
+      "minimize": "最小化",
+      "quickNotepad": "快捷便箋",
+      "restore": "還原視窗",
+      "settings": "設定"
+    }
+  },
+  "noteMenu": {
+    "delete": "刪除筆記",
+    "export": "匯出 Markdown",
+    "moveToCategory": "移至分類…"
+  },
+  "notepad": {
+    "button": {
+      "clear": "清除"
+    },
+    "emptyState": "還沒有可開啟的筆記",
+    "error": {
+      "copyUnsupported": "目前環境不支援複製"
+    },
+    "placeholder": {
+      "content": "寫點什麼……",
+      "title": "標題（可選）"
+    },
+    "status": {
+      "copied": "已複製",
+      "empty": "空",
+      "opened": "已開啟",
+      "saveFailed": "儲存失敗",
+      "saved": "已儲存",
+      "unsaved": "未儲存"
+    },
+    "tab": {
+      "edit": "編輯",
+      "new": "新增",
+      "open": "開啟"
+    },
+    "tooltip": {
+      "close": "關閉",
+      "openInEditor": "在編輯器中開啟",
+      "pinToTile": "轉為磁貼"
+    }
+  },
+  "settings": {
+    "autoSave": {
+      "externalFile": "外部檔案自動儲存",
+      "note": "自動儲存筆記",
+      "surface": "小窗筆記自動儲存"
+    },
+    "autostart": "開機自啟",
+    "closeTitle": "關閉設定",
+    "closeToTray": "關閉至系統匣",
+    "defaultView": {
+      "edit": "編輯",
+      "label": "預設檢視",
+      "preview": "預覽",
+      "split": "分欄"
+    },
+    "fontSize": {
+      "editor": "編輯器字級",
+      "surface": "小窗／磁貼字級"
+    },
+    "locale": {
+      "enUS": "English",
+      "label": "語言",
+      "zhCN": "簡體中文",
+      "zhHK": "繁體中文"
+    },
+    "notesDir": "筆記目錄",
+    "quickNoteShortcut": "呼出小窗快捷鍵",
+    "rememberSurfaceSize": "記住小窗尺寸",
+    "selectFolder": "選擇資料夾",
+    "shortcut": {
+      "cancelHint": "Esc 取消",
+      "clickToRecord": "點擊錄製",
+      "notSet": "未設定",
+      "pressHint": "按下快捷鍵；按 Delete 清除。"
+    },
+    "theme": {
+      "dark": "深色",
+      "label": "主題",
+      "light": "淺色",
+      "system": "跟隨系統"
+    },
+    "tileColor": {
+      "custom": "自訂",
+      "followTheme": "跟隨主題",
+      "label": "磁貼顏色"
+    },
+    "tileCtrlClose": "Ctrl+右鍵快速關閉磁貼",
+    "tileRenderMarkdown": "磁貼渲染 Markdown",
+    "title": "應用程式設定",
+    "visibilityShortcut": "顯示／隱藏視窗快捷鍵"
+  },
+  "tile": {
+    "empty": "空"
+  }
+}

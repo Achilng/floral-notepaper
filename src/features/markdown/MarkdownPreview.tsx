@@ -1,4 +1,5 @@
 import { useState, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -8,6 +9,7 @@ import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
 
 function CodeBlock({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
 
   const handleCopy = useCallback(() => {
@@ -25,7 +27,9 @@ function CodeBlock({ children }: { children: React.ReactNode }) {
         onClick={handleCopy}
         className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-paper-deep/30 text-ink-ghost opacity-0 group-hover:opacity-100 hover:bg-paper-deep/50 hover:text-ink-soft transition-all cursor-pointer"
       >
-        {copied ? "已复制" : "复制"}
+        {copied
+          ? t("markdown.copied", { defaultValue: "已复制" })
+          : t("markdown.copy", { defaultValue: "复制" })}
       </button>
       {children}
     </pre>
@@ -141,6 +145,7 @@ const components: Components = {
 };
 
 export function MarkdownPreview({ content, fontSize = 14 }: MarkdownPreviewProps) {
+  const { t } = useTranslation();
   return (
     <div className="font-body" style={{ fontSize: `${fontSize}px` }}>
       {content.trim() ? (
@@ -152,7 +157,9 @@ export function MarkdownPreview({ content, fontSize = 14 }: MarkdownPreviewProps
           {content}
         </Markdown>
       ) : (
-        <p className="text-ink-ghost leading-[1.9]">预览区会显示当前笔记内容</p>
+        <p className="text-ink-ghost leading-[1.9]">
+          {t("markdown.emptyHint", { defaultValue: "预览区会显示当前笔记内容" })}
+        </p>
       )}
     </div>
   );

@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { listen } from "@tauri-apps/api/event";
 import { getConfig } from "../features/settings/api";
 import type { AppConfig } from "../features/settings/types";
 import { requestSurfaceAction } from "../features/windows/surfaceActions";
-import { tileContextMenuItems } from "../features/windows/tileContextMenu";
+import { getTileContextMenuItems } from "../features/windows/tileContextMenu";
 
 interface MenuState {
   x: number;
@@ -13,10 +14,12 @@ interface MenuState {
 }
 
 export function ContextMenuProvider({ children }: { children: React.ReactNode }) {
+  const { t } = useTranslation();
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [menuClosing, setMenuClosing] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const tileCtrlCloseRef = useRef(true);
+  const tileContextMenuItems = useMemo(() => getTileContextMenuItems(t), [t]);
 
   useEffect(() => {
     getConfig()
@@ -115,42 +118,46 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     dismissMenu();
   };
 
-  const items = menu
-    ? menu.type === "tile"
-      ? tileContextMenuItems.map((item) => ({
-          ...item,
-          shortcut: "",
-          action: () => runSurfaceAction(item.action),
-          disabled: false,
-        }))
-      : [
-          {
-            label: "剪切",
-            shortcut: "Ctrl+X",
-            action: () => runCommand("cut"),
-            disabled: !menu.hasSelection,
-          },
-          {
-            label: "复制",
-            shortcut: "Ctrl+C",
-            action: () => runCommand("copy"),
-            disabled: !menu.hasSelection,
-          },
-          {
-            label: "粘贴",
-            shortcut: "Ctrl+V",
-            action: () => runCommand("paste"),
-            disabled: false,
-          },
-          { separator: true as const },
-          {
-            label: "全选",
-            shortcut: "Ctrl+A",
-            action: () => runCommand("selectAll"),
-            disabled: false,
-          },
-        ]
-    : [];
+  const items = useMemo(
+    () =>
+      menu
+        ? menu.type === "tile"
+          ? tileContextMenuItems.map((item) => ({
+              ...item,
+              shortcut: "",
+              action: () => runSurfaceAction(item.action),
+              disabled: false,
+            }))
+          : [
+              {
+                label: t("contextMenu.edit.cut", { defaultValue: "剪切" }),
+                shortcut: "Ctrl+X",
+                action: () => runCommand("cut"),
+                disabled: !menu.hasSelection,
+              },
+              {
+                label: t("contextMenu.edit.copy", { defaultValue: "复制" }),
+                shortcut: "Ctrl+C",
+                action: () => runCommand("copy"),
+                disabled: !menu.hasSelection,
+              },
+              {
+                label: t("contextMenu.edit.paste", { defaultValue: "粘贴" }),
+                shortcut: "Ctrl+V",
+                action: () => runCommand("paste"),
+                disabled: false,
+              },
+              { separator: true as const },
+              {
+                label: t("contextMenu.edit.selectAll", { defaultValue: "全选" }),
+                shortcut: "Ctrl+A",
+                action: () => runCommand("selectAll"),
+                disabled: false,
+              },
+            ]
+        : [],
+    [menu, runCommand, t, tileContextMenuItems],
+  );
 
   return (
     <>

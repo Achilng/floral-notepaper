@@ -1,0 +1,223 @@
+{
+  "common": {
+    "back": "返回",
+    "blankNote": "空白笔记",
+    "cancel": "取消",
+    "default": "默认",
+    "delete": "删除",
+    "externalFileCount": "{{count}} 个外部文件",
+    "noteCount": "{{count}} 篇笔记",
+    "operationFailed": "操作失败",
+    "save": "保存",
+    "untitledNote": "无标题笔记",
+    "untitledFile": "未命名文件",
+    "wordCount": "{{count}} 字",
+    "wordCountUnit": "字"
+  },
+  "contextMenu": {
+    "edit": {
+      "copy": "复制",
+      "cut": "剪切",
+      "paste": "粘贴",
+      "selectAll": "全选"
+    },
+    "tile": {
+      "close": "关闭",
+      "copy": "复制",
+      "save": "保存",
+      "switchToPad": "转为小窗"
+    }
+  },
+  "errors": {
+    "categoryAlreadyExists": "分类「{{category}}」已存在",
+    "categoryNameEmpty": "分类名不能为空",
+    "categoryNameInvalidChars": "分类名不能包含特殊字符",
+    "categoryNotFound": "分类「{{category}}」不存在",
+    "desktopConfig": "桌面配置更新失败",
+    "duplicateShortcut": "显示/隐藏窗口快捷键不能与呼出小窗快捷键重复",
+    "noPool": "便签窗口池尚未初始化",
+    "noteNotFound": "找不到该笔记",
+    "unsupportedFile": "只支持导入 .md 文件",
+    "unsupportedShortcut": "{{field}} 配置无效",
+    "unsupportedShortcutGeneric": "快捷键配置无效"
+  },
+  "markdown": {
+    "copied": "已复制",
+    "copy": "复制",
+    "emptyHint": "预览区会显示当前笔记内容"
+  },
+  "main": {
+    "category": {
+      "confirmDelete": "确认删除「{{category}}」？",
+      "confirmDeleteAction": "确认删除",
+      "delete": "删除分类",
+      "emptyFolder": "空文件夹",
+      "new": "新建分类",
+      "placeholder": "输入分类名…",
+      "rename": "重命名",
+      "uncategorized": "未分类"
+    },
+    "confirm": {
+      "unsavedExternalFile": "「{{title}}」有未保存的更改，是否保存到原文件？"
+    },
+    "editor": {
+      "confirmDelete": "确认删除？",
+      "contentPlaceholder": "开始写作……",
+      "emptyHint": "选择或新建一篇笔记",
+      "pinToTile": "钉为磁贴",
+      "previewLabel": "预览",
+      "undo": "撤销（Ctrl+Z）",
+      "undoLabel": "撤销"
+    },
+    "externalFile": {
+      "label": "外部文件 · {{path}}"
+    },
+    "externalFiles": {
+      "remove": "从列表移除",
+      "title": "外部文件"
+    },
+    "formatSample": {
+      "boldText": "粗体文本",
+      "codeText": "代码",
+      "headingText": "标题",
+      "italicText": "斜体文本",
+      "listItem": "列表项",
+      "quoteText": "引用文本"
+    },
+    "search": {
+      "empty": "还没有笔记",
+      "noResults": "没有匹配的笔记"
+    },
+    "sidebar": {
+      "clearSearch": "清空搜索",
+      "importMarkdown": "导入 Markdown",
+      "newNote": "新建笔记",
+      "searchPlaceholder": "搜索笔记…"
+    },
+    "statusBar": {
+      "byteSize": "{{size}} KB",
+      "encoding": "UTF-8",
+      "format": "Markdown + LaTeX",
+      "lineNumber": "Ln {{count}}",
+      "saveState": {
+        "dirty": "未保存",
+        "error": "保存失败",
+        "idle": "未选择",
+        "saved": "已保存",
+        "saving": "保存中"
+      }
+    },
+    "toolbar": {
+      "blockMath": "块级公式",
+      "bold": "粗体",
+      "code": "代码",
+      "heading": "标题",
+      "hr": "分割线",
+      "inlineMath": "行内公式",
+      "italic": "斜体",
+      "ol": "有序列表",
+      "quote": "引用",
+      "ul": "无序列表"
+    },
+    "window": {
+      "close": "关闭",
+      "collapseSidebar": "收起侧栏",
+      "expandSidebar": "展开侧栏",
+      "maximize": "最大化",
+      "minimize": "最小化",
+      "quickNotepad": "快捷便签",
+      "restore": "还原",
+      "settings": "设置"
+    }
+  },
+  "noteMenu": {
+    "delete": "删除笔记",
+    "export": "导出 Markdown",
+    "moveToCategory": "移动到分类…"
+  },
+  "notepad": {
+    "button": {
+      "clear": "清空"
+    },
+    "emptyState": "还没有可打开的笔记",
+    "error": {
+      "copyUnsupported": "当前环境不支持复制"
+    },
+    "placeholder": {
+      "content": "写点什么……",
+      "title": "标题（可选）"
+    },
+    "status": {
+      "copied": "已复制",
+      "empty": "空",
+      "opened": "已打开",
+      "saveFailed": "保存失败",
+      "saved": "已保存",
+      "unsaved": "未保存"
+    },
+    "tab": {
+      "edit": "编辑",
+      "new": "新建",
+      "open": "打开"
+    },
+    "tooltip": {
+      "close": "关闭",
+      "openInEditor": "在编辑器中打开",
+      "pinToTile": "转为磁贴"
+    }
+  },
+  "settings": {
+    "autoSave": {
+      "externalFile": "外部文件自动保存",
+      "note": "自动保存笔记",
+      "surface": "小窗笔记自动保存"
+    },
+    "autostart": "开机自启",
+    "closeTitle": "关闭设置",
+    "closeToTray": "关闭到托盘",
+    "defaultView": {
+      "edit": "编辑",
+      "label": "默认视图",
+      "preview": "预览",
+      "split": "分栏"
+    },
+    "fontSize": {
+      "editor": "编辑器字号",
+      "surface": "小窗/磁贴字号"
+    },
+    "locale": {
+      "enUS": "English",
+      "label": "语言",
+      "zhCN": "简体中文",
+      "zhHK": "繁體中文"
+    },
+    "notesDir": "笔记目录",
+    "quickNoteShortcut": "呼出小窗快捷键",
+    "rememberSurfaceSize": "记住小窗尺寸",
+    "selectFolder": "选择文件夹",
+    "shortcut": {
+      "cancelHint": "Esc 取消",
+      "clickToRecord": "点击录制",
+      "notSet": "未设置",
+      "pressHint": "按下快捷键；按 Delete 清空。"
+    },
+    "theme": {
+      "dark": "深色",
+      "label": "主题",
+      "light": "浅色",
+      "system": "跟随系统"
+    },
+    "tileColor": {
+      "custom": "自定义",
+      "followTheme": "跟随主题",
+      "label": "磁贴颜色"
+    },
+    "tileCtrlClose": "Ctrl+右键快速关闭磁贴",
+    "tileRenderMarkdown": "磁贴渲染 Markdown",
+    "title": "应用设置",
+    "visibilityShortcut": "显示/隐藏窗口快捷键"
+  },
+  "tile": {
+    "empty": "空"
+  }
+}

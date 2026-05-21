@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
+import type { TFunction } from "i18next";
+import { useTranslation } from "react-i18next";
 import { emit, listen } from "@tauri-apps/api/event";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
@@ -41,7 +43,7 @@ import {
 } from "../features/notes/noteUtils";
 import type { CategoryGroup } from "../features/notes/noteUtils";
 import {
-  noteContextMenuItems,
+  getNoteContextMenuItems,
   type NoteContextMenuAction,
 } from "../features/notes/noteContextMenu";
 import { openNotepadWindow, openTileWindow } from "../features/windows/api";
@@ -67,14 +69,6 @@ interface CategoryMenuState {
   category: string;
 }
 
-const saveStateLabel: Record<SaveState, string> = {
-  idle: "未选择",
-  dirty: "未保存",
-  saving: "保存中",
-  saved: "已保存",
-  error: "保存失败",
-};
-
 type FormatAction =
   | "bold"
   | "italic"
@@ -87,22 +81,10 @@ type FormatAction =
   | "inlineMath"
   | "blockMath";
 
-const toolbarButtons: { label: string; title: string; style: string; action: FormatAction }[] = [
-  { label: "B", title: "粗体", style: "font-bold", action: "bold" },
-  { label: "I", title: "斜体", style: "italic", action: "italic" },
-  { label: "H", title: "标题", style: "font-bold", action: "heading" },
-  { label: "—", title: "分割线", style: "", action: "hr" },
-  { label: "•", title: "无序列表", style: "", action: "ul" },
-  { label: "1.", title: "有序列表", style: "font-mono text-[9px]", action: "ol" },
-  { label: "<>", title: "代码", style: "font-mono text-[9px]", action: "code" },
-  { label: "❝", title: "引用", style: "", action: "quote" },
-  { label: "∑", title: "行内公式", style: "font-mono text-[11px]", action: "inlineMath" },
-  { label: "∫", title: "块级公式", style: "font-mono text-[11px]", action: "blockMath" },
-];
-
 function applyFormat(
   textarea: HTMLTextAreaElement,
   action: FormatAction,
+  translate: TFunction,
   setContent: (v: string) => void,
   markDirty: () => void,
 ) {
@@ -120,17 +102,19 @@ function applyFormat(
 
   switch (action) {
     case "bold": {
-      const wrapped = `**${selected || "粗体文本"}**`;
+      const fallback = translate("main.formatSample.boldText", { defaultValue: "粗体文本" });
+      const wrapped = `**${selected || fallback}**`;
       result = before + wrapped + after;
       cursorStart = start + 2;
-      cursorEnd = cursorStart + (selected || "粗体文本").length;
+      cursorEnd = cursorStart + (selected || fallback).length;
       break;
     }
     case "italic": {
-      const wrapped = `*${selected || "斜体文本"}*`;
+      const fallback = translate("main.formatSample.italicText", { defaultValue: "斜体文本" });
+      const wrapped = `*${selected || fallback}*`;
       result = before + wrapped + after;
       cursorStart = start + 1;
-      cursorEnd = cursorStart + (selected || "斜体文本").length;
+      cursorEnd = cursorStart + (selected || fallback).length;
       break;
     }
     case "heading": {
@@ -152,7 +136,10 @@ function applyFormat(
         cursorStart = start + 3;
         cursorEnd = cursorStart + selected.length;
       } else {
-        result = before + "## 标题" + after;
+        result =
+          before +
+          `## ${translate("main.formatSample.headingText", { defaultValue: "标题" })}` +
+          after;
         cursorStart = start + 3;
         cursorEnd = cursorStart + 2;
       }
@@ -175,10 +162,11 @@ function applyFormat(
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const item = `- ${selected || "列表项"}`;
+        const fallback = translate("main.formatSample.listItem", { defaultValue: "列表项" });
+        const item = `- ${selected || fallback}`;
         result = before + item + after;
         cursorStart = start + 2;
-        cursorEnd = cursorStart + (selected || "列表项").length;
+        cursorEnd = cursorStart + (selected || fallback).length;
       }
       break;
     }
@@ -192,10 +180,11 @@ function applyFormat(
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const item = `1. ${selected || "列表项"}`;
+        const fallback = translate("main.formatSample.listItem", { defaultValue: "列表项" });
+        const item = `1. ${selected || fallback}`;
         result = before + item + after;
         cursorStart = start + 3;
-        cursorEnd = cursorStart + (selected || "列表项").length;
+        cursorEnd = cursorStart + (selected || fallback).length;
       }
       break;
     }
@@ -206,10 +195,11 @@ function applyFormat(
         cursorStart = start + 4;
         cursorEnd = cursorStart + selected.length;
       } else {
-        const wrapped = `\`${selected || "代码"}\``;
+        const fallback = translate("main.formatSample.codeText", { defaultValue: "代码" });
+        const wrapped = `\`${selected || fallback}\``;
         result = before + wrapped + after;
         cursorStart = start + 1;
-        cursorEnd = cursorStart + (selected || "代码").length;
+        cursorEnd = cursorStart + (selected || fallback).length;
       }
       break;
     }
@@ -223,10 +213,11 @@ function applyFormat(
         cursorStart = start;
         cursorEnd = start + lines.length;
       } else {
-        const item = `> ${selected || "引用文本"}`;
+        const fallback = translate("main.formatSample.quoteText", { defaultValue: "引用文本" });
+        const item = `> ${selected || fallback}`;
         result = before + item + after;
         cursorStart = start + 2;
-        cursorEnd = cursorStart + (selected || "引用文本").length;
+        cursorEnd = cursorStart + (selected || fallback).length;
       }
       break;
     }
@@ -274,6 +265,7 @@ export function MainWindow({
   initialSettingsOpen = false,
   initialConfig = undefined,
 }: MainWindowProps = {}) {
+  const { t } = useTranslation();
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
   const [externalFiles, setExternalFiles] = useState<ExternalFile[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -334,6 +326,101 @@ export function MainWindow({
   const noteMenuTarget = useMemo(
     () => notes.find((note) => note.id === noteMenu?.noteId) ?? null,
     [noteMenu?.noteId, notes],
+  );
+  const noteContextMenuItems = useMemo(() => getNoteContextMenuItems(t), [t]);
+  const saveStateLabel = useMemo<Record<SaveState, string>>(
+    () => ({
+      idle: t("main.statusBar.saveState.idle", { defaultValue: "未选择" }),
+      dirty: t("main.statusBar.saveState.dirty", { defaultValue: "未保存" }),
+      saving: t("main.statusBar.saveState.saving", { defaultValue: "保存中" }),
+      saved: t("main.statusBar.saveState.saved", { defaultValue: "已保存" }),
+      error: t("main.statusBar.saveState.error", { defaultValue: "保存失败" }),
+    }),
+    [t],
+  );
+  const toolbarButtons = useMemo<
+    { label: string; title: string; style: string; action: FormatAction }[]
+  >(
+    () => [
+      {
+        label: "B",
+        title: t("main.toolbar.bold", { defaultValue: "粗体" }),
+        style: "font-bold",
+        action: "bold",
+      },
+      {
+        label: "I",
+        title: t("main.toolbar.italic", { defaultValue: "斜体" }),
+        style: "italic",
+        action: "italic",
+      },
+      {
+        label: "H",
+        title: t("main.toolbar.heading", { defaultValue: "标题" }),
+        style: "font-bold",
+        action: "heading",
+      },
+      {
+        label: "—",
+        title: t("main.toolbar.hr", { defaultValue: "分割线" }),
+        style: "",
+        action: "hr",
+      },
+      {
+        label: "•",
+        title: t("main.toolbar.ul", { defaultValue: "无序列表" }),
+        style: "",
+        action: "ul",
+      },
+      {
+        label: "1.",
+        title: t("main.toolbar.ol", { defaultValue: "有序列表" }),
+        style: "font-mono text-[9px]",
+        action: "ol",
+      },
+      {
+        label: "<>",
+        title: t("main.toolbar.code", { defaultValue: "代码" }),
+        style: "font-mono text-[9px]",
+        action: "code",
+      },
+      {
+        label: "❝",
+        title: t("main.toolbar.quote", { defaultValue: "引用" }),
+        style: "",
+        action: "quote",
+      },
+      {
+        label: "∑",
+        title: t("main.toolbar.inlineMath", { defaultValue: "行内公式" }),
+        style: "font-mono text-[11px]",
+        action: "inlineMath",
+      },
+      {
+        label: "∫",
+        title: t("main.toolbar.blockMath", { defaultValue: "块级公式" }),
+        style: "font-mono text-[11px]",
+        action: "blockMath",
+      },
+    ],
+    [t],
+  );
+  const viewModeOptions = useMemo(
+    () => [
+      {
+        value: "edit" as ViewMode,
+        label: t("settings.defaultView.edit", { defaultValue: "编辑" }),
+      },
+      {
+        value: "split" as ViewMode,
+        label: t("settings.defaultView.split", { defaultValue: "分栏" }),
+      },
+      {
+        value: "preview" as ViewMode,
+        label: t("settings.defaultView.preview", { defaultValue: "预览" }),
+      },
+    ],
+    [t],
   );
 
   const filteredNotes = useMemo(() => filterNotes(notes, searchQuery), [notes, searchQuery]);
@@ -797,7 +884,10 @@ export function MainWindow({
   const handleRemoveExternalFile = async (id: string) => {
     if (selectedId === id && saveState === "dirty") {
       const shouldSave = window.confirm(
-        `「${title || "未命名文件"}」有未保存的更改，是否保存到原文件？`,
+        t("main.confirm.unsavedExternalFile", {
+          title: title || t("common.untitledFile", { defaultValue: "未命名文件" }),
+          defaultValue: "「{{title}}」有未保存的更改，是否保存到原文件？",
+        }),
       );
       if (shouldSave) {
         const saved = await saveCurrentNote();
@@ -1081,7 +1171,9 @@ export function MainWindow({
             </span>
             <span className="text-[11px] text-ink-ghost font-body">—</span>
             <span className="text-[11px] text-ink-faint font-body truncate max-w-[240px]">
-              {title || selectedNote?.preview || "无标题笔记"}
+              {title ||
+                selectedNote?.preview ||
+                t("common.untitledNote", { defaultValue: "无标题笔记" })}
             </span>
           </div>
           <div className="flex items-center">
@@ -1093,7 +1185,7 @@ export function MainWindow({
             <button
               onClick={() => void handleOpenNotepad()}
               className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer"
-              title="快捷便签"
+              title={t("main.window.quickNotepad", { defaultValue: "快捷便签" })}
             >
               <svg
                 width="14"
@@ -1112,7 +1204,7 @@ export function MainWindow({
             <button
               onClick={() => void handleOpenSettings()}
               className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-              title="设置"
+              title={t("main.window.settings", { defaultValue: "设置" })}
             >
               <svg
                 width="14"
@@ -1134,7 +1226,7 @@ export function MainWindow({
             <button
               onClick={handleMinimize}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title="最小化"
+              title={t("main.window.minimize", { defaultValue: "最小化" })}
             >
               <svg width="12" height="12" viewBox="0 0 12 12">
                 <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
@@ -1143,7 +1235,11 @@ export function MainWindow({
             <button
               onClick={handleMaximize}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={isMaximized ? "还原" : "最大化"}
+              title={
+                isMaximized
+                  ? t("main.window.restore", { defaultValue: "还原" })
+                  : t("main.window.maximize", { defaultValue: "最大化" })
+              }
             >
               {isMaximized ? (
                 <svg
@@ -1173,7 +1269,7 @@ export function MainWindow({
             <button
               onClick={handleClose}
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
-              title="关闭"
+              title={t("main.window.close", { defaultValue: "关闭" })}
             >
               <svg
                 width="12"
@@ -1216,14 +1312,14 @@ export function MainWindow({
                   type="text"
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="搜索笔记…"
+                  placeholder={t("main.sidebar.searchPlaceholder", { defaultValue: "搜索笔记…" })}
                   className="flex-1 text-[12px] font-body text-ink placeholder:text-ink-ghost/60 bg-transparent"
                 />
                 {searchQuery && (
                   <button
                     onClick={() => setSearchQuery("")}
                     className="text-ink-ghost hover:text-ink-faint transition-colors cursor-pointer"
-                    title="清空搜索"
+                    title={t("main.sidebar.clearSearch", { defaultValue: "清空搜索" })}
                   >
                     <svg
                       width="10"
@@ -1258,7 +1354,7 @@ export function MainWindow({
                 >
                   <path d="M12 5v14M5 12h14" />
                 </svg>
-                <span>新建笔记</span>
+                <span>{t("main.sidebar.newNote", { defaultValue: "新建笔记" })}</span>
               </button>
               <button
                 onClick={() => void handleImportNote()}
@@ -1278,19 +1374,27 @@ export function MainWindow({
                   <path d="m7 10 5 5 5-5" />
                   <path d="M5 21h14" />
                 </svg>
-                <span>导入 Markdown</span>
+                <span>{t("main.sidebar.importMarkdown", { defaultValue: "导入 Markdown" })}</span>
               </button>
             </div>
 
             <div className="flex items-center justify-between px-5 pb-1.5 shrink-0">
               <span className="text-[10px] text-ink-ghost font-mono tracking-wider uppercase">
-                {filteredNotes.length} 篇笔记
-                {externalFiles.length > 0 ? ` · ${externalFiles.length} 个外部文件` : ""}
+                {t("common.noteCount", {
+                  count: filteredNotes.length,
+                  defaultValue: "{{count}} 篇笔记",
+                })}
+                {externalFiles.length > 0
+                  ? ` · ${t("common.externalFileCount", {
+                      count: externalFiles.length,
+                      defaultValue: "{{count}} 个外部文件",
+                    })}`
+                  : ""}
               </span>
               <button
                 onClick={() => setShowCategoryInput(true)}
                 className="text-[10px] text-ink-ghost hover:text-bamboo transition-colors cursor-pointer"
-                title="新建分类"
+                title={t("main.category.new", { defaultValue: "新建分类" })}
               >
                 <svg
                   width="12"
@@ -1321,7 +1425,7 @@ export function MainWindow({
                     }
                   }}
                   onBlur={() => void handleCreateCategory()}
-                  placeholder="输入分类名…"
+                  placeholder={t("main.category.placeholder", { defaultValue: "输入分类名…" })}
                   className="w-full px-2.5 h-7 rounded-lg text-[12px] font-body text-ink bg-paper-warm/80 border border-paper-deep/40 focus:border-bamboo/30 placeholder:text-ink-ghost/60"
                 />
               </div>
@@ -1332,7 +1436,7 @@ export function MainWindow({
                 {externalFiles.length > 0 && (
                   <>
                     <div className="px-3 py-1.5 text-[10px] text-ink-ghost/50 font-mono tracking-wider uppercase">
-                      外部文件
+                      {t("main.externalFiles.title", { defaultValue: "外部文件" })}
                     </div>
                     {externalFiles.map((file) => {
                       const isSelected = file.id === selectedId;
@@ -1386,7 +1490,7 @@ export function MainWindow({
                                 handleRemoveExternalFile(file.id);
                               }}
                               className="opacity-0 group-hover:opacity-100 text-ink-ghost hover:text-red-400 transition-all p-0.5"
-                              title="从列表移除"
+                              title={t("main.externalFiles.remove", { defaultValue: "从列表移除" })}
                             >
                               <svg
                                 width="12"
@@ -1471,14 +1575,15 @@ export function MainWindow({
                                     isSelected ? "text-bamboo" : "text-ink-soft"
                                   }`}
                                 >
-                                  {getDisplayTitle(note)}
+                                  {getDisplayTitle(note, t)}
                                 </span>
                                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
                                   {formatShortDate(note.updatedAt)}
                                 </span>
                               </div>
                               <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                                {note.preview || "空白笔记"}
+                                {note.preview ||
+                                  t("common.blankNote", { defaultValue: "空白笔记" })}
                               </p>
                               <div className="flex items-center gap-2 mt-1">
                                 <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
@@ -1486,7 +1591,10 @@ export function MainWindow({
                                 </span>
                                 <span className="text-[10px] text-ink-ghost/40">·</span>
                                 <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                  {note.wordCount} 字
+                                  {t("common.wordCount", {
+                                    count: note.wordCount,
+                                    defaultValue: "{{count}} 字",
+                                  })}
                                 </span>
                               </div>
                             </div>
@@ -1602,7 +1710,7 @@ export function MainWindow({
                         >
                           {group.notes.length === 0 ? (
                             <div className="px-3 py-3 text-center text-[11px] text-ink-ghost/50">
-                              空文件夹
+                              {t("main.category.emptyFolder", { defaultValue: "空文件夹" })}
                             </div>
                           ) : (
                             group.notes.map((note) => {
@@ -1642,7 +1750,7 @@ export function MainWindow({
                                         isSelected ? "text-bamboo" : "text-ink-soft"
                                       }`}
                                     >
-                                      {getDisplayTitle(note)}
+                                      {getDisplayTitle(note, t)}
                                     </span>
                                     <span className="text-[10px] text-ink-ghost font-mono tabular-nums shrink-0">
                                       {formatShortDate(note.updatedAt)}
@@ -1650,7 +1758,8 @@ export function MainWindow({
                                   </div>
 
                                   <p className="text-[11px] text-ink-ghost leading-relaxed line-clamp-2 group-hover:text-ink-faint transition-colors">
-                                    {note.preview || "空白笔记"}
+                                    {note.preview ||
+                                      t("common.blankNote", { defaultValue: "空白笔记" })}
                                   </p>
 
                                   <div className="flex items-center gap-2 mt-1">
@@ -1659,7 +1768,10 @@ export function MainWindow({
                                     </span>
                                     <span className="text-[10px] text-ink-ghost/40">·</span>
                                     <span className="text-[10px] text-ink-ghost/60 font-mono tabular-nums">
-                                      {note.wordCount} 字
+                                      {t("common.wordCount", {
+                                        count: note.wordCount,
+                                        defaultValue: "{{count}} 字",
+                                      })}
                                     </span>
                                   </div>
                                 </div>
@@ -1674,7 +1786,9 @@ export function MainWindow({
 
                 {!isLoading && filteredNotes.length === 0 && externalFiles.length === 0 && (
                   <div className="px-3 py-8 text-center text-[12px] text-ink-ghost leading-relaxed">
-                    {searchQuery ? "没有匹配的笔记" : "还没有笔记"}
+                    {searchQuery
+                      ? t("main.search.noResults", { defaultValue: "没有匹配的笔记" })
+                      : t("main.search.empty", { defaultValue: "还没有笔记" })}
                   </div>
                 )}
               </div>
@@ -1701,7 +1815,11 @@ export function MainWindow({
                 <button
                   onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-                  title={sidebarCollapsed ? "展开侧栏" : "收起侧栏"}
+                  title={
+                    sidebarCollapsed
+                      ? t("main.window.expandSidebar", { defaultValue: "展开侧栏" })
+                      : t("main.window.collapseSidebar", { defaultValue: "收起侧栏" })
+                  }
                 >
                   <svg
                     width="14"
@@ -1724,7 +1842,7 @@ export function MainWindow({
                   onClick={() => void handlePinEntry()}
                   disabled={!selectedId}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="钉为磁贴"
+                  title={t("main.editor.pinToTile", { defaultValue: "钉为磁贴" })}
                 >
                   <svg
                     width="13"
@@ -1746,8 +1864,8 @@ export function MainWindow({
                   onClick={handleUndo}
                   disabled={!selectedId}
                   className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="撤销（Ctrl+Z）"
-                  aria-label="撤销"
+                  title={t("main.editor.undo", { defaultValue: "撤销（Ctrl+Z）" })}
+                  aria-label={t("main.editor.undoLabel", { defaultValue: "撤销" })}
                 >
                   <svg
                     data-testid="main-editor-undo-icon"
@@ -1770,16 +1888,18 @@ export function MainWindow({
                   onClick={() => void saveCurrentNote()}
                   disabled={!selectedId || saveState === "saving"}
                   className="px-2.5 h-7 flex items-center justify-center rounded-lg text-[11px] text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                  title="保存"
+                  title={t("common.save", { defaultValue: "保存" })}
                 >
-                  保存
+                  {t("common.save", { defaultValue: "保存" })}
                 </button>
 
                 {deleteConfirm ? (
                   <div
                     className={`flex items-center gap-1 ml-1 ${deleteExiting ? "animate-delete-confirm-exit" : "animate-delete-confirm"}`}
                   >
-                    <span className="text-[11px] text-red-400 whitespace-nowrap">确认删除？</span>
+                    <span className="text-[11px] text-red-400 whitespace-nowrap">
+                      {t("main.editor.confirmDelete", { defaultValue: "确认删除？" })}
+                    </span>
                     <button
                       onClick={() => {
                         setDeleteExiting(true);
@@ -1791,7 +1911,7 @@ export function MainWindow({
                       }}
                       className="px-2 h-6 rounded-md text-[11px] text-cloud bg-red-400 hover:bg-red-500 transition-colors cursor-pointer whitespace-nowrap"
                     >
-                      删除
+                      {t("common.delete", { defaultValue: "删除" })}
                     </button>
                     <button
                       onClick={() => {
@@ -1803,7 +1923,7 @@ export function MainWindow({
                       }}
                       className="px-2 h-6 rounded-md text-[11px] text-ink-faint hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer"
                     >
-                      取消
+                      {t("common.cancel", { defaultValue: "取消" })}
                     </button>
                   </div>
                 ) : (
@@ -1811,7 +1931,7 @@ export function MainWindow({
                     onClick={() => setDeleteConfirm(true)}
                     disabled={!selectedId}
                     className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-red-400 hover:bg-danger-bg transition-all cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
-                    title="删除笔记"
+                    title={t("noteMenu.delete", { defaultValue: "删除笔记" })}
                   >
                     <svg
                       width="13"
@@ -1831,11 +1951,7 @@ export function MainWindow({
               </div>
 
               <SlidingButtonGroup
-                options={[
-                  { value: "edit" as ViewMode, label: "编辑" },
-                  { value: "split" as ViewMode, label: "分栏" },
-                  { value: "preview" as ViewMode, label: "预览" },
-                ]}
+                options={viewModeOptions}
                 value={viewMode}
                 onChange={setViewMode}
                 buttonClassName="px-3 py-1"
@@ -1859,21 +1975,24 @@ export function MainWindow({
                     contentRef.current?.focus();
                   }
                 }}
-                placeholder="无标题笔记"
+                placeholder={t("common.untitledNote", { defaultValue: "无标题笔记" })}
                 disabled={!selectedId}
                 className="w-full text-[20px] font-display font-bold text-ink placeholder:text-ink-ghost/50 tracking-wide disabled:opacity-60"
               />
               <div className="flex items-center gap-3 mt-1.5">
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums truncate max-w-[200px]">
                   {selectedExternalFile
-                    ? `外部文件 · ${selectedExternalFile.filePath}`
+                    ? t("main.externalFile.label", {
+                        path: selectedExternalFile.filePath,
+                        defaultValue: "外部文件 · {{path}}",
+                      })
                     : selectedNote
                       ? `${formatShortDate(selectedNote.updatedAt)} ${formatTime(selectedNote.updatedAt)}`
                       : "--"}
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">·</span>
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {charCount} 字
+                  {t("common.wordCount", { count: charCount, defaultValue: "{{count}} 字" })}
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">·</span>
                 <span
@@ -1898,7 +2017,7 @@ export function MainWindow({
             >
               {!selectedId && !isLoading ? (
                 <div className="flex-1 flex items-center justify-center text-[13px] text-ink-ghost">
-                  选择或新建一篇笔记
+                  {t("main.editor.emptyHint", { defaultValue: "选择或新建一篇笔记" })}
                 </div>
               ) : (
                 <>
@@ -1918,6 +2037,7 @@ export function MainWindow({
                                 applyFormat(
                                   contentRef.current,
                                   button.action,
+                                  t,
                                   setContent,
                                   markDirty,
                                 );
@@ -1940,7 +2060,9 @@ export function MainWindow({
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-mono placeholder:text-ink-ghost/40"
                           style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
-                          placeholder="开始写作……"
+                          placeholder={t("main.editor.contentPlaceholder", {
+                            defaultValue: "开始写作……",
+                          })}
                           spellCheck={false}
                           disabled={!selectedId}
                         />
@@ -1967,7 +2089,7 @@ export function MainWindow({
                       {viewMode === "split" && (
                         <div className="px-4 pt-2.5 pb-1 shrink-0">
                           <span className="text-[10px] text-ink-ghost/60 font-mono tracking-widest uppercase">
-                            Preview
+                            {t("main.editor.previewLabel", { defaultValue: "Preview" })}
                           </span>
                         </div>
                       )}
@@ -1990,16 +2112,23 @@ export function MainWindow({
             <div className="flex items-center justify-between px-4 h-7 border-t border-paper-deep/20 bg-paper/30 shrink-0">
               <div className="flex items-center gap-3">
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  Ln {lineCount}
+                  {t("main.statusBar.lineNumber", {
+                    count: lineCount,
+                    defaultValue: "Ln {{count}}",
+                  })}
                 </span>
                 <span className="text-[10px] text-ink-ghost/40">|</span>
-                <span className="text-[10px] text-ink-ghost font-mono">Markdown + LaTeX</span>
+                <span className="text-[10px] text-ink-ghost font-mono">
+                  {t("main.statusBar.format", { defaultValue: "Markdown + LaTeX" })}
+                </span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-[10px] text-ink-ghost font-mono">UTF-8</span>
+                <span className="text-[10px] text-ink-ghost font-mono">
+                  {t("main.statusBar.encoding", { defaultValue: "UTF-8" })}
+                </span>
                 <span className="text-[10px] text-ink-ghost/40">|</span>
                 <span className="text-[10px] text-ink-ghost font-mono tabular-nums">
-                  {byteSize} KB
+                  {t("main.statusBar.byteSize", { size: byteSize, defaultValue: "{{size}} KB" })}
                 </span>
               </div>
             </div>
@@ -2062,13 +2191,13 @@ export function MainWindow({
                 >
                   <polyline points="15 18 9 12 15 6" />
                 </svg>
-                <span>返回</span>
+                <span>{t("common.back", { defaultValue: "返回" })}</span>
               </button>
               <button
                 onClick={() => void handleMoveNote(noteMenuTarget.id, "")}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
               >
-                未分类
+                {t("main.category.uncategorized", { defaultValue: "未分类" })}
               </button>
               {categories.map((cat) => (
                 <button
@@ -2093,7 +2222,10 @@ export function MainWindow({
           {categoryMenuConfirmDelete ? (
             <div className="animate-menu-slide-left">
               <div className="px-3 py-1.5 text-[11px] font-body text-ink-faint border-b border-paper-deep/20">
-                确认删除「{categoryMenu.category}」？
+                {t("main.category.confirmDelete", {
+                  category: categoryMenu.category,
+                  defaultValue: "确认删除「{{category}}」？",
+                })}
               </div>
               <button
                 onClick={() => {
@@ -2102,13 +2234,13 @@ export function MainWindow({
                 }}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer"
               >
-                确认删除
+                {t("main.category.confirmDeleteAction", { defaultValue: "确认删除" })}
               </button>
               <button
                 onClick={() => setCategoryMenuConfirmDelete(false)}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
               >
-                取消
+                {t("common.cancel", { defaultValue: "取消" })}
               </button>
             </div>
           ) : (
@@ -2121,13 +2253,13 @@ export function MainWindow({
                 }}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
               >
-                重命名
+                {t("main.category.rename", { defaultValue: "重命名" })}
               </button>
               <button
                 onClick={() => setCategoryMenuConfirmDelete(true)}
                 className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer border-t border-paper-deep/20"
               >
-                删除分类
+                {t("main.category.delete", { defaultValue: "删除分类" })}
               </button>
             </div>
           )}

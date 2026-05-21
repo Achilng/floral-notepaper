@@ -1,0 +1,223 @@
+{
+  "common": {
+    "back": "Back",
+    "blankNote": "Blank Note",
+    "cancel": "Cancel",
+    "default": "Default",
+    "delete": "Delete",
+    "externalFileCount": "{{count}} external file(s)",
+    "noteCount": "{{count}} note(s)",
+    "operationFailed": "Operation failed",
+    "save": "Save",
+    "untitledNote": "Untitled Note",
+    "untitledFile": "Untitled File",
+    "wordCount": "{{count}} characters",
+    "wordCountUnit": "characters"
+  },
+  "contextMenu": {
+    "edit": {
+      "copy": "Copy",
+      "cut": "Cut",
+      "paste": "Paste",
+      "selectAll": "Select All"
+    },
+    "tile": {
+      "close": "Close",
+      "copy": "Copy",
+      "save": "Save",
+      "switchToPad": "Switch to Window"
+    }
+  },
+  "errors": {
+    "categoryAlreadyExists": "Category \"{{category}}\" already exists",
+    "categoryNameEmpty": "Category name cannot be empty",
+    "categoryNameInvalidChars": "Category name cannot contain special characters",
+    "categoryNotFound": "Category \"{{category}}\" not found",
+    "desktopConfig": "Failed to update desktop configuration",
+    "duplicateShortcut": "Show/Hide shortcut cannot be the same as Quick Note shortcut",
+    "noPool": "Notepad window pool not yet initialized",
+    "noteNotFound": "Note not found",
+    "unsupportedFile": "Only .md files are supported",
+    "unsupportedShortcut": "{{field}} configuration is invalid",
+    "unsupportedShortcutGeneric": "Shortcut configuration is invalid"
+  },
+  "markdown": {
+    "copied": "Copied",
+    "copy": "Copy",
+    "emptyHint": "Preview of the current note"
+  },
+  "main": {
+    "category": {
+      "confirmDelete": "Delete \"{{category}}\"?",
+      "confirmDeleteAction": "Confirm Delete",
+      "delete": "Delete Category",
+      "emptyFolder": "Empty Folder",
+      "new": "New Category",
+      "placeholder": "Enter category name…",
+      "rename": "Rename",
+      "uncategorized": "Uncategorized"
+    },
+    "confirm": {
+      "unsavedExternalFile": "\"{{title}}\" has unsaved changes. Save to the original file?"
+    },
+    "editor": {
+      "confirmDelete": "Confirm delete?",
+      "contentPlaceholder": "Start writing…",
+      "emptyHint": "Select or create a note",
+      "pinToTile": "Pin to Tile",
+      "previewLabel": "Preview",
+      "undo": "Undo (Ctrl+Z)",
+      "undoLabel": "Undo"
+    },
+    "externalFile": {
+      "label": "External File · {{path}}"
+    },
+    "externalFiles": {
+      "remove": "Remove from list",
+      "title": "External Files"
+    },
+    "formatSample": {
+      "boldText": "Bold text",
+      "codeText": "Code",
+      "headingText": "Heading",
+      "italicText": "Italic text",
+      "listItem": "List item",
+      "quoteText": "Blockquote"
+    },
+    "search": {
+      "empty": "No notes yet",
+      "noResults": "No matching notes"
+    },
+    "sidebar": {
+      "clearSearch": "Clear search",
+      "importMarkdown": "Import Markdown",
+      "newNote": "New Note",
+      "searchPlaceholder": "Search notes…"
+    },
+    "statusBar": {
+      "byteSize": "{{size}} KB",
+      "encoding": "UTF-8",
+      "format": "Markdown + LaTeX",
+      "lineNumber": "Ln {{count}}",
+      "saveState": {
+        "dirty": "Unsaved",
+        "error": "Save failed",
+        "idle": "No selection",
+        "saved": "Saved",
+        "saving": "Saving"
+      }
+    },
+    "toolbar": {
+      "blockMath": "Block math",
+      "bold": "Bold",
+      "code": "Code",
+      "heading": "Heading",
+      "hr": "Horizontal rule",
+      "inlineMath": "Inline math",
+      "italic": "Italic",
+      "ol": "Ordered list",
+      "quote": "Blockquote",
+      "ul": "Unordered list"
+    },
+    "window": {
+      "close": "Close",
+      "collapseSidebar": "Collapse sidebar",
+      "expandSidebar": "Expand sidebar",
+      "maximize": "Maximize",
+      "minimize": "Minimize",
+      "quickNotepad": "Quick Note",
+      "restore": "Restore",
+      "settings": "Settings"
+    }
+  },
+  "noteMenu": {
+    "delete": "Delete Note",
+    "export": "Export Markdown",
+    "moveToCategory": "Move to category…"
+  },
+  "notepad": {
+    "button": {
+      "clear": "Clear"
+    },
+    "emptyState": "No notes available",
+    "error": {
+      "copyUnsupported": "Copy is not supported in this environment"
+    },
+    "placeholder": {
+      "content": "Write something…",
+      "title": "Title (optional)"
+    },
+    "status": {
+      "copied": "Copied",
+      "empty": "Empty",
+      "opened": "Opened",
+      "saveFailed": "Save failed",
+      "saved": "Saved",
+      "unsaved": "Unsaved"
+    },
+    "tab": {
+      "edit": "Edit",
+      "new": "New",
+      "open": "Open"
+    },
+    "tooltip": {
+      "close": "Close",
+      "openInEditor": "Open in Editor",
+      "pinToTile": "Pin to Tile"
+    }
+  },
+  "settings": {
+    "autoSave": {
+      "externalFile": "Auto-save external files",
+      "note": "Auto-save notes",
+      "surface": "Auto-save surface notes"
+    },
+    "autostart": "Launch on Startup",
+    "closeTitle": "Close Settings",
+    "closeToTray": "Close to Tray",
+    "defaultView": {
+      "edit": "Edit",
+      "label": "Default view",
+      "preview": "Preview",
+      "split": "Split"
+    },
+    "fontSize": {
+      "editor": "Editor font size",
+      "surface": "Surface font size"
+    },
+    "locale": {
+      "enUS": "English",
+      "label": "Language",
+      "zhCN": "简体中文",
+      "zhHK": "繁體中文"
+    },
+    "notesDir": "Notes directory",
+    "quickNoteShortcut": "Quick Note shortcut",
+    "rememberSurfaceSize": "Remember surface size",
+    "selectFolder": "Select Folder",
+    "shortcut": {
+      "cancelHint": "Esc to cancel",
+      "clickToRecord": "Click to record",
+      "notSet": "Not set",
+      "pressHint": "Press shortcut...; press Delete to clear."
+    },
+    "theme": {
+      "dark": "Dark",
+      "label": "Theme",
+      "light": "Light",
+      "system": "System"
+    },
+    "tileColor": {
+      "custom": "Custom",
+      "followTheme": "Follow Theme",
+      "label": "Tile color"
+    },
+    "tileCtrlClose": "Ctrl+Right-click to close tile",
+    "tileRenderMarkdown": "Render Markdown on tile",
+    "title": "Settings",
+    "visibilityShortcut": "Show/Hide window shortcut"
+  },
+  "tile": {
+    "empty": "Empty"
+  }
+}

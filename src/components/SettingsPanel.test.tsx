@@ -3,6 +3,7 @@ import { describe, expect, test, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
 
 const config = {
+  locale: "zh-CN",
   notesDir: "D:\\Notes\\花笺",
   globalShortcut: "Ctrl+Space",
   closeToTray: true,

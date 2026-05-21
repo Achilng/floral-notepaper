@@ -5,6 +5,7 @@ export type ThemeOption = "light" | "dark" | "system";
 export type TileColorMode = "system" | "custom";
 
 export interface AppConfig {
+  locale: string;
   notesDir: string;
   globalShortcut: string;
   closeToTray: boolean;

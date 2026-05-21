@@ -77,6 +77,7 @@ describe("importExport api", () => {
 
     await exportMarkdownNote({ id: "note-1", title: "A/B:Test" });
     await exportMarkdownNote({ id: "note-2", title: "" });
+    await exportMarkdownNote({ id: "note-3", title: `${"x".repeat(79)}😀` });
 
     expect(save).toHaveBeenNthCalledWith(1, {
       defaultPath: "A_B_Test.md",
@@ -84,6 +85,10 @@ describe("importExport api", () => {
     });
     expect(save).toHaveBeenNthCalledWith(2, {
       defaultPath: "无标题笔记.md",
+      filters: [{ name: "Markdown", extensions: ["md"] }],
+    });
+    expect(save).toHaveBeenNthCalledWith(3, {
+      defaultPath: `${"x".repeat(79)}😀.md`,
       filters: [{ name: "Markdown", extensions: ["md"] }],
     });
     expect(invoke).not.toHaveBeenCalled();

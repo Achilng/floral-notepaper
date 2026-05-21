@@ -1,5 +1,6 @@
 import chroma from "chroma-js";
 import type { CSSProperties, HTMLAttributes } from "react";
+import { useTranslation } from "react-i18next";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 
@@ -78,6 +79,7 @@ export function Tile({
   children,
   ...divProps
 }: TileProps) {
+  const { t } = useTranslation();
   const tileColor = normalizeTileColor(color);
   const isLightBg = chroma(tileColor).luminance() > 0.18;
   const mixTarget = isLightBg ? "#1a1a18" : "#ffffff";
@@ -128,7 +130,7 @@ export function Tile({
             className="font-body text-center py-6"
             style={{ color: emptyColor, fontSize: `${fontSize}px` }}
           >
-            空
+            {t("tile.empty", { defaultValue: "空" })}
           </div>
         )}
       </div>

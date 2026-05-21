@@ -1,13 +1,16 @@
 pub mod desktop;
+pub mod locales;
 pub mod services;
 
+use locales::Locale;
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
 use std::path::PathBuf;
 use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
-fn app_name() -> &'static str {
-    "花笺"
+fn app_name() -> Result<String, AppError> {
+    let locale = Locale::from_tag(&default_store()?.load_config()?.locale);
+    Ok(locales::app_name(locale).to_string())
 }
 
 #[tauri::command]
@@ -63,6 +66,7 @@ fn read_external_file(path: String) -> Result<String, AppError> {
     std::fs::read_to_string(&path).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
+        details: Default::default(),
     })
 }
 
@@ -71,10 +75,12 @@ fn get_file_modified_time(path: String) -> Result<f64, AppError> {
     let metadata = std::fs::metadata(&path).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
+        details: Default::default(),
     })?;
     let modified = metadata.modified().map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
+        details: Default::default(),
     })?;
     let duration = modified
         .duration_since(std::time::UNIX_EPOCH)
@@ -88,11 +94,13 @@ fn save_external_file(path: String, content: String) -> Result<(), AppError> {
         std::fs::create_dir_all(parent).map_err(|e| AppError {
             code: "io".into(),
             message: e.to_string(),
+            details: Default::default(),
         })?;
     }
     std::fs::write(&path, content).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
+        details: Default::default(),
     })
 }
 
@@ -142,11 +150,20 @@ fn config_get() -> Result<AppConfig, AppError> {
 fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError> {
     let store = default_store()?;
     let previous = store.load_config()?;
-    desktop::apply_runtime_config(&app, &previous, &config).map_err(|error| AppError {
-        code: "desktopConfig".into(),
-        message: error.to_string(),
+    desktop::apply_runtime_config(&app, &previous, &config).map_err(|error| {
+        match error.downcast::<AppError>() {
+            Ok(app_error) => *app_error,
+            Err(error) => AppError {
+                code: "desktopConfig".into(),
+                message: error.to_string(),
+                details: Default::default(),
+            },
+        }
     })?;
     let saved = store.save_config(config)?;
+    if let Err(error) = desktop::refresh_shell_state(&app, &saved) {
+        eprintln!("failed to refresh desktop shell state: {error}");
+    }
     let _ = app.emit("config-changed", &saved);
     Ok(saved)
 }
