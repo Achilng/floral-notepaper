@@ -1404,10 +1404,7 @@ fn install_global_shortcut_bindings(
 }
 
 #[cfg(desktop)]
-fn apply_global_shortcut_config(
-    app: &AppHandle,
-    config: &AppConfig,
-) -> Result<(), Box<dyn Error>> {
+fn apply_global_shortcut_config(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
     install_global_shortcut_bindings(app, config, true)
 }
 
@@ -1714,7 +1711,7 @@ mod tests {
         let config = AppConfig {
             locale: "zh-CN".into(),
             notes_dir: "D:\\notes".into(),
-            global_shortcut: "Ctrl+Space".into(),
+            global_shortcut: "Ctrl+Shift+K".into(),
             close_to_tray: true,
             autostart: false,
             default_view_mode: "split".into(),
@@ -1731,7 +1728,7 @@ mod tests {
             tile_render_markdown: false,
             surface_width: None,
             surface_height: None,
-            toggle_visibility_shortcut: "Ctrl+Space".into(),
+            toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
         };
 
         let error = match shortcut_bindings_from_config(&config) {

@@ -394,7 +394,8 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
 
   const recorder = useHotkeyRecorder({
     onRecord: (hotkey) => {
-      if ((hotkey as string) === "") {
+      if (String(hotkey) === "") {
+        invalidateShortcutChecks();
         onChange("");
         setCheckState("idle");
         setCheckMessage("快捷键已清空");
