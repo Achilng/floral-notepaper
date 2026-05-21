@@ -245,17 +245,6 @@ function applyFormat(
   });
 }
 
-type UndoDocument = Pick<Document, "execCommand">;
-
-export function runEditorUndo(
-  textarea: HTMLTextAreaElement | null,
-  doc: UndoDocument = document,
-): boolean {
-  if (!textarea || textarea.disabled) return false;
-  textarea.focus();
-  return doc.execCommand("undo");
-}
-
 interface MainWindowProps {
   initialSettingsOpen?: boolean;
   initialConfig?: AppConfig;
@@ -308,6 +297,9 @@ export function MainWindow({
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const undoStackRef = useRef<{ text: string; ss: number; se: number }[]>([]);
+  const redoStackRef = useRef<{ text: string; ss: number; se: number }[]>([]);
+  const lastUndoPushRef = useRef(0);
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
 
@@ -444,6 +436,8 @@ export function MainWindow({
     setSaveState("saved");
     setErrorMessage(null);
     setNoteTransitionKey((k) => k + 1);
+    undoStackRef.current = [];
+    redoStackRef.current = [];
   }, []);
 
   const replaceNoteMetadata = useCallback((note: Note) => {
@@ -1046,13 +1040,37 @@ export function MainWindow({
     if (selectedId) setSaveState("dirty");
   };
 
-  const handleUndo = () => {
-    if (!selectedId) return;
-    const textarea = contentRef.current;
-    if (runEditorUndo(textarea)) {
-      setContent(textarea?.value ?? content);
-      markDirty();
+  const pushUndo = useCallback((force = false) => {
+    const ta = contentRef.current;
+    if (!ta) return;
+    if (!force) {
+      const now = Date.now();
+      if (now - lastUndoPushRef.current < 300) return;
+      lastUndoPushRef.current = now;
     }
+    undoStackRef.current.push({ text: ta.value, ss: ta.selectionStart, se: ta.selectionEnd });
+    if (undoStackRef.current.length > 200) undoStackRef.current.shift();
+    redoStackRef.current = [];
+  }, []);
+
+  const handleUndo = () => {
+    const ta = contentRef.current;
+    if (!ta || !selectedId || undoStackRef.current.length === 0) return;
+    redoStackRef.current.push({ text: ta.value, ss: ta.selectionStart, se: ta.selectionEnd });
+    const entry = undoStackRef.current.pop()!;
+    setContent(entry.text);
+    markDirty();
+    requestAnimationFrame(() => ta.setSelectionRange(entry.ss, entry.se));
+  };
+
+  const handleRedo = () => {
+    const ta = contentRef.current;
+    if (!ta || !selectedId || redoStackRef.current.length === 0) return;
+    undoStackRef.current.push({ text: ta.value, ss: ta.selectionStart, se: ta.selectionEnd });
+    const entry = redoStackRef.current.pop()!;
+    setContent(entry.text);
+    markDirty();
+    requestAnimationFrame(() => ta.setSelectionRange(entry.ss, entry.se));
   };
 
   const handleOpenNotepad = async () => {
@@ -2034,6 +2052,7 @@ export function MainWindow({
                             onMouseDown={(e) => e.preventDefault()}
                             onClick={() => {
                               if (contentRef.current) {
+                                pushUndo(true);
                                 applyFormat(
                                   contentRef.current,
                                   button.action,
@@ -2055,8 +2074,21 @@ export function MainWindow({
                           ref={contentRef}
                           value={content}
                           onChange={(event) => {
+                            pushUndo();
                             setContent(event.target.value);
                             markDirty();
+                          }}
+                          onKeyDown={(e) => {
+                            if ((e.ctrlKey || e.metaKey) && e.key === "z") {
+                              e.preventDefault();
+                              if (e.shiftKey) handleRedo();
+                              else handleUndo();
+                              return;
+                            }
+                            if ((e.ctrlKey || e.metaKey) && e.key === "y") {
+                              e.preventDefault();
+                              handleRedo();
+                            }
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-mono placeholder:text-ink-ghost/40"
                           style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
