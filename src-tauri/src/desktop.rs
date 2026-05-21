@@ -828,6 +828,33 @@ fn notepad_window_specs() -> WindowSizeSpec {
     }
 }
 
+#[cfg(target_os = "windows")]
+fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
+    #[repr(C)]
+    struct POINT {
+        x: i32,
+        y: i32,
+    }
+    extern "system" {
+        fn GetCursorPos(lp_point: *mut POINT) -> i32;
+    }
+    let mut pt = POINT { x: 0, y: 0 };
+    if unsafe { GetCursorPos(&mut pt) } == 0 {
+        return None;
+    }
+    Some(WindowBounds {
+        x: pt.x - (specs.width as i32 / 2),
+        y: pt.y - (specs.height as i32 / 2),
+        width: specs.width as u32,
+        height: specs.height as u32,
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+fn cursor_centered_bounds(_specs: &WindowSizeSpec) -> Option<WindowBounds> {
+    None
+}
+
 fn saved_surface_specs(app: &AppHandle) -> WindowSizeSpec {
     let defaults = notepad_window_specs();
     let Ok(config) = load_config() else {
@@ -1050,9 +1077,11 @@ fn setup_global_shortcut_plugin(app: &AppHandle) -> tauri::Result<()> {
                         }
                     }
                     ShortcutAction::OpenNotepad => {
+                        let specs = saved_surface_specs(app);
+                        let bounds = cursor_centered_bounds(&specs);
                         if let Err(error) = app.run_on_main_thread(move || {
                             if let Err(error) =
-                                open_notepad_window_now(&app_for_closure, None, None)
+                                open_notepad_window_now(&app_for_closure, None, bounds)
                             {
                                 eprintln!("failed to open notepad from global shortcut: {error}");
                             }
