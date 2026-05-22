@@ -61,6 +61,7 @@ body:
       options:
         - NSIX Installer (GitHub Release)
         - Portable (GitHub Release)
+        - DMG Image (GitHub Release)
         - Built from source / 从源码构建
     validations:
       required: true
