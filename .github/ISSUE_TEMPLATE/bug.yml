@@ -1,50 +1,134 @@
-name: Bug 反馈
-description: 反馈使用中遇到的问题
+name: Bug Report / Bug 反馈
+description: Report a reproducible problem / 反馈可复现的问题
+title: "[Bug] "
 labels: ["bug"]
 
 body:
   - type: markdown
     attributes:
       value: |
-        请仅反馈一个问题，多个问题请分别提交 issue。
+        Thanks for taking the time to report a bug.
+        感谢你花时间反馈问题。
+
+        Please submit only one issue per report. If you have multiple unrelated problems, open separate issues.
+        请每次仅反馈一个问题。如果有多个不相关的问题，请分别提交 issue。
 
   - type: checkboxes
+    id: checklist
     attributes:
-      label: 提交前请确认
+      label: Checklist / 提交前确认
       options:
-        - label: 已在仓库中搜索过，没有找到相同或类似的 issue
+        - label: I have searched existing issues and found no duplicate or similar report. / 我已搜索现有 issue，未找到重复或类似问题。
           required: true
-        - label: 确认本次仅提交**一个**问题
+        - label: This report describes **only one** problem. / 本 issue 仅反馈**一个**问题。
           required: true
 
-  - type: checkboxes
+  - type: dropdown
     id: platform
     attributes:
-      label: 平台
-      description: 请选择问题发生的平台（可多选）
+      label: Platform / 平台
+      description: Select the platform where the problem occurs. / 请选择问题发生的平台。
+      multiple: true
       options:
-        - label: Windows
-        - label: macOS
+        - Windows
+        - macOS
     validations:
       required: true
 
   - type: input
+    id: os_version
     attributes:
-      label: 系统型号和版本
-      placeholder: "例：Windows 11 24H2 / macOS 15.3 (MacBook Air M2)"
+      label: OS version and device / 系统版本与设备
+      description: Include your OS version and device model if relevant. / 请填写系统版本；如相关，请附上设备型号。
+      placeholder: "Example: Windows 11 24H2 / macOS 15.3, MacBook Air M2"
     validations:
-      required: false
+      required: true
 
   - type: input
+    id: app_version
     attributes:
-      label: 软件版本
-      placeholder: "例：1.0.4"
+      label: App version / 软件版本
+      description: Please fill in the exact version number showed in the About page. / 请准确填写应用关于页面内显示的版本号。
+      placeholder: "Example: 1.0.4"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_source
+    attributes:
+      label: Installation source / 安装来源
+      description: How did you get the app? / 你是如何获取本应用的？
+      options:
+        - NSIX Installer (GitHub Release)
+        - Portable (GitHub Release)
+        - Built from source / 从源码构建
+    validations:
+      required: true
+
+  - type: textarea
+    id: description
+    attributes:
+      label: Problem description / 问题描述
+      description: Describe what happened clearly. / 请清楚描述发生了什么。
+      placeholder: |
+        What happened?
+        发生了什么问题？
+
+        How often does it happen?
+        问题出现的频率如何？
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / 复现步骤
+      description: Provide minimal steps that can reproduce the problem. / 请提供可复现该问题的最小步骤。
+      placeholder: |
+        1. Open ...
+        2. Click ...
+        3. See error ...
+
+        1. 打开……
+        2. 点击……
+        3. 出现……
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / 预期行为
+      description: What did you expect to happen? / 你原本预期会发生什么？
+      placeholder: "The app should ... / 应用应该……"
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / 实际行为
+      description: What actually happened? / 实际发生了什么？
+      placeholder: "The app actually ... / 实际上应用……"
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs, screenshots, or screen recordings / 日志、截图或录屏
+      description: Attach logs, screenshots, or recordings if possible. / 如有可能，请附上日志、截图或录屏。
+      placeholder: |
+        Drag and drop or copy and paste files here.
+        可将文件拖拽或粘贴到此处上传。
     validations:
       required: false
 
   - type: textarea
+    id: additional_context
     attributes:
-      label: 问题描述
-      placeholder: 尽量详细地描述你遇到的问题
+      label: Additional context / 其他信息
+      description: Add any other context that may help diagnose the issue. / 请补充任何有助于定位问题的信息。
+      placeholder: "Anything else? / 还有其他信息吗？"
     validations:
-      required: true
+      required: false
