@@ -59,7 +59,7 @@ body:
       label: Installation source / 安装来源
       description: How did you get the app? / 你是如何获取本应用的？
       options:
-        - NSIX Installer (GitHub Release)
+        - NSIS Installer (GitHub Release)
         - Portable (GitHub Release)
         - DMG Image (GitHub Release)
         - Built from source / 从源码构建
