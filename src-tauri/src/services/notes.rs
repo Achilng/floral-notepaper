@@ -549,6 +549,8 @@ impl NoteStore {
         updated_at: DateTime<Utc>,
     ) -> Result<Note, AppError> {
         self.ensure_storage()?;
+        validate_synced_note_id(id)?;
+        validate_optional_category_name(category)?;
         let mut metadata_file = self.load_metadata()?;
         let file_name = self.file_name_for(id, title);
         let note_path = self.note_path_in_category(&file_name, category);
@@ -1097,6 +1099,37 @@ fn shortcuts_equal(left: &str, right: &str) -> bool {
     normalize(left) == normalize(right)
 }
 
+fn is_unsafe_path_segment(value: &str) -> bool {
+    value.trim() != value
+        || value.is_empty()
+        || value == "."
+        || value == ".."
+        || value.contains("..")
+        || value
+            .chars()
+            .any(|ch| matches!(ch, '/' | '\\' | ':') || ch.is_control())
+}
+
+fn validate_synced_note_id(id: &str) -> Result<(), AppError> {
+    if is_unsafe_path_segment(id) {
+        return Err(AppError::new(
+            "syncNoteIdInvalid",
+            "远端同步清单中的笔记 ID 不合法，已停止写入本地文件。",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_optional_category_name(category: &str) -> Result<(), AppError> {
+    if category.is_empty() {
+        return Ok(());
+    }
+    if is_unsafe_path_segment(category) {
+        return Err(AppError::category_name_invalid_chars());
+    }
+    Ok(())
+}
+
 fn safe_file_stem(title: &str) -> String {
     let mut stem = String::new();
     let mut last_was_separator = false;
@@ -1411,6 +1444,28 @@ mod tests {
                 .file_name()
                 .to_string_lossy()
                 .starts_with("metadata.corrupt-")));
+    }
+
+    #[test]
+    fn rejects_unsafe_synced_note_paths() {
+        let store = NoteStore::new(test_root("unsafe-synced-note-paths"));
+        let now = Utc::now();
+
+        let unsafe_id =
+            store.upsert_synced_note("../outside", "Remote title", "body", "", now, now);
+        assert!(unsafe_id.is_err());
+
+        let unsafe_category = store.upsert_synced_note(
+            "safe-note-id",
+            "Remote title",
+            "body",
+            "../outside",
+            now,
+            now,
+        );
+        assert!(unsafe_category.is_err());
+        assert!(!store.base_dir().join("outside").exists());
+        assert!(!store.base_dir().join("outside_Remote title.md").exists());
     }
 
     #[test]

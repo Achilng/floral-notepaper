@@ -1,6 +1,11 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import { MainWindow, pinTileButtonTitle, runEditorUndo } from "./MainWindow";
+import {
+  MainWindow,
+  pinTileButtonTitle,
+  runEditorUndo,
+  shouldSaveCurrentNoteBeforeManualSync,
+} from "./MainWindow";
 
 describe("MainWindow settings", () => {
   test("can render the settings panel with the loaded config", () => {
@@ -79,6 +84,11 @@ describe("MainWindow settings", () => {
   test("labels the pin button as a toggle", () => {
     expect(pinTileButtonTitle(false)).toBe("钉到屏幕");
     expect(pinTileButtonTitle(true)).toBe("取消钉屏");
+  });
+  test("saves the current dirty note before manual sync", () => {
+    expect(shouldSaveCurrentNoteBeforeManualSync("note-1", "dirty")).toBe(true);
+    expect(shouldSaveCurrentNoteBeforeManualSync("note-1", "saved")).toBe(false);
+    expect(shouldSaveCurrentNoteBeforeManualSync(null, "dirty")).toBe(false);
   });
 });
 

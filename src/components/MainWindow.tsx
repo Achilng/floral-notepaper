@@ -64,6 +64,13 @@ import {
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
+export function shouldSaveCurrentNoteBeforeManualSync(
+  selectedId: string | null,
+  saveState: SaveState,
+): boolean {
+  return Boolean(selectedId && saveState === "dirty");
+}
+
 interface NoteMenuState {
   x: number;
   y: number;
@@ -923,6 +930,10 @@ export function MainWindow({
     setSyncFeedback(null);
     setErrorMessage(null);
     try {
+      if (shouldSaveCurrentNoteBeforeManualSync(selectedId, saveState)) {
+        const saved = await saveCurrentNote();
+        if (!saved) return;
+      }
       await saveCurrentSettingsImmediately();
       const status = await syncNow();
       setSyncStatus(status);
@@ -946,7 +957,7 @@ export function MainWindow({
     } finally {
       setSyncBusy(false);
     }
-  }, [refreshNotes, saveCurrentSettingsImmediately, t]);
+  }, [refreshNotes, saveCurrentNote, saveCurrentSettingsImmediately, saveState, selectedId, t]);
 
   const runSyncConnectionTest = useCallback(async () => {
     setSyncBusy(true);

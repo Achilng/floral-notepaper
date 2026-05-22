@@ -3,7 +3,7 @@ use crate::services::notes::{
 };
 use chrono::{DateTime, Utc};
 use reqwest::{
-    header::{HeaderMap, ETAG, IF_MATCH},
+    header::{HeaderMap, ETAG, IF_MATCH, IF_NONE_MATCH},
     Method, StatusCode,
 };
 use serde::{Deserialize, Serialize};
@@ -167,6 +167,7 @@ struct RemoteSnapshot {
     manifest: RemoteManifest,
     revision: String,
     etag: Option<String>,
+    exists: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -193,6 +194,11 @@ enum RemoteMutationOutcome {
     Missing,
     PermissionDenied,
     Unsupported,
+}
+
+#[derive(Debug, Clone)]
+struct RemoteCleanup {
+    path: String,
 }
 
 pub fn setup_auto_sync(app: &AppHandle) {
@@ -467,7 +473,7 @@ async fn sync_inner(
         }
 
         let mut next_manifest = snapshot.manifest.clone();
-        with_sync_step(
+        let remote_cleanups = with_sync_step(
             "\u{4e0a}\u{4f20}\u{672c}\u{5730}\u{7b14}\u{8bb0}\u{53d8}\u{66f4}",
             push_local_changes(config, &mut next_manifest, &local_changes).await,
         )?;
@@ -498,10 +504,12 @@ async fn sync_inner(
                 &next_manifest,
                 &snapshot.revision,
                 snapshot.etag.as_deref(),
+                snapshot.exists,
             )
             .await,
         )? {
             ManifestSaveOutcome::Saved(revision) => {
+                run_remote_cleanups(config, &remote_cleanups).await;
                 rebuild_state_from_manifest(state, &next_manifest);
                 state.categories = local_categories;
                 state.category_tombstones = local_category_tombstones;
@@ -611,7 +619,11 @@ async fn apply_remote_entry(
     config: &AppConfig,
     entry: &ManifestEntry,
 ) -> Result<(), AppError> {
-    let local = store.read_note(&entry.id).ok();
+    let local = match store.read_note(&entry.id) {
+        Ok(note) => Some(note),
+        Err(error) if error.code == "noteNotFound" => None,
+        Err(error) => return Err(error),
+    };
     let local_changed = local
         .as_ref()
         .map(|note| local_note_changed(note, state))
@@ -649,6 +661,12 @@ async fn apply_remote_entry(
             "\u{8fdc}\u{7aef}\u{540c}\u{6b65}\u{6e05}\u{5355}\u{5f15}\u{7528}\u{7684}\u{7b14}\u{8bb0}\u{6587}\u{4ef6}\u{4e0d}\u{5b58}\u{5728}\u{ff0c}\u{8bf7}\u{68c0}\u{67e5} WebDAV \u{76ee}\u{5f55}\u{3002}",
         ));
     };
+    if manifest_entry_hash(entry, &content) != entry.content_hash {
+        return Err(AppError::new(
+            "syncManifestMismatch",
+            "远端同步清单和笔记内容不一致，请稍后重试或检查 WebDAV 文件是否被手动修改。",
+        ));
+    }
 
     apply_remote_entry_content(store, entry, &content, local, local_changed)
 }
@@ -740,13 +758,14 @@ async fn push_local_changes(
     config: &AppConfig,
     manifest: &mut RemoteManifest,
     changes: &[LocalChange],
-) -> Result<(), AppError> {
+) -> Result<Vec<RemoteCleanup>, AppError> {
+    let mut cleanups = Vec::new();
     for change in changes {
         match change {
             LocalChange::Upsert { note, content_hash } => {
                 let path = with_sync_step(
                     &format!("写入远端笔记《{}》", sync_note_label(&note.title, &note.id)),
-                    upload_remote_note(config, note).await,
+                    upload_remote_note(config, note, content_hash).await,
                 )?;
 
                 if let Some(previous) = manifest_entry(manifest, &note.id).cloned() {
@@ -758,6 +777,14 @@ async fn push_local_changes(
                             ),
                             cleanup_replaced_remote_note(config, &previous.path).await,
                         )?;
+                    }
+                }
+
+                if let Some(previous) = manifest_entry(manifest, &note.id).cloned() {
+                    if previous.deleted_at.is_none() && previous.path != path {
+                        cleanups.push(RemoteCleanup {
+                            path: previous.path,
+                        });
                     }
                 }
 
@@ -794,6 +821,11 @@ async fn push_local_changes(
                             archive_deleted_remote_note(config, &previous.path, &archive_path)
                                 .await,
                         )?;
+                        if previous.path != archive_path {
+                            cleanups.push(RemoteCleanup {
+                                path: previous.path.clone(),
+                            });
+                        }
                     }
                 }
 
@@ -826,7 +858,7 @@ async fn push_local_changes(
     }
 
     manifest.categories = normalized_categories(manifest.categories.clone());
-    Ok(())
+    Ok(cleanups)
 }
 
 fn manifest_entry<'a>(manifest: &'a RemoteManifest, id: &str) -> Option<&'a ManifestEntry> {
@@ -863,6 +895,7 @@ async fn fetch_manifest(config: &AppConfig) -> Result<RemoteSnapshot, AppError> 
             revision: manifest_revision(None, &manifest),
             manifest,
             etag: None,
+            exists: false,
         });
     }
 
@@ -880,6 +913,7 @@ async fn fetch_manifest(config: &AppConfig) -> Result<RemoteSnapshot, AppError> 
         revision: revision.unwrap_or_else(|| manifest_revision(etag.as_deref(), &manifest)),
         manifest,
         etag,
+        exists: true,
     })
 }
 
@@ -888,6 +922,7 @@ async fn save_manifest(
     manifest: &RemoteManifest,
     expected_revision: &str,
     current_etag: Option<&str>,
+    manifest_exists: bool,
 ) -> Result<ManifestSaveOutcome, AppError> {
     ensure_remote_parent(config, REMOTE_MANIFEST_PATH).await?;
 
@@ -905,6 +940,7 @@ async fn save_manifest(
             &body,
             content_type,
             current_etag,
+            !manifest_exists,
         )
         .await?;
 
@@ -973,8 +1009,12 @@ async fn probe_webdav_write_access(config: &AppConfig) -> Result<(), AppError> {
     Ok(())
 }
 
-async fn upload_remote_note(config: &AppConfig, note: &Note) -> Result<String, AppError> {
-    let preferred_path = remote_note_path(note);
+async fn upload_remote_note(
+    config: &AppConfig,
+    note: &Note,
+    content_hash: &str,
+) -> Result<String, AppError> {
+    let preferred_path = remote_note_path(note, content_hash);
     ensure_remote_parent(config, &preferred_path).await?;
 
     match put_text(
@@ -987,7 +1027,7 @@ async fn upload_remote_note(config: &AppConfig, note: &Note) -> Result<String, A
     {
         Ok(()) => Ok(preferred_path),
         Err(error) => {
-            let fallback_path = compatibility_remote_note_path(note);
+            let fallback_path = compatibility_remote_note_path(note, content_hash);
             if !should_retry_note_upload_with_compat_path(&preferred_path, &fallback_path, &error) {
                 return Err(error);
             }
@@ -1149,7 +1189,8 @@ async fn put_text(
 ) -> Result<(), AppError> {
     let bytes = body.as_bytes().to_vec();
     for candidate in put_retry_content_types(content_type) {
-        let response = send_put_request(config, relative_path, &bytes, candidate, None).await?;
+        let response =
+            send_put_request(config, relative_path, &bytes, candidate, None, false).await?;
         match response.status() {
             StatusCode::OK | StatusCode::CREATED | StatusCode::NO_CONTENT => return Ok(()),
             status if should_retry_put_with_compatibility_headers(status) => continue,
@@ -1166,6 +1207,7 @@ async fn send_put_request(
     body: &[u8],
     content_type: Option<&str>,
     if_match: Option<&str>,
+    if_none_match: bool,
 ) -> Result<reqwest::Response, AppError> {
     let client = sync_http_client()?;
     let mut request = client
@@ -1181,6 +1223,9 @@ async fn send_put_request(
     }
     if let Some(etag) = if_match {
         request = request.header(IF_MATCH, etag);
+    }
+    if if_none_match {
+        request = request.header(IF_NONE_MATCH, "*");
     }
 
     request.send().await.map_err(sync_transport_error)
@@ -1231,24 +1276,17 @@ async fn archive_deleted_remote_note(
     from: &str,
     archive_path: &str,
 ) -> Result<(), AppError> {
-    match move_resource(config, from, archive_path).await? {
-        RemoteMutationOutcome::Applied | RemoteMutationOutcome::Missing => Ok(()),
-        RemoteMutationOutcome::PermissionDenied | RemoteMutationOutcome::Unsupported => {
-            copy_remote_resource(config, from, archive_path).await
-        }
-    }
+    copy_remote_resource(config, from, archive_path).await
 }
 
 async fn cleanup_replaced_remote_note(
-    config: &AppConfig,
-    previous_path: &str,
+    _config: &AppConfig,
+    _previous_path: &str,
 ) -> Result<(), AppError> {
-    match delete_resource(config, previous_path).await? {
-        RemoteMutationOutcome::Applied
-        | RemoteMutationOutcome::Missing
-        | RemoteMutationOutcome::PermissionDenied
-        | RemoteMutationOutcome::Unsupported => Ok(()),
-    }
+    // The actual DELETE is deferred until after the manifest compare-and-swap succeeds.
+    // Leaving this step non-destructive prevents a losing client from removing the file
+    // that the winning manifest revision still points at.
+    Ok(())
 }
 
 async fn copy_remote_resource(config: &AppConfig, from: &str, to: &str) -> Result<(), AppError> {
@@ -1257,39 +1295,12 @@ async fn copy_remote_resource(config: &AppConfig, from: &str, to: &str) -> Resul
     };
 
     put_text(config, to, &content, "text/markdown; charset=utf-8").await?;
-    let _ = delete_resource(config, from).await;
     Ok(())
 }
 
-async fn move_resource(
-    config: &AppConfig,
-    from: &str,
-    to: &str,
-) -> Result<RemoteMutationOutcome, AppError> {
-    let client = sync_http_client()?;
-    let response = client
-        .request(
-            Method::from_bytes(b"MOVE").expect("valid MOVE method"),
-            webdav_url(config, from)?,
-        )
-        .basic_auth(
-            config.sync_webdav_username.trim(),
-            Some(config.sync_webdav_password.as_str()),
-        )
-        .header("Destination", webdav_url(config, to)?.to_string())
-        .header("Overwrite", "T")
-        .send()
-        .await
-        .map_err(sync_transport_error)?;
-
-    match response.status() {
-        StatusCode::CREATED | StatusCode::NO_CONTENT | StatusCode::OK => {
-            Ok(RemoteMutationOutcome::Applied)
-        }
-        StatusCode::NOT_FOUND => Ok(RemoteMutationOutcome::Missing),
-        StatusCode::FORBIDDEN => Ok(RemoteMutationOutcome::PermissionDenied),
-        StatusCode::METHOD_NOT_ALLOWED => Ok(RemoteMutationOutcome::Unsupported),
-        status => Err(sync_status_error(status)),
+async fn run_remote_cleanups(config: &AppConfig, cleanups: &[RemoteCleanup]) {
+    for cleanup in cleanups {
+        let _ = delete_resource(config, &cleanup.path).await;
     }
 }
 
@@ -1434,13 +1445,23 @@ fn sync_note_label(title: &str, id: &str) -> String {
     }
 }
 
-fn remote_note_path(note: &Note) -> String {
-    let file_name = format!("{}__{}.md", note.id, slugify_title(&note.title));
+fn remote_note_path(note: &Note, content_hash: &str) -> String {
+    let file_name = format!(
+        "{}__{}__{}.md",
+        note.id,
+        content_hash,
+        slugify_title(&note.title)
+    );
     remote_note_path_with_file_name(note, &file_name)
 }
 
-fn compatibility_remote_note_path(note: &Note) -> String {
-    let file_name = format!("{}__{}.md", note.id, ascii_slugify_title(&note.title));
+fn compatibility_remote_note_path(note: &Note, content_hash: &str) -> String {
+    let file_name = format!(
+        "{}__{}__{}.md",
+        note.id,
+        content_hash,
+        ascii_slugify_title(&note.title)
+    );
     format!("{REMOTE_NOTES_DIR}/{file_name}")
 }
 
@@ -1606,6 +1627,19 @@ fn note_hash(note: &Note) -> String {
         note.title.as_str(),
         note.content.as_str(),
         note.category.as_str(),
+        created_at.as_str(),
+        updated_at.as_str(),
+    ])
+}
+
+fn manifest_entry_hash(entry: &ManifestEntry, content: &str) -> String {
+    let created_at = entry.created_at.to_rfc3339();
+    let updated_at = entry.updated_at.to_rfc3339();
+    stable_hash([
+        entry.id.as_str(),
+        entry.title.as_str(),
+        content,
+        entry.category.as_str(),
         created_at.as_str(),
         updated_at.as_str(),
     ])
@@ -2097,9 +2131,30 @@ mod tests {
             content: String::new(),
         };
 
+        let content_hash = note_hash(&note);
         assert_eq!(
-            compatibility_remote_note_path(&note),
-            "notes/note-1__note.md"
+            compatibility_remote_note_path(&note, &content_hash),
+            format!("notes/note-1__{content_hash}__note.md")
+        );
+    }
+
+    #[test]
+    fn remote_note_paths_include_content_hash() {
+        let note = Note {
+            id: "note-1".into(),
+            title: "Daily note".into(),
+            file_name: "note-1.md".into(),
+            category: "Work".into(),
+            created_at: parse_time("2026-05-22T08:00:00Z"),
+            updated_at: parse_time("2026-05-22T08:30:00Z"),
+            word_count: 4,
+            content: "body".into(),
+        };
+        let content_hash = note_hash(&note);
+
+        assert!(
+            remote_note_path(&note, &content_hash).contains(&content_hash),
+            "note uploads must not overwrite another client's pending revision before manifest save"
         );
     }
 
@@ -2174,11 +2229,12 @@ mod tests {
             content: "body".into(),
         };
 
-        let path = upload_remote_note(&config, &note)
+        let content_hash = note_hash(&note);
+        let path = upload_remote_note(&config, &note, &content_hash)
             .await
             .expect("ascii fallback should upload note");
 
-        assert_eq!(path, "notes/note-1__note.md");
+        assert_eq!(path, format!("notes/note-1__{content_hash}__note.md"));
 
         let requests = server.join().expect("join server thread");
         assert_eq!(
@@ -2189,9 +2245,9 @@ mod tests {
                 .count(),
             2
         );
-        assert!(requests
-            .iter()
-            .any(|request| request.contains("/dav/floral-sync/notes/note-1__note.md")));
+        assert!(requests.iter().any(|request| request.contains(&format!(
+            "/dav/floral-sync/notes/note-1__{content_hash}__note.md"
+        ))));
     }
 
     #[tokio::test]
@@ -2408,6 +2464,7 @@ mod tests {
             &RemoteManifest::default(),
             &expected_revision,
             None,
+            true,
         )
         .await
         .expect("save manifest");
@@ -2418,6 +2475,65 @@ mod tests {
         assert_eq!(requests.len(), 2);
         assert!(requests[0].starts_with("PROPFIND /floral-sync/floral-sync-meta/ HTTP/1.1"));
         assert!(requests[1].starts_with("GET /floral-sync/floral-sync-meta/manifest.json HTTP/1.1"));
+    }
+
+    #[tokio::test]
+    async fn save_manifest_uses_if_none_match_when_creating_missing_manifest() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        listener
+            .set_nonblocking(true)
+            .expect("set nonblocking listener");
+        let address = listener.local_addr().expect("listener address");
+        let expected_revision = manifest_revision(None, &RemoteManifest::default());
+
+        let server = thread::spawn(move || {
+            let mut requests = Vec::new();
+            let responses = [
+                "HTTP/1.1 207 Multi-Status\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+                "HTTP/1.1 201 Created\r\nETag: \"manifest-1\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
+            ];
+
+            let mut index = 0;
+            let started_at = Instant::now();
+            while index < responses.len() && started_at.elapsed() < Duration::from_secs(2) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut buffer = [0_u8; 4096];
+                        let read = stream.read(&mut buffer).expect("read request");
+                        requests.push(String::from_utf8_lossy(&buffer[..read]).to_string());
+                        stream
+                            .write_all(responses[index].as_bytes())
+                            .expect("write response");
+                        index += 1;
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("accept request: {error}"),
+                }
+            }
+
+            requests
+        });
+
+        let config = test_config(&format!("http://{address}/"));
+        let outcome = save_manifest(
+            &config,
+            &RemoteManifest::default(),
+            &expected_revision,
+            None,
+            false,
+        )
+        .await
+        .expect("save manifest");
+
+        assert!(matches!(outcome, ManifestSaveOutcome::Saved(_)));
+
+        let requests = server.join().expect("join server thread");
+        assert_eq!(requests.len(), 3);
+        assert!(requests[2].starts_with("PUT /floral-sync/floral-sync-meta/manifest.json HTTP/1.1"));
+        assert!(requests[2].contains("if-none-match: *"));
     }
 
     #[tokio::test]
@@ -2478,7 +2594,6 @@ mod tests {
             for response in [
                 "HTTP/1.1 207 Multi-Status\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
                 "HTTP/1.1 201 Created\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
-                "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n",
             ] {
                 let (mut stream, _) = listener.accept().expect("accept request");
                 let mut buffer = [0_u8; 4096];
@@ -2503,6 +2618,7 @@ mod tests {
             content: "new body".into(),
         };
         let content_hash = note_hash(&note);
+        let expected_path = format!("notes/note-1__{content_hash}__Renamed-note.md");
         let mut manifest = RemoteManifest {
             version: 1,
             generated_at: parse_time("2026-05-22T09:00:00Z"),
@@ -2523,13 +2639,16 @@ mod tests {
         push_local_changes(
             &config,
             &mut manifest,
-            &[LocalChange::Upsert { note, content_hash }],
+            &[LocalChange::Upsert {
+                note,
+                content_hash: content_hash.clone(),
+            }],
         )
         .await
         .expect("forbidden cleanup should not block upload");
 
         let updated = manifest_entry(&manifest, "note-1").expect("updated manifest entry");
-        assert_eq!(updated.path, "notes/note-1__Renamed-note.md");
+        assert_eq!(updated.path, expected_path);
         assert_eq!(updated.title, "Renamed note");
 
         let requests = server.join().expect("join server thread");
@@ -2539,13 +2658,14 @@ mod tests {
             "requests: {requests:#?}"
         );
         assert!(requests.iter().any(|request| request.contains("PUT ")
-            && request.contains("/dav/floral-sync/notes/note-1__Renamed-note.md")));
-        assert!(requests.iter().any(|request| request.contains("DELETE ")
-            && request.contains("/dav/floral-sync/notes/note-1__Old-title.md")));
+            && request.contains(&format!(
+                "/dav/floral-sync/notes/note-1__{content_hash}__Renamed-note.md"
+            ))));
+        assert!(!requests.iter().any(|request| request.contains("DELETE ")));
     }
 
     #[tokio::test]
-    async fn archive_deleted_notes_falls_back_to_copy_when_move_is_not_supported() {
+    async fn archives_deleted_notes_by_copying_without_removing_source() {
         let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
         let address = listener.local_addr().expect("listener address");
         let server = thread::spawn(move || {
@@ -2563,12 +2683,8 @@ mod tests {
                     .to_string(),
                 "HTTP/1.1 207 Multi-Status\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
                     .to_string(),
-                "HTTP/1.1 405 Method Not Allowed\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    .to_string(),
                 get_response,
                 put_response,
-                "HTTP/1.1 403 Forbidden\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-                    .to_string(),
             ] {
                 let (mut stream, _) = listener.accept().expect("accept request");
                 let mut buffer = [0_u8; 4096];
@@ -2610,7 +2726,7 @@ mod tests {
             }],
         )
         .await
-        .expect("copy fallback should archive deleted note");
+        .expect("copy should archive deleted note without removing the source");
 
         let updated = manifest_entry(&manifest, "note-1").expect("deleted manifest entry");
         assert_eq!(updated.deleted_at, Some(deleted_at));
@@ -2624,14 +2740,11 @@ mod tests {
         );
         assert!(requests.iter().any(|request| request.contains("PROPFIND ")
             && request.contains("/dav/floral-sync/floral-sync-meta/archive/")));
-        assert!(requests.iter().any(|request| request.contains("MOVE ")
-            && request.contains("/dav/floral-sync/notes/note-1__Old-title.md")));
         assert!(requests.iter().any(|request| request.contains("GET ")
             && request.contains("/dav/floral-sync/notes/note-1__Old-title.md")));
         assert!(requests.iter().any(|request| request.contains("PUT ")
             && request.contains("/dav/floral-sync/floral-sync-meta/archive/")));
-        assert!(requests.iter().any(|request| request.contains("DELETE ")
-            && request.contains("/dav/floral-sync/notes/note-1__Old-title.md")));
+        assert!(!requests.iter().any(|request| request.contains("DELETE ")));
     }
 
     #[test]
@@ -2852,6 +2965,103 @@ mod tests {
             .expect("locally tombstoned note should be skipped");
 
         assert!(store.read_note("deleted-note").is_err());
+    }
+
+    #[tokio::test]
+    async fn local_read_errors_are_not_treated_as_local_deletions() {
+        let store = NoteStore::new(test_root("local-read-error-not-delete"));
+        let local = store
+            .create_note(SaveNoteRequest {
+                title: "Tracked note".into(),
+                content: "local body".into(),
+                category: String::new(),
+            })
+            .expect("create local note");
+        fs::remove_file(store.base_dir().join("notes").join(&local.file_name))
+            .expect("remove backing markdown file");
+
+        let mut state = SyncState::default();
+        state.notes.insert(
+            local.id.clone(),
+            SyncedNoteState {
+                content_hash: note_hash(&local),
+                updated_at: local.updated_at,
+            },
+        );
+        let entry = ManifestEntry {
+            id: local.id.clone(),
+            title: local.title.clone(),
+            category: String::new(),
+            path: "notes/tracked.md".into(),
+            created_at: local.created_at,
+            updated_at: local.updated_at,
+            deleted_at: None,
+            content_hash: note_hash(&local),
+        };
+        let config = test_config("https://dav.example.com/root/");
+
+        let error = apply_remote_entry(&store, &state, &config, &entry)
+            .await
+            .expect_err("read failure should not become a tombstone");
+
+        assert_eq!(error.code, "io");
+    }
+
+    #[tokio::test]
+    async fn rejects_remote_note_when_manifest_hash_does_not_match_downloaded_content() {
+        let listener = TcpListener::bind("127.0.0.1:0").expect("bind test listener");
+        listener
+            .set_nonblocking(true)
+            .expect("set nonblocking listener");
+        let address = listener.local_addr().expect("listener address");
+
+        let server = thread::spawn(move || {
+            let mut requests = Vec::new();
+            let response =
+                "HTTP/1.1 200 OK\r\nContent-Length: 13\r\nConnection: close\r\n\r\ntampered body";
+            let started_at = Instant::now();
+            while requests.is_empty() && started_at.elapsed() < Duration::from_secs(2) {
+                match listener.accept() {
+                    Ok((mut stream, _)) => {
+                        let mut buffer = [0_u8; 4096];
+                        let read = stream.read(&mut buffer).expect("read request");
+                        requests.push(String::from_utf8_lossy(&buffer[..read]).to_string());
+                        stream
+                            .write_all(response.as_bytes())
+                            .expect("write response");
+                    }
+                    Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                        thread::sleep(Duration::from_millis(10));
+                    }
+                    Err(error) => panic!("accept request: {error}"),
+                }
+            }
+
+            requests
+        });
+
+        let store = NoteStore::new(test_root("remote-hash-mismatch"));
+        let state = SyncState::default();
+        let config = test_config(&format!("http://{address}/"));
+        let entry = ManifestEntry {
+            id: "note-1".into(),
+            title: "Remote note".into(),
+            category: String::new(),
+            path: "notes/note-1__Remote-note.md".into(),
+            created_at: parse_time("2026-05-22T08:00:00Z"),
+            updated_at: parse_time("2026-05-22T09:00:00Z"),
+            deleted_at: None,
+            content_hash: "expected-hash".into(),
+        };
+
+        let error = apply_remote_entry(&store, &state, &config, &entry)
+            .await
+            .expect_err("hash mismatch should stop the remote note");
+
+        assert_eq!(error.code, "syncManifestMismatch");
+        assert!(store.read_note("note-1").is_err());
+        let requests = server.join().expect("join server thread");
+        assert_eq!(requests.len(), 1);
     }
 
     #[test]
