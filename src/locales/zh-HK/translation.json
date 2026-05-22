@@ -128,6 +128,13 @@
       "quickNotepad": "快捷便箋",
       "restore": "還原視窗",
       "settings": "設定"
+    },
+    "sync": {
+      "feedback": {
+        "syncCompleteAt": "同步完成，更新時間 {{time}}。",
+        "syncComplete": "同步完成，已取得最新狀態。",
+        "connectionSuccess": "連線成功，可以開始同步。"
+      }
     }
   },
   "noteMenu": {
@@ -215,7 +222,28 @@
     "tileCtrlClose": "Ctrl+右鍵快速關閉磁貼",
     "tileRenderMarkdown": "磁貼渲染 Markdown",
     "title": "應用程式設定",
-    "visibilityShortcut": "顯示／隱藏視窗快捷鍵"
+    "visibilityShortcut": "顯示／隱藏視窗快捷鍵",
+    "sync": {
+      "label": "WebDAV 同步",
+      "enable": "啟用自動同步",
+      "webdavUrl": "WebDAV 地址",
+      "webdavUrlPlaceholder": "https://dav.example.com/floral/",
+      "username": "帳戶",
+      "usernamePlaceholder": "username",
+      "password": "密碼",
+      "passwordPlaceholder": "輸入密碼",
+      "interval": "同步間隔",
+      "testConnection": "測試連線",
+      "syncNow": "立即同步",
+      "status": {
+        "connectionSuccess": "連線成功",
+        "notSynced": "未同步",
+        "failed": "同步失敗",
+        "syncedAt": "已同步 {{time}}",
+        "pending": "待同步",
+        "notConfigured": "未設定"
+      }
+    }
   },
   "tile": {
     "empty": "空"

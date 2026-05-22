@@ -128,6 +128,13 @@
       "quickNotepad": "Quick Note",
       "restore": "Restore",
       "settings": "Settings"
+    },
+    "sync": {
+      "feedback": {
+        "syncCompleteAt": "Sync complete, updated at {{time}}.",
+        "syncComplete": "Sync complete, latest state retrieved.",
+        "connectionSuccess": "Connected, ready to sync."
+      }
     }
   },
   "noteMenu": {
@@ -215,7 +222,28 @@
     "tileCtrlClose": "Ctrl+Right-click to close tile",
     "tileRenderMarkdown": "Render Markdown on tile",
     "title": "Settings",
-    "visibilityShortcut": "Show/Hide window shortcut"
+    "visibilityShortcut": "Show/Hide window shortcut",
+    "sync": {
+      "label": "WebDAV Sync",
+      "enable": "Enable auto sync",
+      "webdavUrl": "WebDAV URL",
+      "webdavUrlPlaceholder": "https://dav.example.com/floral/",
+      "username": "Account",
+      "usernamePlaceholder": "username",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password",
+      "interval": "Sync interval",
+      "testConnection": "Test Connection",
+      "syncNow": "Sync Now",
+      "status": {
+        "connectionSuccess": "Connected",
+        "notSynced": "Not synced",
+        "failed": "Sync failed",
+        "syncedAt": "Synced {{time}}",
+        "pending": "Pending",
+        "notConfigured": "Not configured"
+      }
+    }
   },
   "tile": {
     "empty": "Empty"

@@ -25,4 +25,9 @@ export interface AppConfig {
   surfaceWidth?: number;
   surfaceHeight?: number;
   toggleVisibilityShortcut: string;
+  syncEnabled: boolean;
+  syncWebdavUrl: string;
+  syncWebdavUsername: string;
+  syncWebdavPassword: string;
+  syncIntervalSeconds: number;
 }

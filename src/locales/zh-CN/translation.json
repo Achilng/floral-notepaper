@@ -128,6 +128,13 @@
       "quickNotepad": "快捷便签",
       "restore": "还原",
       "settings": "设置"
+    },
+    "sync": {
+      "feedback": {
+        "syncCompleteAt": "同步完成，更新时间 {{time}}。",
+        "syncComplete": "同步完成，已经拿到最新状态。",
+        "connectionSuccess": "连接成功，可以开始同步。"
+      }
     }
   },
   "noteMenu": {
@@ -215,7 +222,28 @@
     "tileCtrlClose": "Ctrl+右键快速关闭磁贴",
     "tileRenderMarkdown": "磁贴渲染 Markdown",
     "title": "应用设置",
-    "visibilityShortcut": "显示/隐藏窗口快捷键"
+    "visibilityShortcut": "显示/隐藏窗口快捷键",
+    "sync": {
+      "label": "WebDAV 同步",
+      "enable": "启用自动同步",
+      "webdavUrl": "WebDAV 地址",
+      "webdavUrlPlaceholder": "https://dav.example.com/floral/",
+      "username": "账户",
+      "usernamePlaceholder": "username",
+      "password": "密码",
+      "passwordPlaceholder": "输入密码",
+      "interval": "同步间隔",
+      "testConnection": "测试连接",
+      "syncNow": "立即同步",
+      "status": {
+        "connectionSuccess": "连接成功",
+        "notSynced": "未同步",
+        "failed": "同步失败",
+        "syncedAt": "已同步 {{time}}",
+        "pending": "待同步",
+        "notConfigured": "未配置"
+      }
+    }
   },
   "tile": {
     "empty": "空"

@@ -47,6 +47,11 @@ describe("settings api", () => {
       tileCtrlClose: true,
       toggleVisibilityShortcut: "",
       tileRenderMarkdown: false,
+      syncEnabled: false,
+      syncWebdavUrl: "",
+      syncWebdavUsername: "",
+      syncWebdavPassword: "",
+      syncIntervalSeconds: 300,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -75,6 +80,11 @@ describe("settings api", () => {
       tileCtrlClose: true,
       toggleVisibilityShortcut: "",
       tileRenderMarkdown: false,
+      syncEnabled: true,
+      syncWebdavUrl: "https://dav.example.com/floral/",
+      syncWebdavUsername: "writer",
+      syncWebdavPassword: "secret-password",
+      syncIntervalSeconds: 180,
     };
     mockedInvoke.mockResolvedValue(config);
 

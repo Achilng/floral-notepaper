@@ -21,6 +21,11 @@ const config = {
   tileCtrlClose: true,
   toggleVisibilityShortcut: "",
   tileRenderMarkdown: false,
+  syncEnabled: true,
+  syncWebdavUrl: "https://dav.example.com/floral/",
+  syncWebdavUsername: "writer",
+  syncWebdavPassword: "secret-password",
+  syncIntervalSeconds: 300,
 };
 
 describe("SettingsPanel", () => {
@@ -31,6 +36,15 @@ describe("SettingsPanel", () => {
         onChange={vi.fn()}
         onChooseNotesDir={vi.fn()}
         onClose={vi.fn()}
+        syncStatus={{
+          enabled: true,
+          configured: true,
+          lastRevision: "etag-9",
+          lastSyncAt: "2026-05-22T03:00:00Z",
+          lastError: null,
+        }}
+        onSyncNow={vi.fn()}
+        onTestSyncConnection={vi.fn()}
       />,
     );
 
@@ -55,5 +69,53 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("编辑");
     expect(markup).toContain("分栏");
     expect(markup).toContain("预览");
+    expect(markup).toContain("https://dav.example.com/floral/");
+    expect(markup).toContain("writer");
+    expect(markup).toContain('id="sync-webdav-url"');
+    expect(markup).toContain('id="sync-webdav-username"');
+    expect(markup).toContain('id="sync-webdav-password"');
+    expect(markup).toContain('id="sync-webdav-interval"');
+  });
+
+  test("renders sync feedback and sync errors", () => {
+    const successMarkup = renderToStaticMarkup(
+      <SettingsPanel
+        config={config}
+        onChange={vi.fn()}
+        onChooseNotesDir={vi.fn()}
+        onClose={vi.fn()}
+        syncStatus={{
+          enabled: true,
+          configured: true,
+          lastRevision: "etag-9",
+          lastSyncAt: null,
+          lastError: null,
+        }}
+        syncFeedback={{ tone: "success", message: "连接成功，可以开始同步。" }}
+        onSyncNow={vi.fn()}
+        onTestSyncConnection={vi.fn()}
+      />,
+    );
+
+    const errorMarkup = renderToStaticMarkup(
+      <SettingsPanel
+        config={config}
+        onChange={vi.fn()}
+        onChooseNotesDir={vi.fn()}
+        onClose={vi.fn()}
+        syncStatus={{
+          enabled: true,
+          configured: true,
+          lastRevision: "etag-9",
+          lastSyncAt: null,
+          lastError: "无法连接到 WebDAV 服务器，请检查地址、账号和网络。",
+        }}
+        onSyncNow={vi.fn()}
+        onTestSyncConnection={vi.fn()}
+      />,
+    );
+
+    expect(successMarkup).toContain("连接成功，可以开始同步。");
+    expect(errorMarkup).toContain("无法连接到 WebDAV 服务器，请检查地址、账号和网络。");
   });
 });

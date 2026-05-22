@@ -26,12 +26,20 @@ describe("MainWindow settings", () => {
           tileCtrlClose: true,
           toggleVisibilityShortcut: "",
           tileRenderMarkdown: false,
+          syncEnabled: true,
+          syncWebdavUrl: "https://dav.example.com/floral/",
+          syncWebdavUsername: "writer",
+          syncWebdavPassword: "secret-password",
+          syncIntervalSeconds: 300,
         }}
       />,
     );
 
     expect(markup).toContain("应用设置");
     expect(markup).toContain("D:\\Notes\\花笺");
+    expect(markup).toContain("https://dav.example.com/floral/");
+    expect(markup).toContain("writer");
+    expect(markup).toContain('id="sync-webdav-url"');
   });
 
   test("keeps draggable window chrome on the default arrow cursor", () => {
