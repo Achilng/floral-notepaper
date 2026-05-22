@@ -300,6 +300,13 @@ export function NotePad({
       ? await updateNote(editingNoteId, request)
       : await createNote(request);
 
+    // Preserve focus state before updating state
+    const activeElement = document.activeElement;
+    const shouldRestoreFocus = activeElement === titleRef.current || activeElement === contentRef.current;
+    const cursorPosition = shouldRestoreFocus && activeElement instanceof HTMLInputElement || activeElement instanceof HTMLTextAreaElement
+      ? activeElement.selectionStart
+      : null;
+
     setEditingNoteId(note.id);
     setNotes((current) => {
       const metadata = metadataFromNote(note);
@@ -310,6 +317,26 @@ export function NotePad({
       return [...next].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     });
     setStatus("saved");
+
+    // Restore focus and cursor position after state update
+    if (shouldRestoreFocus) {
+      requestAnimationFrame(() => {
+        if (activeElement === titleRef.current) {
+          titleRef.current?.focus();
+          if (cursorPosition !== null && titleRef.current) {
+            titleRef.current.selectionStart = cursorPosition;
+            titleRef.current.selectionEnd = cursorPosition;
+          }
+        } else if (activeElement === contentRef.current) {
+          contentRef.current?.focus();
+          if (cursorPosition !== null && contentRef.current) {
+            contentRef.current.selectionStart = cursorPosition;
+            contentRef.current.selectionEnd = cursorPosition;
+          }
+        }
+      });
+    }
+
     return note;
   }, [content, editingNoteId, title]);
 
