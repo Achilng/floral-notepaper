@@ -1,4 +1,5 @@
 import { i18n } from "../../locales";
+import "../../locales/test-setup";
 import { describe, expect, test } from "vitest";
 import { getErrorMessage } from "./api";
 

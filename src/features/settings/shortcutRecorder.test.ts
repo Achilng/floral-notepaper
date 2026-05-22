@@ -2,19 +2,19 @@ import { describe, expect, test } from "vitest";
 import { formatHeldKeys, hotkeyToConfigString, isValidGlobalShortcut } from "./shortcutRecorder";
 
 describe("shortcutRecorder", () => {
-  test("serializes meta shortcuts into config strings", () => {
+  test("serializes shortcuts into Windows config strings", () => {
     const layeredMetaShortcut = "Meta+Shift+P" as Parameters<typeof hotkeyToConfigString>[0];
 
-    expect(hotkeyToConfigString("Meta+K")).toBe("Meta+K");
-    expect(hotkeyToConfigString(layeredMetaShortcut)).toBe("Shift+Meta+P");
+    expect(hotkeyToConfigString("Meta+K")).toBe("K");
+    expect(hotkeyToConfigString(layeredMetaShortcut)).toBe("Shift+P");
   });
 
-  test("accepts meta as a valid global shortcut modifier", () => {
-    expect(isValidGlobalShortcut("Meta+K")).toBe(true);
+  test("requires ctrl or alt as a valid global shortcut modifier", () => {
+    expect(isValidGlobalShortcut("Meta+K")).toBe(false);
     expect(isValidGlobalShortcut("Shift+K")).toBe(false);
   });
 
-  test("formats held meta keys for the recorder UI", () => {
-    expect(formatHeldKeys(["Meta", "P"])).toBe("Meta + P");
+  test("formats held meta keys with Windows labels for the recorder UI", () => {
+    expect(formatHeldKeys(["Meta", "P"])).toBe("Win + P");
   });
 });
