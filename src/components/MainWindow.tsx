@@ -324,6 +324,8 @@ export function MainWindow({
   const lastExternalSaveRef = useRef<number>(0);
   const saveStateRef = useRef(saveState);
   saveStateRef.current = saveState;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -572,12 +574,14 @@ export function MainWindow({
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
       void refreshNotes().then((loaded) => {
-        if (!selectedId) return;
-        const stillExists = loaded.some((n) => n.id === selectedId);
+        const currentId = selectedIdRef.current;
+        if (!currentId) return;
+        const stillExists = loaded.some((n) => n.id === currentId);
         if (stillExists) {
           if (saveStateRef.current !== "dirty") {
-            void getNote(selectedId)
+            void getNote(currentId)
               .then((note) => {
+                if (selectedIdRef.current !== currentId) return;
                 setTitle(note.title);
                 setContent(note.content);
                 setSaveState("saved");
@@ -596,7 +600,7 @@ export function MainWindow({
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [refreshNotes, selectedId, loadNote, clearCurrentNote]);
+  }, [refreshNotes, loadNote, clearCurrentNote]);
 
   useEffect(() => {
     function handleFocus() {
@@ -789,6 +793,9 @@ export function MainWindow({
 
   const handleNewNote = async () => {
     setErrorMessage(null);
+    if (saveState === "dirty") {
+      await saveCurrentNote();
+    }
     try {
       const note = await createNote({ title: "", content: "", category: activeCategory });
       replaceNoteMetadata(note);
