@@ -840,10 +840,7 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), AppErro
     }
     let temp_path = path.with_extension("json.tmp");
     fs::write(&temp_path, serde_json::to_string_pretty(value)?)?;
-    if path.exists() {
-        fs::remove_file(path)?;
-    }
-    fs::rename(temp_path, path)?;
+    fs::rename(&temp_path, path)?;
     Ok(())
 }
 

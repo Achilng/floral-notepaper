@@ -119,7 +119,7 @@ const components: Components = {
       href={href}
       onClick={(e) => {
         e.preventDefault();
-        if (href) openUrl(href);
+        if (href && /^https?:\/\//i.test(href)) openUrl(href);
       }}
       className="text-bamboo hover:text-bamboo-light underline underline-offset-2 cursor-pointer"
     >
