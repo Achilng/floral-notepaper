@@ -13,6 +13,7 @@ import {
 } from "../features/settings/api";
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
+import { BackgroundLayer } from "./BackgroundLayer";
 import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
@@ -1228,9 +1229,10 @@ export function MainWindow({
 
   return (
     <div className="w-full h-screen flex flex-col">
-      <div className="noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
+      <div className="relative noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
+        <BackgroundLayer config={settingsConfig} />
         <div
-          className="flex items-center justify-between pl-5 pr-0 h-11 bg-paper/60 border-b border-paper-deep/30 shrink-0 select-none cursor-default"
+          className="relative z-10 flex items-center justify-between pl-5 pr-0 h-11 bg-paper/55 backdrop-blur-[1px] border-b border-paper-deep/30 shrink-0 select-none cursor-default"
           onMouseDown={handleTitleBarDrag}
           onDoubleClick={handleTitleBarDoubleClick}
         >
@@ -1355,7 +1357,7 @@ export function MainWindow({
           </div>
         </div>
 
-        <div className="flex flex-1 min-h-0">
+        <div className="relative z-10 flex flex-1 min-h-0">
           <div
             className={`border-r border-paper-deep/30 bg-paper/40 flex flex-col shrink-0 ${
               sidebarCollapsed ? "w-0 overflow-hidden transition-all duration-[600ms]" : ""

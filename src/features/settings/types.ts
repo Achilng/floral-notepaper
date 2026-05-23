@@ -3,6 +3,7 @@ export type ViewMode = "edit" | "split" | "preview";
 export type ThemeOption = "light" | "dark" | "system";
 
 export type TileColorMode = "system" | "custom";
+export type BackgroundFit = "cover" | "contain" | "repeat";
 
 export interface AppConfig {
   locale: string;
@@ -25,4 +26,11 @@ export interface AppConfig {
   surfaceWidth?: number;
   surfaceHeight?: number;
   toggleVisibilityShortcut: string;
+  backgroundImagePath?: string;
+  backgroundFit?: BackgroundFit;
+  backgroundDim?: number;
+  backgroundBlur?: number;
+  backgroundScale?: number;
+  backgroundPositionX?: number;
+  backgroundPositionY?: number;
 }

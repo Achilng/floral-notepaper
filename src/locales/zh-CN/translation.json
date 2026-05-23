@@ -215,7 +215,23 @@
     "tileCtrlClose": "Ctrl+右键快速关闭磁贴",
     "tileRenderMarkdown": "磁贴渲染 Markdown",
     "title": "应用设置",
-    "visibilityShortcut": "显示/隐藏窗口快捷键"
+    "visibilityShortcut": "显示/隐藏窗口快捷键",
+    "background": {
+      "label": "背景图片",
+      "default": "默认背景",
+      "choose": "选择",
+      "clear": "清除背景图片",
+      "dim": "遮罩",
+      "scale": "缩放",
+      "positionX": "横向",
+      "positionY": "纵向",
+      "blur": "模糊",
+      "fit": {
+        "cover": "填充",
+        "contain": "完整",
+        "repeat": "平铺"
+      }
+    }
   },
   "tile": {
     "empty": "空"

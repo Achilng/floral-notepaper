@@ -1,8 +1,15 @@
+import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeyRecorder } from "@tanstack/react-hotkeys";
 import { useTranslation } from "react-i18next";
-import { checkGlobalShortcut } from "../features/settings/api";
-import type { AppConfig, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
+import { checkGlobalShortcut, chooseBackgroundImage } from "../features/settings/api";
+import type {
+  AppConfig,
+  BackgroundFit,
+  ThemeOption,
+  TileColorMode,
+  ViewMode,
+} from "../features/settings/types";
 import {
   formatHeldKeys,
   hotkeyToConfigString,
@@ -60,6 +67,14 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
         value: "preview",
         label: t("settings.defaultView.preview", { defaultValue: "预览" }),
       },
+    ],
+    [t],
+  );
+  const backgroundFits = useMemo<Array<{ value: BackgroundFit; label: string }>>(
+    () => [
+      { value: "cover", label: t("settings.background.fit.cover", { defaultValue: "填充" }) },
+      { value: "contain", label: t("settings.background.fit.contain", { defaultValue: "完整" }) },
+      { value: "repeat", label: t("settings.background.fit.repeat", { defaultValue: "平铺" }) },
     ],
     [t],
   );
@@ -294,6 +309,97 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
+            {t("settings.background.label", { defaultValue: "背景图片" })}
+          </label>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              value={
+                config.backgroundImagePath ||
+                t("settings.background.default", { defaultValue: "默认背景" })
+              }
+              readOnly
+              className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[11px] font-mono text-ink-faint truncate"
+            />
+            <button
+              type="button"
+              onClick={() => {
+                void chooseBackgroundImage().then(async (path) => {
+                  if (!path) return;
+                  const saved = await invoke<string>("copy_background_image", {
+                    sourcePath: path,
+                  });
+                  setConfigValue("backgroundImagePath", saved);
+                });
+              }}
+              className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer"
+            >
+              {t("settings.background.choose", { defaultValue: "选择" })}
+            </button>
+          </div>
+          {config.backgroundImagePath && (
+            <button
+              type="button"
+              onClick={() => setConfigValue("backgroundImagePath", "")}
+              className="text-[11px] text-ink-ghost hover:text-red-400 transition-colors cursor-pointer"
+            >
+              {t("settings.background.clear", { defaultValue: "清除背景图片" })}
+            </button>
+          )}
+          <SlidingButtonGroup
+            options={backgroundFits}
+            value={config.backgroundFit ?? "cover"}
+            onChange={(value: BackgroundFit) => setConfigValue("backgroundFit", value)}
+          />
+          <RangeRow
+            label={t("settings.background.dim", { defaultValue: "遮罩" })}
+            value={config.backgroundDim ?? 0.25}
+            min={0}
+            max={0.85}
+            step={0.05}
+            format={(value) => `${Math.round(value * 100)}%`}
+            onChange={(value) => setConfigValue("backgroundDim", value)}
+          />
+          <RangeRow
+            label={t("settings.background.scale", { defaultValue: "缩放" })}
+            value={config.backgroundScale ?? 1}
+            min={0.5}
+            max={2}
+            step={0.05}
+            format={(value) => `${Math.round(value * 100)}%`}
+            onChange={(value) => setConfigValue("backgroundScale", value)}
+          />
+          <RangeRow
+            label={t("settings.background.positionX", { defaultValue: "横向" })}
+            value={config.backgroundPositionX ?? 50}
+            min={0}
+            max={100}
+            step={1}
+            format={(value) => `${value}%`}
+            onChange={(value) => setConfigValue("backgroundPositionX", value)}
+          />
+          <RangeRow
+            label={t("settings.background.positionY", { defaultValue: "纵向" })}
+            value={config.backgroundPositionY ?? 50}
+            min={0}
+            max={100}
+            step={1}
+            format={(value) => `${value}%`}
+            onChange={(value) => setConfigValue("backgroundPositionY", value)}
+          />
+          <RangeRow
+            label={t("settings.background.blur", { defaultValue: "模糊" })}
+            value={config.backgroundBlur ?? 0}
+            min={0}
+            max={16}
+            step={1}
+            format={(value) => `${value}px`}
+            onChange={(value) => setConfigValue("backgroundBlur", value)}
+          />
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
             {t("settings.defaultView.label", { defaultValue: "默认视图" })}
           </label>
           <SlidingButtonGroup
@@ -354,6 +460,36 @@ function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
         />
       </div>
     </label>
+  );
+}
+
+interface RangeRowProps {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (value: number) => string;
+  onChange: (value: number) => void;
+}
+
+function RangeRow({ label, value, min, max, step, format, onChange }: RangeRowProps) {
+  return (
+    <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
+      <span className="w-9 text-[11px] text-ink-faint">{label}</span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        onChange={(event) => onChange(Number(event.target.value))}
+        className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
+      />
+      <span className="w-10 text-right text-[11px] font-mono text-ink-soft tabular-nums">
+        {format(value)}
+      </span>
+    </div>
   );
 }
 

@@ -215,7 +215,23 @@
     "tileCtrlClose": "Ctrl+Right-click to close tile",
     "tileRenderMarkdown": "Render Markdown on tile",
     "title": "Settings",
-    "visibilityShortcut": "Show/Hide window shortcut"
+    "visibilityShortcut": "Show/Hide window shortcut",
+    "background": {
+      "label": "Background image",
+      "default": "Default background",
+      "choose": "Choose",
+      "clear": "Clear background image",
+      "dim": "Overlay",
+      "scale": "Scale",
+      "positionX": "Horizontal",
+      "positionY": "Vertical",
+      "blur": "Blur",
+      "fit": {
+        "cover": "Cover",
+        "contain": "Contain",
+        "repeat": "Repeat"
+      }
+    }
   },
   "tile": {
     "empty": "Empty"

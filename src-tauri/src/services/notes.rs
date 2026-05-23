@@ -20,7 +20,7 @@ const LEGACY_MACOS_GLOBAL_SHORTCUTS: [&str; 5] = [
 #[cfg(target_os = "macos")]
 const MACOS_SHORTCUT_MIGRATION_MARKER: &str = ".macos-shortcut-default-v3";
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
     #[serde(default = "default_locale")]
@@ -46,6 +46,20 @@ pub struct AppConfig {
     pub surface_font_size: u32,
     #[serde(default = "default_external_file_auto_save")]
     pub external_file_auto_save: bool,
+    #[serde(default)]
+    pub background_image_path: String,
+    #[serde(default = "default_background_fit")]
+    pub background_fit: String,
+    #[serde(default = "default_background_dim")]
+    pub background_dim: f64,
+    #[serde(default = "default_background_blur")]
+    pub background_blur: f64,
+    #[serde(default = "default_background_scale")]
+    pub background_scale: f64,
+    #[serde(default = "default_background_position")]
+    pub background_position_x: f64,
+    #[serde(default = "default_background_position")]
+    pub background_position_y: f64,
     #[serde(default = "default_remember_surface_size")]
     pub remember_surface_size: bool,
     #[serde(default = "default_tile_ctrl_close")]
@@ -655,6 +669,13 @@ impl NoteStore {
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
             external_file_auto_save: default_external_file_auto_save(),
+            background_image_path: String::new(),
+            background_fit: default_background_fit(),
+            background_dim: default_background_dim(),
+            background_blur: default_background_blur(),
+            background_scale: default_background_scale(),
+            background_position_x: default_background_position(),
+            background_position_y: default_background_position(),
             remember_surface_size: default_remember_surface_size(),
             tile_ctrl_close: default_tile_ctrl_close(),
             tile_render_markdown: false,
@@ -984,6 +1005,26 @@ fn default_external_file_auto_save() -> bool {
     true
 }
 
+fn default_background_fit() -> String {
+    "cover".into()
+}
+
+fn default_background_dim() -> f64 {
+    0.25
+}
+
+fn default_background_blur() -> f64 {
+    0.0
+}
+
+fn default_background_scale() -> f64 {
+    1.0
+}
+
+fn default_background_position() -> f64 {
+    50.0
+}
+
 fn default_remember_surface_size() -> bool {
     true
 }
@@ -1133,6 +1174,13 @@ mod tests {
             font_size: 16,
             surface_font_size: 16,
             external_file_auto_save: true,
+            background_image_path: String::new(),
+            background_fit: "cover".into(),
+            background_dim: 0.25,
+            background_blur: 0.0,
+            background_scale: 1.0,
+            background_position_x: 50.0,
+            background_position_y: 50.0,
             remember_surface_size: true,
             tile_ctrl_close: true,
             tile_render_markdown: false,
