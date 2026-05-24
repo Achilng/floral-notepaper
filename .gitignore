@@ -46,3 +46,6 @@ Desktop.ini
 *.ai
 *.icon
 src-tauri/icons/macOS
+
+## Temp
+temp/

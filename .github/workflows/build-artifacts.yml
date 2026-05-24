@@ -1,0 +1,412 @@
+name: Build Artifacts
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_type:
+        description: "来源类型"
+        required: true
+        default: branch
+        type: choice
+        options:
+          - branch
+          - pr
+      source_ref:
+        description: "分支名，或 PR 编号（source_type=pr 时填写数字）"
+        required: true
+        default: main
+        type: string
+      version:
+        description: "可选版本号（例如 v1.0.3 或 1.0.3），留空则使用源码中的版本"
+        required: false
+        type: string
+      disable_signing:
+        description: "构建时是否禁用现有签名配置（主要影响 macOS）"
+        required: true
+        default: true
+        type: boolean
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  prepare-build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      checkout_ref: ${{ steps.resolve.outputs.checkout_ref }}
+      source_label: ${{ steps.resolve.outputs.source_label }}
+      version: ${{ steps.version.outputs.version }}
+      version_label: ${{ steps.version.outputs.version_label }}
+    steps:
+      - name: Resolve source ref
+        id: resolve
+        shell: bash
+        run: |
+          source_type="${{ github.event.inputs.source_type }}"
+          source_ref="${{ github.event.inputs.source_ref }}"
+
+          if [ -z "$source_ref" ]; then
+            echo "source_ref is required." >&2
+            exit 1
+          fi
+
+          case "$source_type" in
+            branch)
+              checkout_ref="$source_ref"
+              source_label="$(printf '%s' "$source_ref" | sed 's#[^A-Za-z0-9._-]#-#g')"
+              ;;
+            pr)
+              pr_number="$(printf '%s' "$source_ref" | grep -Eo '[0-9]+' | head -n 1)"
+              if [ -z "$pr_number" ]; then
+                echo "For PR builds, source_ref must contain a PR number." >&2
+                exit 1
+              fi
+              checkout_ref="refs/pull/${pr_number}/head"
+              source_label="pr-${pr_number}"
+              ;;
+            *)
+              echo "Unsupported source_type: $source_type" >&2
+              exit 1
+              ;;
+          esac
+
+          echo "checkout_ref=$checkout_ref" >> "$GITHUB_OUTPUT"
+          echo "source_label=$source_label" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ steps.resolve.outputs.checkout_ref }}
+
+      - name: Determine build version
+        id: version
+        shell: bash
+        run: |
+          input_version="${{ github.event.inputs.version }}"
+
+          if [ -n "$input_version" ]; then
+            version="${input_version#v}"
+          else
+            version="$(python - <<'PY'
+          import json
+          with open("src-tauri/tauri.conf.json", "r", encoding="utf-8") as f:
+              print(json.load(f)["version"])
+          PY
+            )"
+          fi
+
+          if [ -z "$version" ]; then
+            echo "Unable to determine build version." >&2
+            exit 1
+          fi
+
+          version_label="$(printf '%s' "$version" | sed 's#[^A-Za-z0-9._-]#-#g')"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "version_label=$version_label" >> "$GITHUB_OUTPUT"
+
+  build-windows:
+    needs: prepare-build
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-build.outputs.checkout_ref }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.prepare-build.outputs.version }}"
+          @'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          '@ | Out-File -Encoding utf8 set-version.cjs
+          node set-version.cjs $ver
+
+      - name: Preload Tauri NSIS toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-FileWithRetry {
+            param(
+              [Parameter(Mandatory = $true)][string]$Uri,
+              [Parameter(Mandatory = $true)][string]$OutFile,
+              [Parameter(Mandatory = $true)][string]$Sha1
+            )
+
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+              try {
+                if (Test-Path $OutFile) {
+                  Remove-Item $OutFile -Force
+                }
+
+                Write-Host "Downloading $Uri (attempt $attempt/5)"
+                Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 180
+
+                $actual = (Get-FileHash -Path $OutFile -Algorithm SHA1).Hash.ToUpperInvariant()
+                if ($actual -ne $Sha1.ToUpperInvariant()) {
+                  throw "SHA1 mismatch for $OutFile. Expected $Sha1, got $actual."
+                }
+
+                return
+              } catch {
+                Write-Warning $_
+                if ($attempt -eq 5) {
+                  throw
+                }
+                Start-Sleep -Seconds (10 * $attempt)
+              }
+            }
+          }
+
+          $tauriTools = Join-Path $env:LOCALAPPDATA 'tauri'
+          $nsisPath = Join-Path $tauriTools 'NSIS'
+          New-Item -ItemType Directory -Path $tauriTools -Force | Out-Null
+
+          $requiredFiles = @(
+            'makensis.exe',
+            'Bin/makensis.exe',
+            'Stubs/lzma-x86-unicode',
+            'Stubs/lzma_solid-x86-unicode',
+            'Plugins/x86-unicode/additional/nsis_tauri_utils.dll',
+            'Include/MUI2.nsh',
+            'Include/FileFunc.nsh',
+            'Include/x64.nsh',
+            'Include/nsDialogs.nsh',
+            'Include/WinMessages.nsh',
+            'Include/Win/COM.nsh',
+            'Include/Win/Propkey.nsh',
+            'Include/Win/RestartManager.nsh'
+          )
+
+          $missingRequiredFile = $false
+          if (-not (Test-Path $nsisPath)) {
+            $missingRequiredFile = $true
+          } else {
+            foreach ($file in $requiredFiles) {
+              if (-not (Test-Path (Join-Path $nsisPath $file))) {
+                $missingRequiredFile = $true
+                break
+              }
+            }
+          }
+
+          if ($missingRequiredFile) {
+            if (Test-Path $nsisPath) {
+              Remove-Item $nsisPath -Recurse -Force
+            }
+
+            $zipPath = Join-Path $env:RUNNER_TEMP 'nsis-3.11.zip'
+            Get-FileWithRetry `
+              -Uri 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip' `
+              -OutFile $zipPath `
+              -Sha1 'EF7FF767E5CBD9EDD22ADD3A32C9B8F4500BB10D'
+
+            $extractedPath = Join-Path $tauriTools 'nsis-3.11'
+            if (Test-Path $extractedPath) {
+              Remove-Item $extractedPath -Recurse -Force
+            }
+
+            Expand-Archive -Path $zipPath -DestinationPath $tauriTools -Force
+            Rename-Item -Path $extractedPath -NewName 'NSIS'
+          }
+
+          $pluginDir = Join-Path $nsisPath 'Plugins/x86-unicode/additional'
+          $pluginPath = Join-Path $pluginDir 'nsis_tauri_utils.dll'
+          New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
+
+          $pluginNeedsDownload = -not (Test-Path $pluginPath)
+          if (-not $pluginNeedsDownload) {
+            $actualPluginSha1 = (Get-FileHash -Path $pluginPath -Algorithm SHA1).Hash.ToUpperInvariant()
+            $pluginNeedsDownload = $actualPluginSha1 -ne '75197FEE3C6A814FE035788D1C34EAD39349B860'
+          }
+
+          if ($pluginNeedsDownload) {
+            Get-FileWithRetry `
+              -Uri 'https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll' `
+              -OutFile $pluginPath `
+              -Sha1 '75197FEE3C6A814FE035788D1C34EAD39349B860'
+          }
+
+          Write-Host "Tauri NSIS toolchain is ready at $nsisPath"
+
+      - name: Build
+        run: npm run tauri build
+
+      - name: Collect artifacts
+        shell: pwsh
+        run: |
+          $ver = "${{ needs.prepare-build.outputs.version }}"
+          $releaseDir = 'release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+
+          $setupSource = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -File -Recurse -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
+          if (-not $setupSource) {
+            throw 'No Windows NSIS installer found.'
+          }
+
+          $setupAsset = Join-Path $releaseDir "floral-notepaper_${ver}_x64-setup.exe"
+          $portableAsset = Join-Path $releaseDir "floral-notepaper_${ver}.exe"
+          Copy-Item $setupSource.FullName $setupAsset -Force
+          Copy-Item 'src-tauri/target/release/floral-notepaper.exe' $portableAsset -Force
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: floral-notepaper-windows-${{ needs.prepare-build.outputs.source_label }}-${{ needs.prepare-build.outputs.version_label }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  build-macos-x86_64:
+    needs: prepare-build
+    runs-on: macos-15-intel
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-build.outputs.checkout_ref }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version and signing mode
+        run: |
+          ver='${{ needs.prepare-build.outputs.version }}'
+          disable_signing='${{ inputs.disable_signing }}'
+          cat > set-version.cjs << 'SCRIPT'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const disableSigning = process.argv[3] === "true";
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          if (disableSigning) {
+            conf.bundle.macOS = conf.bundle.macOS || {};
+            conf.bundle.macOS.signingIdentity = null;
+          }
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          SCRIPT
+          node set-version.cjs "$ver" "$disable_signing"
+
+      - name: Build
+        run: npm run tauri build -- --target x86_64-apple-darwin
+
+      - name: Collect artifacts
+        run: |
+          ver='${{ needs.prepare-build.outputs.version }}'
+          mkdir -p release-assets
+          dmg_source="$(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
+          if [ -z "$dmg_source" ]; then
+            echo "No macOS x86_64 DMG build artifact found." >&2
+            exit 1
+          fi
+          dmg_asset="release-assets/floral-notepaper_${ver}_x64.dmg"
+          cp "$dmg_source" "$dmg_asset"
+          xattr -cr "$dmg_asset"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: floral-notepaper-macos-x64-${{ needs.prepare-build.outputs.source_label }}-${{ needs.prepare-build.outputs.version_label }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  build-macos-aarch64:
+    needs: prepare-build
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-build.outputs.checkout_ref }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Set version and signing mode
+        run: |
+          ver='${{ needs.prepare-build.outputs.version }}'
+          disable_signing='${{ inputs.disable_signing }}'
+          cat > set-version.cjs << 'SCRIPT'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const disableSigning = process.argv[3] === "true";
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          if (disableSigning) {
+            conf.bundle.macOS = conf.bundle.macOS || {};
+            conf.bundle.macOS.signingIdentity = null;
+          }
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          SCRIPT
+          node set-version.cjs "$ver" "$disable_signing"
+
+      - name: Build
+        run: npm run tauri build -- --target aarch64-apple-darwin
+
+      - name: Collect artifacts
+        run: |
+          ver='${{ needs.prepare-build.outputs.version }}'
+          mkdir -p release-assets
+          dmg_source="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
+          if [ -z "$dmg_source" ]; then
+            echo "No macOS aarch64 DMG build artifact found." >&2
+            exit 1
+          fi
+          dmg_asset="release-assets/floral-notepaper_${ver}_aarch64.dmg"
+          cp "$dmg_source" "$dmg_asset"
+          xattr -cr "$dmg_asset"
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: floral-notepaper-macos-aarch64-${{ needs.prepare-build.outputs.source_label }}-${{ needs.prepare-build.outputs.version_label }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
