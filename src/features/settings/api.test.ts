@@ -48,6 +48,7 @@ describe("settings api", () => {
       tileCtrlClose: true,
       toggleVisibilityShortcut: "",
       tileRenderMarkdown: false,
+      renderHtmlMarkdown: false,
       openAtCursor: true,
     };
     mockedInvoke.mockResolvedValue(config);
@@ -78,6 +79,7 @@ describe("settings api", () => {
       tileCtrlClose: true,
       toggleVisibilityShortcut: "",
       tileRenderMarkdown: false,
+      renderHtmlMarkdown: false,
       openAtCursor: true,
     };
     mockedInvoke.mockResolvedValue(config);

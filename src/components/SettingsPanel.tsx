@@ -202,6 +202,11 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             checked={config.tileRenderMarkdown}
             onChange={(checked) => setConfigValue("tileRenderMarkdown", checked)}
           />
+          <ToggleRow
+            label={t("settings.renderHtmlMarkdown", { defaultValue: "允许 HTML 标签渲染" })}
+            checked={config.renderHtmlMarkdown}
+            onChange={(checked) => setConfigValue("renderHtmlMarkdown", checked)}
+          />
         </section>
 
         {/* 快捷键功能设置区域，与上方常规设置分开 */}

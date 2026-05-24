@@ -229,6 +229,7 @@
     },
     "tileCtrlClose": "Ctrl+右键快速关闭磁贴",
     "tileRenderMarkdown": "磁贴渲染 Markdown",
+    "renderHtmlMarkdown": "允许 HTML 标签渲染",
     "title": "应用设置",
     "visibilityShortcut": "显示/隐藏窗口快捷键",
     "background": {
