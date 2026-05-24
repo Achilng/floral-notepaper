@@ -163,7 +163,8 @@
     "tooltip": {
       "close": "关闭",
       "openInEditor": "在编辑器中打开",
-      "pinToTile": "转为磁贴"
+      "pinToTile": "转为磁贴",
+      "preview": "预览渲染"
     }
   },
   "settings": {

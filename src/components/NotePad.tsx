@@ -47,6 +47,7 @@ import {
   tileSurfaceModeUnpinNoteId,
 } from "../features/windows/tileWindowEvents";
 import { Tile } from "./Tile";
+import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 
 type OpenMode = "new" | "open";
 type NotePadStatus = "empty" | "opened" | "saved" | "dirty" | "saveFailed" | "copied";
@@ -126,6 +127,7 @@ export function NotePad({
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
   const [surfaceFontSize, setSurfaceFontSize] = useState(14);
   const [tileRenderMarkdown, setTileRenderMarkdown] = useState(false);
+  const [showPreview, setShowPreview] = useState(false);
   const [tileColor, setTileColor] = useState(() =>
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
@@ -169,6 +171,7 @@ export function NotePad({
     setContent(note.content);
     setMode("new");
     setStatus("opened");
+    setShowPreview(false);
   }, []);
 
   useEffect(() => {
@@ -282,6 +285,7 @@ export function NotePad({
       setStatus("empty");
       setErrorMessage(null);
       setIsExiting(false);
+      setShowPreview(false);
       setSurfaceMode("pad");
       void refreshNotes().catch(() => undefined);
       void showCurrentWindow()
@@ -483,6 +487,7 @@ export function NotePad({
     setMode("new");
     setStatus("empty");
     setErrorMessage(null);
+    setShowPreview(false);
   };
 
   const isTile = surfaceMode === "tile";
@@ -588,6 +593,36 @@ export function NotePad({
                 </button>
 
                 <button
+                  onClick={() => setShowPreview((v) => !v)}
+                  className={`group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer ${showPreview ? "text-bamboo bg-bamboo-mist/60" : "text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"}`}
+                  title={t("notepad.tooltip.preview", { defaultValue: "预览渲染" })}
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    {showPreview ? (
+                      <>
+                        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                        <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                        <line x1="1" y1="1" x2="23" y2="23" />
+                      </>
+                    ) : (
+                      <>
+                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                        <circle cx="12" cy="12" r="3" />
+                      </>
+                    )}
+                  </svg>
+                </button>
+
+                <button
                   onClick={() => void handleClose()}
                   className="group w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:bg-danger-bg hover:text-red-400 transition-all duration-200 cursor-pointer"
                   title={t("notepad.tooltip.close", { defaultValue: "关闭" })}
@@ -625,6 +660,7 @@ export function NotePad({
                   onKeyDown={(event) => {
                     if (event.key === "Enter" || event.key === "ArrowDown") {
                       event.preventDefault();
+                      if (showPreview) return;
                       contentRef.current?.focus();
                     }
                   }}
@@ -633,29 +669,35 @@ export function NotePad({
                   style={{ fontSize: `${surfaceFontSize}px` }}
                 />
 
-                <textarea
-                  ref={contentRef}
-                  value={content}
-                  onChange={(event) => {
-                    setContent(event.target.value);
-                    setStatus("dirty");
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "ArrowUp") {
-                      const ta = contentRef.current;
-                      if (ta && ta.selectionStart === ta.selectionEnd) {
-                        const textBeforeCursor = content.slice(0, ta.selectionStart);
-                        if (!textBeforeCursor.includes("\n")) {
-                          event.preventDefault();
-                          titleRef.current?.focus();
+                {showPreview ? (
+                  <div className="flex-1 min-h-0 overflow-y-auto pb-2">
+                    <MarkdownPreview content={content} fontSize={surfaceFontSize} />
+                  </div>
+                ) : (
+                  <textarea
+                    ref={contentRef}
+                    value={content}
+                    onChange={(event) => {
+                      setContent(event.target.value);
+                      setStatus("dirty");
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "ArrowUp") {
+                        const ta = contentRef.current;
+                        if (ta && ta.selectionStart === ta.selectionEnd) {
+                          const textBeforeCursor = content.slice(0, ta.selectionStart);
+                          if (!textBeforeCursor.includes("\n")) {
+                            event.preventDefault();
+                            titleRef.current?.focus();
+                          }
                         }
                       }
-                    }
-                  }}
-                  placeholder={t("notepad.placeholder.content", { defaultValue: "写点什么……" })}
-                  className="w-full flex-1 min-h-0 pb-2 leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
-                  style={{ fontSize: `${surfaceFontSize}px` }}
-                />
+                    }}
+                    placeholder={t("notepad.placeholder.content", { defaultValue: "写点什么……" })}
+                    className="w-full flex-1 min-h-0 pb-2 leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
+                    style={{ fontSize: `${surfaceFontSize}px` }}
+                  />
+                )}
 
                 <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">
                   <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">

@@ -163,7 +163,8 @@
     "tooltip": {
       "close": "Close",
       "openInEditor": "Open in Editor",
-      "pinToTile": "Pin to Tile"
+      "pinToTile": "Pin to Tile",
+      "preview": "Preview Render"
     }
   },
   "settings": {
