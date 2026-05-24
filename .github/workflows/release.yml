@@ -272,7 +272,6 @@ jobs:
           const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
           conf.version = ver;
           conf.bundle.macOS = conf.bundle.macOS || {};
-          conf.bundle.macOS.signingIdentity = null;
           fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
           let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
           toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
@@ -329,7 +328,6 @@ jobs:
           const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
           conf.version = ver;
           conf.bundle.macOS = conf.bundle.macOS || {};
-          conf.bundle.macOS.signingIdentity = null;
           fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
           let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
           toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
