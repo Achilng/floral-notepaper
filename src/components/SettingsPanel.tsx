@@ -362,16 +362,24 @@ interface ShortcutRecorderProps {
   onChange: (value: string) => void;
 }
 
+type ShortcutMsg = { key: string; params?: Record<string, string> } | { raw: string };
+
 function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const { t } = useTranslation();
   const [heldKeys, setHeldKeys] = useState<string[]>([]);
   const [checkState, setCheckState] = useState<"idle" | "checking" | "ok" | "warning" | "error">(
     "idle",
   );
-  const [checkMessage, setCheckMessage] = useState("用于打开快捷记录小窗");
+  const [checkMsg, setCheckMsg] = useState<ShortcutMsg>({
+    key: "settings.shortcut.forQuickNote",
+  });
   const shortcutCheckRequestId = useRef(0);
   const isMounted = useRef(true);
   const platform = shortcutPlatform();
+
+  const resolveMsg = (msg: ShortcutMsg): string =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    "raw" in msg ? msg.raw : (t as any)(msg.key, msg.params);
 
   useEffect(() => {
     isMounted.current = true;
@@ -392,24 +400,30 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     const requestId = shortcutCheckRequestId.current + 1;
     shortcutCheckRequestId.current = requestId;
     setCheckState("checking");
-    setCheckMessage("正在检测快捷键...");
+    setCheckMsg({ key: "settings.shortcut.checking" });
     try {
       const result = await checkGlobalShortcut(shortcut);
       if (!isCurrentShortcutCheck(requestId)) return;
+      const conflictMsg: ShortcutMsg = {
+        key: `settings.shortcut.conflict.${result.conflictType}`,
+        params: { shortcut },
+      };
       if (result.available) {
         setCheckState("ok");
-        setCheckMessage(result.message);
+        setCheckMsg(conflictMsg);
         if (saveWhenAvailable) {
           onChange(shortcut);
         }
       } else {
         setCheckState("warning");
-        setCheckMessage(result.message);
+        setCheckMsg(conflictMsg);
       }
     } catch (error) {
       if (!isCurrentShortcutCheck(requestId)) return;
       setCheckState("error");
-      setCheckMessage(error instanceof Error ? error.message : "快捷键检测失败");
+      setCheckMsg(
+        error instanceof Error ? { raw: error.message } : { key: "settings.shortcut.checkFailed" },
+      );
     }
   };
 
@@ -419,14 +433,14 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
         invalidateShortcutChecks();
         onChange("");
         setCheckState("idle");
-        setCheckMessage("快捷键已清空");
+        setCheckMsg({ key: "settings.shortcut.cleared" });
       } else if (isValidGlobalShortcut(hotkey)) {
         const nextShortcut = hotkeyToConfigString(hotkey, platform);
         void runShortcutCheck(nextShortcut, true);
       } else {
         invalidateShortcutChecks();
         setCheckState("warning");
-        setCheckMessage("快捷键需要包含 Ctrl、Option/Alt 或 Command/Meta");
+        setCheckMsg({ key: "settings.shortcut.needsModifier" });
       }
     },
   });
@@ -542,7 +556,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
             : t("settings.shortcut.check", { defaultValue: "检测" })}
         </button>
       </div>
-      <p className={`min-h-4 text-[11px] ${statusClass}`}>{checkMessage}</p>
+      <p className={`min-h-4 text-[11px] ${statusClass}`}>{resolveMsg(checkMsg)}</p>
     </div>
   );
 }

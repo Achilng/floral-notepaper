@@ -197,7 +197,20 @@
     "selectFolder": "Select Folder",
     "shortcut": {
       "cancelHint": "Esc to cancel",
+      "checkFailed": "Shortcut check failed",
+      "checking": "Checking shortcut...",
+      "cleared": "Shortcut cleared",
       "clickToRecord": "Click to record",
+      "conflict": {
+        "current": "Shortcut {{shortcut}} is currently in use",
+        "invalid": "Shortcut {{shortcut}} is not supported",
+        "none": "No conflict detected for {{shortcut}}",
+        "registered": "Shortcut {{shortcut}} may be occupied by the system or another app",
+        "system": "Shortcut {{shortcut}} conflicts with a system shortcut",
+        "unknown": "Check completed, but failed to release temporary shortcut"
+      },
+      "forQuickNote": "Opens the Quick Note window",
+      "needsModifier": "Shortcut must include Ctrl, Option/Alt, or Command/Meta",
       "notSet": "Not set",
       "pressHint": "Press shortcut...; press Delete to clear."
     },

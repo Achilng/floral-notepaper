@@ -197,7 +197,20 @@
     "selectFolder": "选择文件夹",
     "shortcut": {
       "cancelHint": "Esc 取消",
+      "checkFailed": "快捷键检测失败",
+      "checking": "正在检测快捷键...",
+      "cleared": "快捷键已清空",
       "clickToRecord": "点击录制",
+      "conflict": {
+        "current": "快捷键 {{shortcut}} 当前正在使用",
+        "invalid": "快捷键 {{shortcut}} 不受支持",
+        "none": "快捷键 {{shortcut}} 未检测到冲突",
+        "registered": "快捷键 {{shortcut}} 可能已被系统或其他应用占用",
+        "system": "快捷键 {{shortcut}} 与系统快捷键冲突",
+        "unknown": "检测完成，但释放临时快捷键失败"
+      },
+      "forQuickNote": "用于打开快捷记录小窗",
+      "needsModifier": "快捷键需要包含 Ctrl、Option/Alt 或 Command/Meta",
       "notSet": "未设置",
       "pressHint": "按下快捷键；按 Delete 清空。"
     },

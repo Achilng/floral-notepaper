@@ -197,7 +197,20 @@
     "selectFolder": "選擇資料夾",
     "shortcut": {
       "cancelHint": "Esc 取消",
+      "checkFailed": "快捷鍵檢測失敗",
+      "checking": "正在檢測快捷鍵...",
+      "cleared": "快捷鍵已清除",
       "clickToRecord": "點擊錄製",
+      "conflict": {
+        "current": "快捷鍵 {{shortcut}} 目前正在使用",
+        "invalid": "快捷鍵 {{shortcut}} 不受支援",
+        "none": "快捷鍵 {{shortcut}} 未檢測到衝突",
+        "registered": "快捷鍵 {{shortcut}} 可能已被系統或其他應用程式佔用",
+        "system": "快捷鍵 {{shortcut}} 與系統快捷鍵衝突",
+        "unknown": "檢測完成，但釋放臨時快捷鍵失敗"
+      },
+      "forQuickNote": "用於開啟快捷記錄小窗",
+      "needsModifier": "快捷鍵需要包含 Ctrl、Option/Alt 或 Command/Meta",
       "notSet": "未設定",
       "pressHint": "按下快捷鍵；按 Delete 清除。"
     },
