@@ -2134,13 +2134,17 @@ export function MainWindow({
                       <div className="flex-1 overflow-hidden px-5 pb-4">
                         <textarea
                           ref={contentRef}
+                          data-tab-indent="true"
                           value={content}
                           onChange={(event) => {
                             setContent(event.target.value);
                             markDirty();
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-body placeholder:text-ink-ghost/40"
-                          style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
+                          style={{
+                            fontSize: `${settingsConfig?.fontSize ?? 14}px`,
+                            tabSize: `var(--tab-indent-size, 2)`,
+                          }}
                           placeholder={t("main.editor.contentPlaceholder", {
                             defaultValue: "开始写作……",
                           })}

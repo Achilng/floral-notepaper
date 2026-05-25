@@ -44,6 +44,8 @@ pub struct AppConfig {
     pub font_size: u32,
     #[serde(default = "default_surface_font_size")]
     pub surface_font_size: u32,
+    #[serde(default = "default_tab_indent_size")]
+    pub tab_indent_size: u32,
     #[serde(default = "default_external_file_auto_save")]
     pub external_file_auto_save: bool,
     #[serde(default = "default_remember_surface_size")]
@@ -321,6 +323,7 @@ impl NoteStore {
     pub fn save_config(&self, mut config: AppConfig) -> Result<AppConfig, AppError> {
         self.ensure_base_dir()?;
         config.notes_dir = ensure_notes_suffix(&config.notes_dir);
+        config.tab_indent_size = config.tab_indent_size.clamp(1, 8);
         is_safe_notes_dir(Path::new(&config.notes_dir))?;
         fs::create_dir_all(&config.notes_dir)?;
         write_json_atomic(&self.config_path(), &config)?;
@@ -654,6 +657,7 @@ impl NoteStore {
             theme: default_theme(),
             font_size: default_font_size(),
             surface_font_size: default_surface_font_size(),
+            tab_indent_size: default_tab_indent_size(),
             external_file_auto_save: default_external_file_auto_save(),
             remember_surface_size: default_remember_surface_size(),
             tile_ctrl_close: default_tile_ctrl_close(),
@@ -977,6 +981,10 @@ fn default_surface_font_size() -> u32 {
     14
 }
 
+fn default_tab_indent_size() -> u32 {
+    2
+}
+
 fn default_external_file_auto_save() -> bool {
     true
 }
@@ -1129,6 +1137,7 @@ mod tests {
             theme: "dark".into(),
             font_size: 16,
             surface_font_size: 16,
+            tab_indent_size: 2,
             external_file_auto_save: true,
             remember_surface_size: true,
             tile_ctrl_close: true,

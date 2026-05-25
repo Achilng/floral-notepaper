@@ -194,6 +194,7 @@
     "notesDir": "笔记目录",
     "quickNoteShortcut": "快捷记录快捷键",
     "rememberSurfaceSize": "记住小窗尺寸",
+    "tabIndentSize": "Tab 缩进宽度",
     "selectFolder": "选择文件夹",
     "shortcut": {
       "cancelHint": "Esc 取消",

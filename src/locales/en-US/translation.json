@@ -194,6 +194,7 @@
     "notesDir": "Notes directory",
     "quickNoteShortcut": "Quick Note shortcut",
     "rememberSurfaceSize": "Remember surface size",
+    "tabIndentSize": "Tab indent width",
     "selectFolder": "Select Folder",
     "shortcut": {
       "cancelHint": "Esc to cancel",
