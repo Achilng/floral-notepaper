@@ -326,6 +326,7 @@ export function MainWindow({
   saveStateRef.current = saveState;
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+  const noteOpVersionRef = useRef(0);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -456,7 +457,9 @@ export function MainWindow({
   const charCount = useMemo(() => countNoteChars(content), [content]);
 
   const applyNote = useCallback((note: Note) => {
+    noteOpVersionRef.current += 1;
     setSelectedId(note.id);
+    selectedIdRef.current = note.id;
     setTitle(note.title);
     setContent(note.content);
     setSaveState("saved");
@@ -573,14 +576,17 @@ export function MainWindow({
 
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
+      const opVersion = noteOpVersionRef.current;
       void refreshNotes().then((loaded) => {
         const currentId = selectedIdRef.current;
         if (!currentId) return;
         const stillExists = loaded.some((n) => n.id === currentId);
         if (stillExists) {
           if (saveStateRef.current !== "dirty") {
+            if (noteOpVersionRef.current !== opVersion) return;
             void getNote(currentId)
               .then((note) => {
+                if (noteOpVersionRef.current !== opVersion) return;
                 if (selectedIdRef.current !== currentId) return;
                 setTitle(note.title);
                 setContent(note.content);
@@ -589,6 +595,7 @@ export function MainWindow({
               .catch(() => undefined);
           }
         } else if (selectedNoteRef.current) {
+          if (noteOpVersionRef.current !== opVersion) return;
           if (loaded[0]) {
             void loadNote(loaded[0].id);
           } else {
@@ -737,6 +744,7 @@ export function MainWindow({
     setSaveState("saving");
     try {
       const category = selectedNote?.category ?? "";
+      noteOpVersionRef.current += 1;
       const note = await updateNote(selectedId, { title, content, category });
       replaceNoteMetadata(note);
       setSaveState("saved");
@@ -797,6 +805,7 @@ export function MainWindow({
       await saveCurrentNote();
     }
     try {
+      noteOpVersionRef.current += 1;
       const note = await createNote({ title: "", content: "", category: activeCategory });
       replaceNoteMetadata(note);
       applyNote(note);
@@ -894,6 +903,7 @@ export function MainWindow({
         if (!saved) return;
       }
 
+      noteOpVersionRef.current += 1;
       const note = await importMarkdownNote(activeCategory);
       if (!note) return;
 
@@ -1207,18 +1217,20 @@ export function MainWindow({
 
   const selectedTilePinned = selectedId ? pinnedTileIds.has(selectedId) : false;
 
-  const handleTitleBarDrag = (event: MouseEvent<HTMLDivElement>) => {
+  const lastTitleBarClickRef = useRef(0);
+
+  const handleTitleBarMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest("button")) return;
+    const now = Date.now();
+    if (now - lastTitleBarClickRef.current < 300) {
+      lastTitleBarClickRef.current = 0;
+      void toggleMaximizeCurrentWindow().then(() =>
+        isCurrentWindowMaximized().then(setIsMaximized),
+      );
+      return;
+    }
+    lastTitleBarClickRef.current = now;
     void startCurrentWindowDrag().catch(() => undefined);
-  };
-
-  const toggleMaximize = () => {
-    void toggleMaximizeCurrentWindow().then(() => isCurrentWindowMaximized().then(setIsMaximized));
-  };
-
-  const handleTitleBarDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest("button")) return;
-    toggleMaximize();
   };
 
   const handleMinimize = () => {
@@ -1226,7 +1238,7 @@ export function MainWindow({
   };
 
   const handleMaximize = () => {
-    toggleMaximize();
+    void toggleMaximizeCurrentWindow().then(() => isCurrentWindowMaximized().then(setIsMaximized));
   };
 
   const handleClose = () => {
@@ -1238,8 +1250,7 @@ export function MainWindow({
       <div className="noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
         <div
           className="flex items-center justify-between pl-5 pr-0 h-11 bg-paper/60 border-b border-paper-deep/30 shrink-0 select-none cursor-default"
-          onMouseDown={handleTitleBarDrag}
-          onDoubleClick={handleTitleBarDoubleClick}
+          onMouseDown={handleTitleBarMouseDown}
         >
           <div className="flex items-center gap-3 min-w-0">
             <span className="text-[13px] font-display font-medium text-ink-soft tracking-wide">
