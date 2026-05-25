@@ -635,6 +635,7 @@ export function NotePad({
 
                 <textarea
                   ref={contentRef}
+                  data-tab-indent="true"
                   value={content}
                   onChange={(event) => {
                     setContent(event.target.value);
@@ -654,7 +655,7 @@ export function NotePad({
                   }}
                   placeholder={t("notepad.placeholder.content", { defaultValue: "写点什么……" })}
                   className="w-full flex-1 min-h-0 pb-2 leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
-                  style={{ fontSize: `${surfaceFontSize}px` }}
+                  style={{ fontSize: `${surfaceFontSize}px`, tabSize: `var(--tab-indent-size, 2)` }}
                 />
 
                 <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">
