@@ -1,1 +1,6 @@
 blank_issues_enabled: false
+
+contact_links:
+  - name: Questions or general discussion / 使用问题或一般讨论
+    url: https://github.com/Achilng/floral-notepaper/discussions
+    about: Please use Discussions for questions, ideas, and general help. / 使用问题、想法交流和一般帮助请前往讨论区。

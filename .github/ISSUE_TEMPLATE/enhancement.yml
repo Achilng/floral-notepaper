@@ -1,36 +1,117 @@
-name: 功能建议
-description: 提出新功能或现有功能的改进建议
+name: Feature Request / 功能建议
+description: Suggest a new feature or improvement / 提出新功能或改进建议
+title: "[Feat] "
 labels: ["enhancement"]
 
 body:
   - type: markdown
     attributes:
       value: |
-        请仅提交一个建议，多个建议请分别提交 issue。
+        Thanks for suggesting an improvement.
+        感谢你提出改进建议。
+
+        Please submit only one feature request per issue. If you have multiple unrelated ideas, open separate issues.
+        请每次仅提交一个建议。如果有多个不相关的建议，请分别提交 issue。
 
   - type: checkboxes
+    id: checklist
     attributes:
-      label: 提交前请确认
+      label: Checklist / 提交前确认
       options:
-        - label: 已在仓库中搜索过，没有找到相同或类似的 issue
+        - label: I have searched existing issues and found no duplicate or similar request. / 我已搜索现有 issue，未找到重复或类似建议。
           required: true
-        - label: 确认本次仅提交**一个**建议
+        - label: This issue describes only one feature request or improvement. / 本 issue 仅描述一个功能建议或改进点。
           required: true
 
-  - type: checkboxes
+  - type: dropdown
+    id: category
+    attributes:
+      label: Category / 类型
+      description: What kind of improvement is this? / 这属于哪类改进？
+      options:
+        - UI/UX
+        - Note and note management / 笔记与笔记管理
+        - Tray, or window behavior / 托盘或窗口行为
+        - Localization or language support / 本地化或语言支持
+        - Build, packaging, or distribution / 构建、打包或分发
+        - Performance or stability / 性能或稳定性
+        - Other / 其他
+    validations:
+      required: true
+
+  - type: dropdown
     id: platform
     attributes:
-      label: 平台
-      description: 请选择建议涉及的平台（可多选）
+      label: Platform / 平台
+      description: Select the platform related to this request. / 请选择该建议涉及的平台。
+      multiple: true
       options:
-        - label: Windows
-        - label: macOS
+        - Windows
+        - macOS
+        - Platform-agnostic / 平台无关
+        - Other / 其他
     validations:
       required: true
 
   - type: textarea
+    id: problem
     attributes:
-      label: 建议描述
-      placeholder: 尽量详细地描述你的建议
+      label: Problem or use case / 问题或使用场景
+      description: What problem does this feature solve? / 这个功能想解决什么问题？
+      placeholder: |
+        Describe the current limitation or user need.
+        请描述当前限制或用户需求。
     validations:
       required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution / 建议方案
+      description: Describe the behavior or feature you want. / 请描述你希望实现的行为或功能。
+      placeholder: |
+        I would like the app to ...
+        我希望应用可以……
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / 替代方案
+      description: Have you considered other solutions or workarounds? / 你是否考虑过其他方案或临时解决方法？
+      placeholder: |
+        Alternative approaches, workarounds, or related apps/features.
+        可填写替代实现、临时解决方法，或其他应用中的类似功能。
+    validations:
+      required: false
+
+  - type: textarea
+    id: mockups
+    attributes:
+      label: Screenshots, mockups, or examples / 截图、草图或示例
+      description: Attach screenshots, mockups, or references if helpful. / 如有帮助，请附上截图、草图或参考示例。
+      placeholder: |
+        Drag and drop files here.
+        可将文件拖拽到此处上传。
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: contribution
+    attributes:
+      label: Contribution / 贡献意愿
+      options:
+        - label: I am willing to help implement this feature. / 我愿意协助实现该功能。
+          required: false
+        - label: I am willing to help test this feature. / 我愿意协助测试该功能。
+          required: false
+
+  - type: textarea
+    id: additional_context
+    attributes:
+      label: Additional context / 其他信息
+      description: Add any other context that may help evaluate the request. / 请补充任何有助于评估该建议的信息。
+      placeholder: "Anything else? / 还有其他信息吗？"
+    validations:
+      required: false

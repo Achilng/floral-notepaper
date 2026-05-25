@@ -297,6 +297,7 @@ jobs:
           fi
           dmg_asset="release-assets/floral-notepaper_${ver}_x64.dmg"
           cp "$dmg_source" "$dmg_asset"
+          xattr -cr "$dmg_asset"
           gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
 
   build-macos-aarch64:
@@ -353,6 +354,7 @@ jobs:
           fi
           dmg_asset="release-assets/floral-notepaper_${ver}_aarch64.dmg"
           cp "$dmg_source" "$dmg_asset"
+          xattr -cr "$dmg_asset"
           gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
 
   cleanup-release:

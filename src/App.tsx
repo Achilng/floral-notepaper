@@ -8,6 +8,7 @@ import { getConfig } from "./features/settings/api";
 import { applyTheme, watchSystemTheme } from "./features/settings/theme";
 import type { AppConfig, ThemeOption } from "./features/settings/types";
 import { getInitialRoute } from "./features/windows/windowRoutes";
+import { syncLanguage } from "./locales";
 import { listen } from "@tauri-apps/api/event";
 
 function App() {
@@ -21,23 +22,32 @@ function App() {
         const theme = (config.theme || "system") as ThemeOption;
         applyTheme(theme);
         cleanup = watchSystemTheme(theme);
+        void syncLanguage(config.locale);
       })
       .catch(() => {});
     return () => cleanup();
   }, []);
 
   useEffect(() => {
+    let themeCleanup = () => {};
     const unlisten = listen<AppConfig>("config-changed", (event) => {
       const theme = (event.payload.theme || "system") as ThemeOption;
       applyTheme(theme);
-      watchSystemTheme(theme);
+      themeCleanup();
+      themeCleanup = watchSystemTheme(theme);
+      void syncLanguage(event.payload.locale);
     });
     return () => {
+      themeCleanup();
       void unlisten.then((fn) => fn());
     };
   }, []);
 
   useEffect(() => {
+    const isWindows =
+      navigator.userAgent.includes("Windows") || navigator.platform.toLowerCase().startsWith("win");
+    if (!isWindows) return;
+
     const preventSystemMenu = (e: KeyboardEvent) => {
       if (e.altKey && e.code === "Space") {
         e.preventDefault();
@@ -49,7 +59,7 @@ function App() {
 
   return (
     <ContextMenuProvider>
-      <div className="h-screen font-body text-ink overflow-hidden">
+      <div className="app-window-shell h-screen font-body text-ink overflow-hidden">
         {activeView === "main" ? (
           <MainWindow />
         ) : activeView === "notepad" ? (

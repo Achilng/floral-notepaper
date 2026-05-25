@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import { MainWindow, runEditorUndo } from "./MainWindow";
+import { MainWindow, pinTileButtonTitle, runEditorUndo } from "./MainWindow";
 
 describe("MainWindow settings", () => {
   test("can render the settings panel with the loaded config", () => {
@@ -8,6 +8,7 @@ describe("MainWindow settings", () => {
       <MainWindow
         initialSettingsOpen
         initialConfig={{
+          locale: "zh-CN",
           notesDir: "D:\\Notes\\花笺",
           globalShortcut: "Ctrl+Space",
           closeToTray: true,
@@ -42,13 +43,35 @@ describe("MainWindow settings", () => {
     expect(markup).not.toContain("cursor-grabbing");
   });
 
+  test("renders shortcut registration failures in the title bar", () => {
+    const markup = renderToStaticMarkup(
+      <MainWindow initialErrorMessage="快捷键 Command+Option+N 注册失败" />,
+    );
+
+    expect(markup).toContain("快捷键 Command+Option+N 注册失败");
+  });
+
   test("renders the import Markdown icon as a down arrow", () => {
     const markup = renderToStaticMarkup(<MainWindow />);
 
-    expect(markup).toContain('d="M12 21V9"');
-    expect(markup).toContain('d="m7 16 5 5 5-5"');
-    expect(markup).toContain('d="M5 3h14"');
+    expect(markup).toContain('d="M12 3v12"');
+    expect(markup).toContain('d="m7 10 5 5 5-5"');
+    expect(markup).toContain('d="M5 21h14"');
+    expect(markup).not.toContain('d="m7 14 5-5 5 5"');
     expect(markup).not.toContain('d="m7 8 5-5 5 5"');
+  });
+
+  test("uses the body font for the main Markdown editor text", () => {
+    const markup = renderToStaticMarkup(<MainWindow />);
+    const editorMatch = markup.match(/<textarea[^>]*>/);
+
+    expect(editorMatch?.[0]).toContain("font-body");
+    expect(editorMatch?.[0]).not.toContain("font-mono");
+  });
+
+  test("labels the pin button as a toggle", () => {
+    expect(pinTileButtonTitle(false)).toBe("钉到屏幕");
+    expect(pinTileButtonTitle(true)).toBe("取消钉屏");
   });
 });
 

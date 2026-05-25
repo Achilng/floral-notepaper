@@ -9,6 +9,7 @@
 轻量、优雅、现代化的本地便签工具<br>
 基于 Tauri 2 + React 构建
 
+[繁體中文](README_zh-HK.md) · [English](README_en-US.md)<br>
 [反馈问题](https://github.com/Achilng/floral-notepaper/issues) · [更新日志](https://github.com/Achilng/floral-notepaper/releases)
 
 [![Version](https://img.shields.io/github/v/release/Achilng/floral-notepaper)](https://github.com/Achilng/floral-notepaper/releases/latest)

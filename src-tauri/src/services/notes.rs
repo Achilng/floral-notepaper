@@ -1,14 +1,30 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
+    collections::BTreeMap,
     env, fmt, fs, io,
     path::{Component, Path, PathBuf},
 };
 use uuid::Uuid;
 
+#[cfg(target_os = "macos")]
+const DEFAULT_MACOS_GLOBAL_SHORTCUT: &str = "Command+Option+N";
+#[cfg(target_os = "macos")]
+const LEGACY_MACOS_GLOBAL_SHORTCUTS: [&str; 5] = [
+    "Option+Space",
+    "Alt+Space",
+    "Ctrl+Option+Space",
+    "Control+Option+Space",
+    "Ctrl+Alt+Space",
+];
+#[cfg(target_os = "macos")]
+const MACOS_SHORTCUT_MIGRATION_MARKER: &str = ".macos-shortcut-default-v3";
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AppConfig {
+    #[serde(default = "default_locale")]
+    pub locale: String,
     pub notes_dir: String,
     pub global_shortcut: String,
     pub close_to_tray: bool,
@@ -88,6 +104,8 @@ pub struct Note {
 pub struct AppError {
     pub code: String,
     pub message: String,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub details: BTreeMap<String, String>,
 }
 
 impl AppError {
@@ -95,11 +113,38 @@ impl AppError {
         Self {
             code: code.into(),
             message: message.into(),
+            details: BTreeMap::new(),
         }
     }
 
-    fn not_found(message: impl Into<String>) -> Self {
-        Self::new("notFound", message)
+    fn with_detail(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.details.insert(key.into(), value.into());
+        self
+    }
+
+    fn note_not_found(id: &str) -> Self {
+        Self::new("noteNotFound", format!("Note {id} was not found")).with_detail("noteId", id)
+    }
+
+    fn unsupported_file() -> Self {
+        Self::new("unsupportedFile", "只支持导入 .md 文件")
+    }
+
+    fn category_name_empty() -> Self {
+        Self::new("categoryNameEmpty", "分类名不能为空")
+    }
+
+    fn category_name_invalid_chars() -> Self {
+        Self::new("categoryNameInvalidChars", "分类名不能包含特殊字符")
+    }
+
+    fn category_not_found(name: &str) -> Self {
+        Self::new("categoryNotFound", format!("分类「{name}」不存在")).with_detail("category", name)
+    }
+
+    fn category_already_exists(name: &str) -> Self {
+        Self::new("categoryAlreadyExists", format!("分类「{name}」已存在"))
+            .with_detail("category", name)
     }
 }
 
@@ -248,12 +293,18 @@ impl NoteStore {
         self.base_dir.join("config.json")
     }
 
+    #[cfg(target_os = "macos")]
+    fn macos_shortcut_migration_path(&self) -> PathBuf {
+        self.base_dir.join(MACOS_SHORTCUT_MIGRATION_MARKER)
+    }
+
     pub fn load_config(&self) -> Result<AppConfig, AppError> {
         self.ensure_base_dir()?;
         let path = self.config_path();
         if !path.exists() {
             let config = self.default_config();
             self.save_config(config.clone())?;
+            self.mark_macos_shortcut_migration_handled()?;
             return Ok(config);
         }
 
@@ -263,6 +314,9 @@ impl NoteStore {
             write_json_atomic(&path, &config)?;
         }
         fs::create_dir_all(&config.notes_dir)?;
+        if self.migrate_macos_shortcut_default(&mut config)? {
+            write_json_atomic(&path, &config)?;
+        }
         Ok(config)
     }
 
@@ -350,7 +404,7 @@ impl NoteStore {
             .notes
             .iter_mut()
             .find(|note| note.id == id)
-            .ok_or_else(|| AppError::not_found(format!("Note {id} was not found")))?;
+            .ok_or_else(|| AppError::note_not_found(id))?;
 
         let old_file_name = note.file_name.clone();
         let old_category = note.category.clone();
@@ -402,7 +456,7 @@ impl NoteStore {
             .notes
             .iter()
             .position(|note| note.id == id)
-            .ok_or_else(|| AppError::not_found(format!("Note {id} was not found")))?;
+            .ok_or_else(|| AppError::note_not_found(id))?;
         let metadata = metadata_file.notes.remove(index);
         let path = self.note_path_in_category(&metadata.file_name, &metadata.category);
         if path.exists() {
@@ -414,7 +468,7 @@ impl NoteStore {
 
     pub fn import_markdown_file(&self, path: &Path, category: &str) -> Result<Note, AppError> {
         if !is_markdown_path(path) {
-            return Err(AppError::new("unsupportedFile", "只支��导入 .md 文件"));
+            return Err(AppError::unsupported_file());
         }
 
         let content = fs::read_to_string(path)?;
@@ -452,10 +506,10 @@ impl NoteStore {
     pub fn create_category(&self, name: &str) -> Result<(), AppError> {
         let name = name.trim();
         if name.is_empty() {
-            return Err(AppError::new("invalidCategory", "分类名不能为空"));
+            return Err(AppError::category_name_empty());
         }
         if name.contains('/') || name.contains('\\') || name.contains(':') || name.contains("..") {
-            return Err(AppError::new("invalidCategory", "分类名不能包含特殊字符"));
+            return Err(AppError::category_name_invalid_chars());
         }
         let notes_dir = self.notes_dir()?;
         let path = notes_dir.join(name);
@@ -466,26 +520,23 @@ impl NoteStore {
     pub fn rename_category(&self, old_name: &str, new_name: &str) -> Result<(), AppError> {
         let new_name = new_name.trim();
         if new_name.is_empty() {
-            return Err(AppError::new("invalidCategory", "分类名不能为空"));
+            return Err(AppError::category_name_empty());
         }
         if new_name.contains('/')
             || new_name.contains('\\')
             || new_name.contains(':')
             || new_name.contains("..")
         {
-            return Err(AppError::new("invalidCategory", "分类名不能包含特殊字符"));
+            return Err(AppError::category_name_invalid_chars());
         }
         let notes_dir = self.notes_dir()?;
         let old_path = notes_dir.join(old_name);
         let new_path = notes_dir.join(new_name);
         if !old_path.exists() {
-            return Err(AppError::not_found(format!("分类「{old_name}」不存在")));
+            return Err(AppError::category_not_found(old_name));
         }
         if new_path.exists() {
-            return Err(AppError::new(
-                "conflict",
-                format!("分类「{new_name}」已存在"),
-            ));
+            return Err(AppError::category_already_exists(new_name));
         }
         fs::rename(&old_path, &new_path)?;
 
@@ -502,41 +553,54 @@ impl NoteStore {
     pub fn delete_category(&self, name: &str) -> Result<(), AppError> {
         let notes_dir = self.notes_dir()?;
         let category_path = notes_dir.join(name);
-        if !category_path.exists() {
-            return Err(AppError::not_found(format!("分类「{name}」不存在")));
-        }
+        let dir_exists = category_path.exists();
 
-        // Safety: ensure the category path is actually inside notes_dir
-        let canon_notes = fs::canonicalize(&notes_dir).unwrap_or_else(|_| notes_dir.clone());
-        let canon_cat = fs::canonicalize(&category_path).unwrap_or_else(|_| category_path.clone());
-        if !canon_cat.starts_with(&canon_notes) || canon_cat == canon_notes {
-            return Err(AppError::new(
-                "unsafePath",
-                format!(
-                    "拒绝删除「{}」：路径不在笔记目录内",
-                    category_path.display()
-                ),
-            ));
-        }
-
-        // Move all notes in this category to uncategorized (root)
-        let mut metadata_file = self.load_metadata()?;
-        for note in &mut metadata_file.notes {
-            if note.category == name {
-                let old_path = category_path.join(&note.file_name);
-                let new_path = notes_dir.join(&note.file_name);
-                if old_path.exists() {
-                    fs::rename(&old_path, &new_path)?;
-                }
-                note.category = String::new();
+        if dir_exists {
+            // Safety: ensure the category path is actually inside notes_dir
+            let canon_notes = fs::canonicalize(&notes_dir).unwrap_or_else(|_| notes_dir.clone());
+            let canon_cat =
+                fs::canonicalize(&category_path).unwrap_or_else(|_| category_path.clone());
+            if !canon_cat.starts_with(&canon_notes) || canon_cat == canon_notes {
+                return Err(AppError::new(
+                    "unsafePath",
+                    format!(
+                        "拒绝删除「{}」：路径不在笔记目录内",
+                        category_path.display()
+                    ),
+                ));
             }
-        }
-        self.save_metadata(&metadata_file)?;
 
-        // Move to recycle bin instead of permanent deletion
-        if category_path.exists() {
+            // Move all notes in this category to uncategorized (root)
+            let mut metadata_file = self.load_metadata()?;
+            for note in &mut metadata_file.notes {
+                if note.category == name {
+                    let old_path = category_path.join(&note.file_name);
+                    let new_path = notes_dir.join(&note.file_name);
+                    if old_path.exists() {
+                        fs::rename(&old_path, &new_path)?;
+                    }
+                    note.category = String::new();
+                }
+            }
+            self.save_metadata(&metadata_file)?;
+
+            // Move to recycle bin instead of permanent deletion
             trash::delete(&category_path)
                 .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
+        } else {
+            // Directory already gone (manually deleted outside the app);
+            // clean up any stale metadata references.
+            let mut metadata_file = self.load_metadata()?;
+            let mut changed = false;
+            for note in &mut metadata_file.notes {
+                if note.category == name {
+                    note.category = String::new();
+                    changed = true;
+                }
+            }
+            if changed {
+                self.save_metadata(&metadata_file)?;
+            }
         }
         Ok(())
     }
@@ -552,7 +616,7 @@ impl NoteStore {
             .notes
             .iter_mut()
             .find(|note| note.id == id)
-            .ok_or_else(|| AppError::not_found(format!("Note {id} was not found")))?;
+            .ok_or_else(|| AppError::note_not_found(id))?;
 
         let old_category = note.category.clone();
         if old_category == new_category {
@@ -576,9 +640,10 @@ impl NoteStore {
 
     fn default_config(&self) -> AppConfig {
         AppConfig {
+            locale: default_locale(),
             notes_dir: self.base_dir.join("notes").to_string_lossy().to_string(),
             #[cfg(target_os = "macos")]
-            global_shortcut: "Option+Space".into(),
+            global_shortcut: DEFAULT_MACOS_GLOBAL_SHORTCUT.into(),
             #[cfg(not(target_os = "macos"))]
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
@@ -604,6 +669,40 @@ impl NoteStore {
 
     fn ensure_base_dir(&self) -> Result<(), AppError> {
         fs::create_dir_all(&self.base_dir)?;
+        Ok(())
+    }
+
+    #[cfg(target_os = "macos")]
+    fn migrate_macos_shortcut_default(&self, config: &mut AppConfig) -> Result<bool, AppError> {
+        let migration_path = self.macos_shortcut_migration_path();
+        if migration_path.exists() {
+            return Ok(false);
+        }
+
+        let should_migrate = LEGACY_MACOS_GLOBAL_SHORTCUTS
+            .iter()
+            .any(|shortcut| shortcuts_equal(shortcut, &config.global_shortcut));
+        if should_migrate {
+            config.global_shortcut = DEFAULT_MACOS_GLOBAL_SHORTCUT.into();
+        }
+
+        self.mark_macos_shortcut_migration_handled()?;
+        Ok(should_migrate)
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn migrate_macos_shortcut_default(&self, _config: &mut AppConfig) -> Result<bool, AppError> {
+        Ok(false)
+    }
+
+    #[cfg(target_os = "macos")]
+    fn mark_macos_shortcut_migration_handled(&self) -> Result<(), AppError> {
+        fs::write(self.macos_shortcut_migration_path(), "done")?;
+        Ok(())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    fn mark_macos_shortcut_migration_handled(&self) -> Result<(), AppError> {
         Ok(())
     }
 
@@ -637,7 +736,7 @@ impl NoteStore {
             .notes
             .into_iter()
             .find(|note| note.id == id)
-            .ok_or_else(|| AppError::not_found(format!("Note {id} was not found")))
+            .ok_or_else(|| AppError::note_not_found(id))
     }
 
     fn file_name_for(&self, id: &str, title: &str) -> String {
@@ -744,11 +843,21 @@ fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), AppErro
     }
     let temp_path = path.with_extension("json.tmp");
     fs::write(&temp_path, serde_json::to_string_pretty(value)?)?;
-    if path.exists() {
-        fs::remove_file(path)?;
-    }
-    fs::rename(temp_path, path)?;
+    fs::rename(&temp_path, path)?;
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn shortcuts_equal(left: &str, right: &str) -> bool {
+    fn normalize(value: &str) -> String {
+        value
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .flat_map(|ch| ch.to_lowercase())
+            .collect()
+    }
+
+    normalize(left) == normalize(right)
 }
 
 fn safe_file_stem(title: &str) -> String {
@@ -891,6 +1000,10 @@ fn default_open_at_cursor() -> bool {
     true
 }
 
+fn default_locale() -> String {
+    "zh-CN".into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -997,7 +1110,7 @@ mod tests {
 
         let default_config = store.load_config().expect("load default config");
         #[cfg(target_os = "macos")]
-        assert_eq!(default_config.global_shortcut, "Option+Space");
+        assert_eq!(default_config.global_shortcut, "Command+Option+N");
         #[cfg(not(target_os = "macos"))]
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
         assert!(default_config.note_auto_save);
@@ -1005,11 +1118,13 @@ mod tests {
         assert_eq!(default_config.tile_color, "#f6f3ec");
         assert_eq!(default_config.tile_color_mode, "system");
         assert_eq!(default_config.theme, "system");
+        assert_eq!(default_config.locale, "zh-CN");
         assert!(default_config.notes_dir.ends_with("notes"));
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
         let saved = AppConfig {
-            notes_dir: custom_notes_dir.to_string_lossy().to_string(),
+            locale: "en-US".into(),
+            notes_dir: custom_notes_dir.join("notes").to_string_lossy().to_string(),
             global_shortcut: "Alt+Space".into(),
             close_to_tray: false,
             autostart: true,
@@ -1065,8 +1180,102 @@ mod tests {
         assert_eq!(loaded.tile_color, "#f6f3ec");
         assert_eq!(loaded.tile_color_mode, "system");
         assert_eq!(loaded.theme, "system");
+        assert_eq!(loaded.locale, "zh-CN");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migrates_legacy_macos_shortcut_default_once() {
+        let store = NoteStore::new(test_root("legacy-macos-shortcut"));
+        let notes_dir = store.base_dir().join("notes");
+        fs::create_dir_all(store.base_dir()).expect("create base dir");
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(
+            store.config_path(),
+            format!(
+                r#"{{
+  "notesDir": "{}",
+  "globalShortcut": "Option+Space",
+  "closeToTray": true,
+  "autostart": false,
+  "defaultViewMode": "split"
+}}"#,
+                notes_dir.to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .expect("write legacy config");
+
+        let migrated = store.load_config().expect("load legacy config");
+
+        assert_eq!(migrated.global_shortcut, "Command+Option+N");
+        assert!(store.macos_shortcut_migration_path().exists());
+
+        let mut manual = migrated;
+        manual.global_shortcut = "Option+Space".into();
+        store
+            .save_config(manual.clone())
+            .expect("save manual config");
+
+        let loaded = store.load_config().expect("reload manual config");
+        assert_eq!(loaded.global_shortcut, "Option+Space");
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn migrates_previous_macos_shortcut_default() {
+        let store = NoteStore::new(test_root("previous-macos-shortcut"));
+        let notes_dir = store.base_dir().join("notes");
+        fs::create_dir_all(store.base_dir()).expect("create base dir");
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(
+            store.config_path(),
+            format!(
+                r#"{{
+  "notesDir": "{}",
+  "globalShortcut": "Ctrl+Option+Space",
+  "closeToTray": true,
+  "autostart": false,
+  "defaultViewMode": "split"
+}}"#,
+                notes_dir.to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .expect("write previous config");
+
+        let migrated = store.load_config().expect("load previous config");
+
+        assert_eq!(migrated.global_shortcut, "Command+Option+N");
+        assert!(store.macos_shortcut_migration_path().exists());
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn leaves_custom_macos_shortcut_unchanged() {
+        let store = NoteStore::new(test_root("custom-macos-shortcut"));
+        let notes_dir = store.base_dir().join("notes");
+        fs::create_dir_all(store.base_dir()).expect("create base dir");
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(
+            store.config_path(),
+            format!(
+                r#"{{
+  "notesDir": "{}",
+  "globalShortcut": "Command+K",
+  "closeToTray": true,
+  "autostart": false,
+  "defaultViewMode": "split"
+}}"#,
+                notes_dir.to_string_lossy().replace('\\', "\\\\")
+            ),
+        )
+        .expect("write custom config");
+
+        let loaded = store.load_config().expect("load custom config");
+
+        assert_eq!(loaded.global_shortcut, "Command+K");
+        assert!(store.macos_shortcut_migration_path().exists());
     }
 
     #[test]

@@ -29,6 +29,7 @@ PLAN.md
 PROGRESS.md
 AGENTS.md
 CLAUDE.md
+.codex
 
 ## IDE
 .idea/
@@ -39,3 +40,12 @@ CLAUDE.md
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+## Design
+*.psd
+*.ai
+*.icon
+src-tauri/icons/macOS
+
+## Temp
+temp/

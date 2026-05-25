@@ -3,8 +3,9 @@ import { describe, expect, test, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
 
 const config = {
+  locale: "zh-CN",
   notesDir: "D:\\Notes\\花笺",
-  globalShortcut: "Ctrl+Space",
+  globalShortcut: "Command+Option+N",
   closeToTray: true,
   autostart: false,
   defaultViewMode: "split" as const,
@@ -37,7 +38,9 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("应用设置");
     expect(markup).toContain("D:\\Notes\\花笺");
     expect(markup).toContain("选择文件夹");
-    expect(markup).toContain("Ctrl+Space");
+    expect(markup).toContain("快捷记录快捷键");
+    expect(markup).toContain("Command+Option+N");
+    expect(markup).toContain("检测");
     expect(markup).toContain("关闭到托盘");
     expect(markup).toContain("开机自启");
     expect(markup).toContain("自动保存笔记");
@@ -47,6 +50,8 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("自定义");
     expect(markup).toContain('type="color"');
     expect(markup).toContain('value="#f6f3ec"');
+    expect(markup).toContain("HarmonyOS Sans SC");
+    expect(markup).toContain("HarmonyOS Sans Fonts License Agreement");
     expect(markup).toContain("默认视图");
     expect(markup).toContain("编辑");
     expect(markup).toContain("分栏");

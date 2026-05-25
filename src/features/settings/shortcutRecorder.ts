@@ -1,5 +1,7 @@
 import { parseHotkey, type Hotkey } from "@tanstack/react-hotkeys";
 
+export type ShortcutPlatform = "mac" | "windows";
+
 const KEY_DISPLAY_NAMES: Record<string, string> = {
   Control: "Ctrl",
   Meta: "Meta",
@@ -10,13 +12,38 @@ const KEY_DISPLAY_NAMES: Record<string, string> = {
   ArrowRight: "→",
 };
 
-export function hotkeyToConfigString(hotkey: Hotkey): string {
-  const parsed = parseHotkey(hotkey, "windows");
+const MAC_KEY_DISPLAY_NAMES: Record<string, string> = {
+  ...KEY_DISPLAY_NAMES,
+  Control: "Ctrl",
+  Alt: "Option",
+  Meta: "Command",
+};
+
+export function shortcutPlatform(): ShortcutPlatform {
+  if (typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform)) {
+    return "mac";
+  }
+
+  return "windows";
+}
+
+export function hotkeyToConfigString(
+  hotkey: Hotkey,
+  platform: ShortcutPlatform = "windows",
+): string {
+  const parsed = parseHotkey(hotkey, platform);
   const parts: string[] = [];
-  if (parsed.ctrl) parts.push("Ctrl");
-  if (parsed.alt) parts.push("Alt");
-  if (parsed.shift) parts.push("Shift");
-  if (parsed.meta) parts.push("Meta");
+  if (platform === "mac") {
+    if (parsed.meta) parts.push("Command");
+    if (parsed.alt) parts.push("Option");
+    if (parsed.ctrl) parts.push("Ctrl");
+    if (parsed.shift) parts.push("Shift");
+  } else {
+    if (parsed.ctrl) parts.push("Ctrl");
+    if (parsed.alt) parts.push("Alt");
+    if (parsed.shift) parts.push("Shift");
+    if (parsed.meta) parts.push("Meta");
+  }
   parts.push(parsed.key);
   return parts.join("+");
 }
@@ -26,8 +53,9 @@ export function isValidGlobalShortcut(hotkey: Hotkey): boolean {
   return parsed.ctrl || parsed.alt || parsed.meta;
 }
 
-export function formatHeldKeys(keys: string[]): string {
-  const modifierOrder = ["Control", "Alt", "Shift", "Meta"];
+export function formatHeldKeys(keys: string[], platform: ShortcutPlatform = "windows"): string {
+  const modifierOrder =
+    platform === "mac" ? ["Meta", "Alt", "Control", "Shift"] : ["Control", "Alt", "Shift", "Meta"];
   const modifiers: string[] = [];
   const others: string[] = [];
 
@@ -42,5 +70,6 @@ export function formatHeldKeys(keys: string[]): string {
   modifiers.sort((a, b) => modifierOrder.indexOf(a) - modifierOrder.indexOf(b));
 
   const all = [...modifiers, ...others];
-  return all.map((k) => KEY_DISPLAY_NAMES[k] ?? k).join(" + ");
+  const displayNames = platform === "mac" ? MAC_KEY_DISPLAY_NAMES : KEY_DISPLAY_NAMES;
+  return all.map((k) => displayNames[k] ?? k).join(" + ");
 }
