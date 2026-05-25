@@ -1077,8 +1077,12 @@ fn setup_global_shortcut_plugin(app: &AppHandle) -> tauri::Result<()> {
                         }
                     }
                     ShortcutAction::OpenNotepad => {
-                        let specs = saved_surface_specs(app);
-                        let bounds = cursor_centered_bounds(&specs);
+                        let bounds = if load_config().map(|c| c.open_at_cursor).unwrap_or(true) {
+                            let specs = saved_surface_specs(app);
+                            cursor_centered_bounds(&specs)
+                        } else {
+                            None
+                        };
                         if let Err(error) = app.run_on_main_thread(move || {
                             if let Err(error) =
                                 open_notepad_window_now(&app_for_closure, None, bounds)

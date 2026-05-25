@@ -162,6 +162,14 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
         </section>
 
         <section className="space-y-2">
+          <ToggleRow
+            label="快捷键打开时跟随鼠标位置"
+            checked={config.openAtCursor ?? true}
+            onChange={(checked) => setConfigValue("openAtCursor", checked)}
+          />
+        </section>
+
+        <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">编辑器字号</label>
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
             <input
