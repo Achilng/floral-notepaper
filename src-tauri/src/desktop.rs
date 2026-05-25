@@ -835,18 +835,58 @@ fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
         x: i32,
         y: i32,
     }
+    #[repr(C)]
+    struct RECT {
+        left: i32,
+        top: i32,
+        right: i32,
+        bottom: i32,
+    }
+    #[repr(C)]
+    struct MONITORINFO {
+        cb_size: u32,
+        rc_monitor: RECT,
+        rc_work: RECT,
+        dw_flags: u32,
+    }
+    type HMONITOR = isize;
+    const MONITOR_DEFAULTTONEAREST: u32 = 2;
     extern "system" {
         fn GetCursorPos(lp_point: *mut POINT) -> i32;
+        fn MonitorFromPoint(pt: POINT, dw_flags: u32) -> HMONITOR;
+        fn GetMonitorInfoW(h_monitor: HMONITOR, lpmi: *mut MONITORINFO) -> i32;
+        fn GetDpiForSystem() -> u32;
     }
     let mut pt = POINT { x: 0, y: 0 };
     if unsafe { GetCursorPos(&mut pt) } == 0 {
         return None;
     }
+    let scale = unsafe { GetDpiForSystem() } as f64 / 96.0;
+    let w = (specs.width * scale) as i32;
+    let h = (specs.height * scale) as i32;
+    let mut x = pt.x - w / 2;
+    let mut y = pt.y - h / 2;
+
+    let hmon = unsafe { MonitorFromPoint(POINT { x: pt.x, y: pt.y }, MONITOR_DEFAULTTONEAREST) };
+    if hmon != 0 {
+        let mut mi = MONITORINFO {
+            cb_size: std::mem::size_of::<MONITORINFO>() as u32,
+            rc_monitor: RECT { left: 0, top: 0, right: 0, bottom: 0 },
+            rc_work: RECT { left: 0, top: 0, right: 0, bottom: 0 },
+            dw_flags: 0,
+        };
+        if unsafe { GetMonitorInfoW(hmon, &mut mi) } != 0 {
+            let work = &mi.rc_work;
+            x = x.max(work.left).min(work.right - w);
+            y = y.max(work.top).min(work.bottom - h);
+        }
+    }
+
     Some(WindowBounds {
-        x: pt.x - (specs.width as i32 / 2),
-        y: pt.y - (specs.height as i32 / 2),
-        width: specs.width as u32,
-        height: specs.height as u32,
+        x,
+        y,
+        width: w as u32,
+        height: h as u32,
     })
 }
 
@@ -949,7 +989,7 @@ fn open_or_focus_window(
         return Ok(label.to_string());
     }
 
-    let mut builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(opts.url.into()))
+    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(opts.url.into()))
         .title(opts.title)
         .inner_size(opts.specs.width, opts.specs.height)
         .min_inner_size(opts.specs.min_width, opts.specs.min_height)
@@ -959,15 +999,10 @@ fn open_or_focus_window(
         .always_on_top(opts.always_on_top)
         .shadow(opts.shadow)
         .skip_taskbar(opts.skip_taskbar)
-        .visible(false);
+        .visible(false)
+        .build()?;
 
-    if let Some(bounds) = opts.bounds {
-        builder = builder
-            .position(bounds.x as f64, bounds.y as f64)
-            .inner_size(bounds.width as f64, bounds.height as f64);
-    }
-
-    builder.build()?;
+    apply_window_bounds(&window, opts.bounds)?;
 
     Ok(label.to_string())
 }
