@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import type { CSSProperties, MouseEvent } from "react";
+import type { MouseEvent } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { createNote, getErrorMessage, getNote, listNotes, updateNote } from "../features/notes/api";
@@ -30,7 +30,7 @@ import {
   normalizeTileColor,
   resolveTileColor,
 } from "../features/settings/tileColor";
-import type { AppConfig, TileColorMode } from "../features/settings/types";
+import type { TileColorMode } from "../features/settings/types";
 import { shouldSaveBeforeSwitchingToTile } from "../features/windows/noteSurfaceSavePolicy";
 import {
   NOTE_SURFACE_ACTION_EVENT,
@@ -46,7 +46,6 @@ import {
   emitTileWindowUnpinned,
   tileSurfaceModeUnpinNoteId,
 } from "../features/windows/tileWindowEvents";
-import { BackgroundLayer } from "./BackgroundLayer";
 import { Tile } from "./Tile";
 
 type OpenMode = "new" | "open";
@@ -126,7 +125,6 @@ export function NotePad({
   const [tileColorRaw, setTileColorRaw] = useState(normalizeTileColor(initialTileColor));
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
   const [surfaceFontSize, setSurfaceFontSize] = useState(14);
-  const [surfaceConfig, setSurfaceConfig] = useState<AppConfig | null>(null);
   const [tileRenderMarkdown, setTileRenderMarkdown] = useState(false);
   const [tileColor, setTileColor] = useState(() =>
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
@@ -180,7 +178,6 @@ export function NotePad({
       try {
         const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
         if (!cancelled) {
-          setSurfaceConfig(loadedConfig);
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
           setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
           setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
@@ -233,15 +230,12 @@ export function NotePad({
   }, []);
 
   useEffect(() => {
-    const unlisten = listen<
-      {
-        tileColor?: string;
-        tileColorMode?: TileColorMode;
-        surfaceFontSize?: number;
-        tileRenderMarkdown?: boolean;
-      } & Partial<AppConfig>
-    >("config-changed", (event) => {
-      setSurfaceConfig((current) => (current ? { ...current, ...event.payload } : current));
+    const unlisten = listen<{
+      tileColor?: string;
+      tileColorMode?: TileColorMode;
+      surfaceFontSize?: number;
+      tileRenderMarkdown?: boolean;
+    }>("config-changed", (event) => {
       const mode = event.payload.tileColorMode ?? tileColorMode;
       const raw = event.payload.tileColor ?? tileColorRaw;
       setTileColorMode(mode);
@@ -493,18 +487,13 @@ export function NotePad({
 
   const isTile = surfaceMode === "tile";
   const tileTitle = title.trim();
-  const hasBackgroundImage = Boolean(surfaceConfig?.backgroundImagePath?.trim());
-  const tileStyle: CSSProperties = hasBackgroundImage
-    ? { backgroundColor: `${tileColor}dd`, backdropFilter: "blur(1px)" }
-    : {};
   const enterClass = hasEnteredOnce.current ? "" : "animate-window-enter";
   const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : enterClass}`;
   const padSurfaceClassName =
-    "app-surface-frame relative z-10 noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/70 shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
+    "app-surface-frame relative noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/70 shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
 
   return (
-    <div className={`${surfaceWrapperClassName} relative`}>
-      <BackgroundLayer config={surfaceConfig} />
+    <div className={surfaceWrapperClassName}>
       {isTile ? (
         <Tile
           title={tileTitle || undefined}
@@ -513,8 +502,7 @@ export function NotePad({
           fontSize={surfaceFontSize}
           renderMarkdown={!errorMessage && tileRenderMarkdown}
           width="100%"
-          className="relative z-10 h-full cursor-default"
-          style={tileStyle}
+          className="h-full cursor-default"
           data-surface-mode={surfaceMode}
           data-context-menu="tile"
           data-note-id={tileNoteId}
