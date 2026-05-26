@@ -4,8 +4,8 @@ pub mod services;
 
 use locales::Locale;
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
-use std::path::PathBuf;
-use tauri::{AppHandle, Emitter};
+use std::{fs, path::PathBuf};
+use tauri::{AppHandle, Emitter, Manager};
 
 #[tauri::command]
 fn app_name() -> Result<String, AppError> {
@@ -147,6 +147,40 @@ fn config_get() -> Result<AppConfig, AppError> {
 }
 
 #[tauri::command]
+fn copy_background_image(app: AppHandle, source_path: String) -> Result<String, AppError> {
+    let source = PathBuf::from(source_path.trim());
+    if !source.is_file() {
+        return Err(AppError {
+            code: "invalidSource".into(),
+            message: "background image source not found".into(),
+            details: Default::default(),
+        });
+    }
+
+    let app_data = app.path().app_data_dir().map_err(|error| AppError {
+        code: "path".into(),
+        message: error.to_string(),
+        details: Default::default(),
+    })?;
+    let dir = app_data.join("backgrounds");
+    fs::create_dir_all(&dir)?;
+
+    let ext = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.is_empty())
+        .unwrap_or("png");
+    let dest = dir.join(format!("bg-{}.{}", uuid::Uuid::new_v4(), ext));
+    fs::copy(&source, &dest)?;
+
+    dest.to_str().map(str::to_string).ok_or_else(|| AppError {
+        code: "path".into(),
+        message: "invalid destination path".into(),
+        details: Default::default(),
+    })
+}
+
+#[tauri::command]
 fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError> {
     let store = default_store()?;
     let previous = store.load_config()?;
@@ -249,6 +283,7 @@ pub fn run() {
             categories_rename,
             categories_delete,
             config_get,
+            copy_background_image,
             config_save,
             global_shortcut_check,
             open_notepad_window,
