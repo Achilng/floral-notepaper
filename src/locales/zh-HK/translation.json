@@ -128,6 +128,10 @@
       "quickNotepad": "快捷便箋",
       "restore": "還原視窗",
       "settings": "設定"
+    },
+    "updates": {
+      "available": "發現新版本 v{{version}}，可從 GitHub 下載更新。",
+      "download": "下載更新"
     }
   },
   "noteMenu": {
@@ -194,24 +198,10 @@
     "notesDir": "筆記目錄",
     "quickNoteShortcut": "快捷記錄快捷鍵",
     "rememberSurfaceSize": "記住小窗尺寸",
-    "tabIndentSize": "Tab 縮排寬度",
     "selectFolder": "選擇資料夾",
     "shortcut": {
       "cancelHint": "Esc 取消",
-      "checkFailed": "快捷鍵檢測失敗",
-      "checking": "正在檢測快捷鍵...",
-      "cleared": "快捷鍵已清除",
       "clickToRecord": "點擊錄製",
-      "conflict": {
-        "current": "快捷鍵 {{shortcut}} 目前正在使用",
-        "invalid": "快捷鍵 {{shortcut}} 不受支援",
-        "none": "快捷鍵 {{shortcut}} 未檢測到衝突",
-        "registered": "快捷鍵 {{shortcut}} 可能已被系統或其他應用程式佔用",
-        "system": "快捷鍵 {{shortcut}} 與系統快捷鍵衝突",
-        "unknown": "檢測完成，但釋放臨時快捷鍵失敗"
-      },
-      "forQuickNote": "用於開啟快捷記錄小窗",
-      "needsModifier": "快捷鍵需要包含 Ctrl、Option/Alt 或 Command/Meta",
       "notSet": "未設定",
       "pressHint": "按下快捷鍵；按 Delete 清除。"
     },
@@ -229,7 +219,18 @@
     "tileCtrlClose": "Ctrl+右鍵快速關閉磁貼",
     "tileRenderMarkdown": "磁貼渲染 Markdown",
     "title": "應用程式設定",
-    "visibilityShortcut": "顯示／隱藏視窗快捷鍵"
+    "visibilityShortcut": "顯示／隱藏視窗快捷鍵",
+    "updates": {
+      "available": "發現新版本 v{{version}}",
+      "check": "檢查更新",
+      "checking": "正在檢查 GitHub 更新...",
+      "checkingShort": "檢查中",
+      "current": "目前已是最新版本 v{{version}}",
+      "currentVersion": "目前版本 v{{version}}",
+      "download": "下載並安裝新版本",
+      "error": "檢查失敗，請稍後再試",
+      "title": "軟件更新"
+    }
   },
   "tile": {
     "empty": "空"

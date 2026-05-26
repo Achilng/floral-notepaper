@@ -11,6 +11,13 @@ import {
 } from "../features/settings/shortcutRecorder";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
+import {
+  CURRENT_VERSION,
+  checkForGitHubUpdate,
+  openUpdateDownload,
+  type UpdateInfo,
+  type UpdateStatus,
+} from "../features/updates/api";
 import { SUPPORTED_LOCALES } from "../locales/locale-whitelist";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 
@@ -151,6 +158,8 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
           />
         </section>
 
+        <UpdateSection />
+
         <section className="space-y-2">
           <ToggleRow
             label={t("settings.closeToTray", { defaultValue: "关闭到托盘" })}
@@ -258,26 +267,6 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            {t("settings.tabIndentSize", { defaultValue: "Tab 缩进宽��" })}
-          </label>
-          <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
-            <input
-              type="range"
-              min={1}
-              max={8}
-              step={1}
-              value={config.tabIndentSize ?? 2}
-              onChange={(event) => setConfigValue("tabIndentSize", Number(event.target.value))}
-              className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
-            />
-            <span className="text-[12px] font-mono text-ink-soft tabular-nums w-10 text-right">
-              {config.tabIndentSize ?? 2}
-            </span>
-          </div>
-        </section>
-
-        <section className="space-y-2">
-          <label className="block text-[11px] font-body text-ink-faint">
             {t("settings.tileColor.label", { defaultValue: "磁贴颜色" })}
           </label>
           <SlidingButtonGroup
@@ -346,6 +335,97 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
   );
 }
 
+function UpdateSection() {
+  const { t } = useTranslation();
+  const [status, setStatus] = useState<UpdateStatus>("idle");
+  const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+  const [message, setMessage] = useState("");
+
+  const checkUpdate = async (manual = false) => {
+    setStatus("checking");
+    setMessage(t("settings.updates.checking", { defaultValue: "正在检查 GitHub 更新..." }));
+
+    try {
+      const nextUpdate = await checkForGitHubUpdate();
+      setUpdateInfo(nextUpdate);
+
+      if (nextUpdate) {
+        setStatus("available");
+        setMessage(
+          t("settings.updates.available", {
+            version: nextUpdate.latestVersion,
+            defaultValue: "发现新版本 v{{version}}",
+          }),
+        );
+      } else {
+        setStatus("current");
+        setMessage(
+          t("settings.updates.current", {
+            version: CURRENT_VERSION,
+            defaultValue: "当前已是最新版本 v{{version}}",
+          }),
+        );
+      }
+    } catch {
+      setStatus("error");
+      setMessage(
+        manual
+          ? t("settings.updates.error", { defaultValue: "检查失败，请稍后重试" })
+          : "",
+      );
+    }
+  };
+
+  useEffect(() => {
+    void checkUpdate(false);
+  }, []);
+
+  const statusClass =
+    status === "available"
+      ? "text-bamboo"
+      : status === "error"
+        ? "text-red-400"
+        : "text-ink-ghost";
+
+  return (
+    <section className="space-y-2">
+      <label className="block text-[11px] font-body text-ink-faint">
+        {t("settings.updates.title", { defaultValue: "软件更新" })}
+      </label>
+      <div className="rounded-lg bg-paper-warm/45 border border-paper-deep/25 px-2.5 py-2 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-[12px] text-ink-soft">
+            {t("settings.updates.currentVersion", {
+              version: CURRENT_VERSION,
+              defaultValue: "当前版本 v{{version}}",
+            })}
+          </span>
+          <button
+            type="button"
+            disabled={status === "checking"}
+            onClick={() => void checkUpdate(true)}
+            className="h-7 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap"
+          >
+            {status === "checking"
+              ? t("settings.updates.checkingShort", { defaultValue: "检查中" })
+              : t("settings.updates.check", { defaultValue: "检查更新" })}
+          </button>
+        </div>
+        {message && <p className={`text-[11px] leading-relaxed ${statusClass}`}>{message}</p>}
+        {updateInfo && (
+          <button
+            type="button"
+            onClick={() => void openUpdateDownload(updateInfo)}
+            className="w-full h-8 rounded-lg bg-bamboo text-cloud text-[12px] font-medium hover:bg-bamboo-light transition-colors cursor-pointer"
+          >
+            {t("settings.updates.download", { defaultValue: "下载并安装新版本" })}
+          </button>
+        )}
+      </div>
+    </section>
+  );
+}
+
 interface ToggleRowProps {
   label: string;
   checked: boolean;
@@ -382,24 +462,16 @@ interface ShortcutRecorderProps {
   onChange: (value: string) => void;
 }
 
-type ShortcutMsg = { key: string; params?: Record<string, string> } | { raw: string };
-
 function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const { t } = useTranslation();
   const [heldKeys, setHeldKeys] = useState<string[]>([]);
   const [checkState, setCheckState] = useState<"idle" | "checking" | "ok" | "warning" | "error">(
     "idle",
   );
-  const [checkMsg, setCheckMsg] = useState<ShortcutMsg>({
-    key: "settings.shortcut.forQuickNote",
-  });
+  const [checkMessage, setCheckMessage] = useState("用于打开快捷记录小窗");
   const shortcutCheckRequestId = useRef(0);
   const isMounted = useRef(true);
   const platform = shortcutPlatform();
-
-  const resolveMsg = (msg: ShortcutMsg): string =>
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    "raw" in msg ? msg.raw : (t as any)(msg.key, msg.params);
 
   useEffect(() => {
     isMounted.current = true;
@@ -420,30 +492,24 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     const requestId = shortcutCheckRequestId.current + 1;
     shortcutCheckRequestId.current = requestId;
     setCheckState("checking");
-    setCheckMsg({ key: "settings.shortcut.checking" });
+    setCheckMessage("正在检测快捷键...");
     try {
       const result = await checkGlobalShortcut(shortcut);
       if (!isCurrentShortcutCheck(requestId)) return;
-      const conflictMsg: ShortcutMsg = {
-        key: `settings.shortcut.conflict.${result.conflictType}`,
-        params: { shortcut },
-      };
       if (result.available) {
         setCheckState("ok");
-        setCheckMsg(conflictMsg);
+        setCheckMessage(result.message);
         if (saveWhenAvailable) {
           onChange(shortcut);
         }
       } else {
         setCheckState("warning");
-        setCheckMsg(conflictMsg);
+        setCheckMessage(result.message);
       }
     } catch (error) {
       if (!isCurrentShortcutCheck(requestId)) return;
       setCheckState("error");
-      setCheckMsg(
-        error instanceof Error ? { raw: error.message } : { key: "settings.shortcut.checkFailed" },
-      );
+      setCheckMessage(error instanceof Error ? error.message : "快捷键检测失败");
     }
   };
 
@@ -453,14 +519,14 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
         invalidateShortcutChecks();
         onChange("");
         setCheckState("idle");
-        setCheckMsg({ key: "settings.shortcut.cleared" });
+        setCheckMessage("快捷键已清空");
       } else if (isValidGlobalShortcut(hotkey)) {
         const nextShortcut = hotkeyToConfigString(hotkey, platform);
         void runShortcutCheck(nextShortcut, true);
       } else {
         invalidateShortcutChecks();
         setCheckState("warning");
-        setCheckMsg({ key: "settings.shortcut.needsModifier" });
+        setCheckMessage("快捷键需要包含 Ctrl、Option/Alt 或 Command/Meta");
       }
     },
   });
@@ -576,7 +642,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
             : t("settings.shortcut.check", { defaultValue: "检测" })}
         </button>
       </div>
-      <p className={`min-h-4 text-[11px] ${statusClass}`}>{resolveMsg(checkMsg)}</p>
+      <p className={`min-h-4 text-[11px] ${statusClass}`}>{checkMessage}</p>
     </div>
   );
 }

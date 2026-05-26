@@ -16,6 +16,11 @@ import { normalizeTileColor } from "../features/settings/tileColor";
 import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
+  checkForGitHubUpdate,
+  openUpdateDownload,
+  type UpdateInfo,
+} from "../features/updates/api";
+import {
   createNote,
   createCategory,
   deleteCategory,
@@ -319,13 +324,13 @@ export function MainWindow({
   const [categoryMenu, setCategoryMenu] = useState<CategoryMenuState | null>(null);
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
+  const [availableUpdate, setAvailableUpdate] = useState<UpdateInfo | null>(null);
+  const [updateBannerDismissed, setUpdateBannerDismissed] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
   const saveStateRef = useRef(saveState);
   saveStateRef.current = saveState;
-  const selectedIdRef = useRef(selectedId);
-  selectedIdRef.current = selectedId;
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -574,14 +579,12 @@ export function MainWindow({
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
       void refreshNotes().then((loaded) => {
-        const currentId = selectedIdRef.current;
-        if (!currentId) return;
-        const stillExists = loaded.some((n) => n.id === currentId);
+        if (!selectedId) return;
+        const stillExists = loaded.some((n) => n.id === selectedId);
         if (stillExists) {
           if (saveStateRef.current !== "dirty") {
-            void getNote(currentId)
+            void getNote(selectedId)
               .then((note) => {
-                if (selectedIdRef.current !== currentId) return;
                 setTitle(note.title);
                 setContent(note.content);
                 setSaveState("saved");
@@ -600,7 +603,7 @@ export function MainWindow({
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [refreshNotes, loadNote, clearCurrentNote]);
+  }, [refreshNotes, selectedId, loadNote, clearCurrentNote]);
 
   useEffect(() => {
     function handleFocus() {
@@ -634,6 +637,22 @@ export function MainWindow({
     });
     return () => {
       void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    void checkForGitHubUpdate()
+      .then((update) => {
+        if (!cancelled && update) {
+          setAvailableUpdate(update);
+        }
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
     };
   }, []);
 
@@ -793,9 +812,6 @@ export function MainWindow({
 
   const handleNewNote = async () => {
     setErrorMessage(null);
-    if (saveState === "dirty") {
-      await saveCurrentNote();
-    }
     try {
       const note = await createNote({ title: "", content: "", category: activeCategory });
       replaceNoteMetadata(note);
@@ -1361,6 +1377,44 @@ export function MainWindow({
             </button>
           </div>
         </div>
+
+        {availableUpdate && !updateBannerDismissed && (
+          <div className="h-10 shrink-0 flex items-center justify-between gap-3 px-4 bg-bamboo-mist/70 border-b border-bamboo/20">
+            <span className="min-w-0 text-[12px] text-ink-soft truncate">
+              {t("main.updates.available", {
+                version: availableUpdate.latestVersion,
+                defaultValue: "发现新版本 v{{version}}，可从 GitHub 下载更新。",
+              })}
+            </span>
+            <div className="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                onClick={() => void openUpdateDownload(availableUpdate)}
+                className="h-7 px-3 rounded-lg bg-bamboo text-cloud text-[11px] font-medium hover:bg-bamboo-light transition-colors cursor-pointer"
+              >
+                {t("main.updates.download", { defaultValue: "下载更新" })}
+              </button>
+              <button
+                type="button"
+                onClick={() => setUpdateBannerDismissed(true)}
+                className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-soft hover:bg-paper-warm/70 transition-colors cursor-pointer"
+                title={t("common.cancel", { defaultValue: "取消" })}
+              >
+                <svg
+                  width="11"
+                  height="11"
+                  viewBox="0 0 12 12"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="1.5"
+                  strokeLinecap="round"
+                >
+                  <path d="M2 2l8 8M10 2l-8 8" />
+                </svg>
+              </button>
+            </div>
+          </div>
+        )}
 
         <div className="flex flex-1 min-h-0">
           <div
@@ -2134,17 +2188,13 @@ export function MainWindow({
                       <div className="flex-1 overflow-hidden px-5 pb-4">
                         <textarea
                           ref={contentRef}
-                          data-tab-indent="true"
                           value={content}
                           onChange={(event) => {
                             setContent(event.target.value);
                             markDirty();
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-body placeholder:text-ink-ghost/40"
-                          style={{
-                            fontSize: `${settingsConfig?.fontSize ?? 14}px`,
-                            tabSize: `var(--tab-indent-size, 2)`,
-                          }}
+                          style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
                           placeholder={t("main.editor.contentPlaceholder", {
                             defaultValue: "开始写作……",
                           })}

@@ -128,6 +128,10 @@
       "quickNotepad": "Quick Note",
       "restore": "Restore",
       "settings": "Settings"
+    },
+    "updates": {
+      "available": "Version v{{version}} is available from GitHub.",
+      "download": "Download update"
     }
   },
   "noteMenu": {
@@ -194,24 +198,10 @@
     "notesDir": "Notes directory",
     "quickNoteShortcut": "Quick Note shortcut",
     "rememberSurfaceSize": "Remember surface size",
-    "tabIndentSize": "Tab indent width",
     "selectFolder": "Select Folder",
     "shortcut": {
       "cancelHint": "Esc to cancel",
-      "checkFailed": "Shortcut check failed",
-      "checking": "Checking shortcut...",
-      "cleared": "Shortcut cleared",
       "clickToRecord": "Click to record",
-      "conflict": {
-        "current": "Shortcut {{shortcut}} is currently in use",
-        "invalid": "Shortcut {{shortcut}} is not supported",
-        "none": "No conflict detected for {{shortcut}}",
-        "registered": "Shortcut {{shortcut}} may be occupied by the system or another app",
-        "system": "Shortcut {{shortcut}} conflicts with a system shortcut",
-        "unknown": "Check completed, but failed to release temporary shortcut"
-      },
-      "forQuickNote": "Opens the Quick Note window",
-      "needsModifier": "Shortcut must include Ctrl, Option/Alt, or Command/Meta",
       "notSet": "Not set",
       "pressHint": "Press shortcut...; press Delete to clear."
     },
@@ -229,7 +219,18 @@
     "tileCtrlClose": "Ctrl+Right-click to close tile",
     "tileRenderMarkdown": "Render Markdown on tile",
     "title": "Settings",
-    "visibilityShortcut": "Show/Hide window shortcut"
+    "visibilityShortcut": "Show/Hide window shortcut",
+    "updates": {
+      "available": "Version v{{version}} is available",
+      "check": "Check for updates",
+      "checking": "Checking GitHub for updates...",
+      "checkingShort": "Checking",
+      "current": "You are on the latest version v{{version}}",
+      "currentVersion": "Current version v{{version}}",
+      "download": "Download and install new version",
+      "error": "Update check failed. Please try again later.",
+      "title": "Software update"
+    }
   },
   "tile": {
     "empty": "Empty"
