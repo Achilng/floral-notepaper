@@ -335,7 +335,9 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             <input
               type="text"
               value={
-                config.backgroundImagePath ||
+                (config.backgroundImagePath &&
+                  (localStorage.getItem("backgroundImageName") ||
+                    config.backgroundImagePath.split(/[/\\]/).pop())) ||
                 t("settings.background.default", { defaultValue: "默认背景" })
               }
               readOnly
@@ -346,9 +348,11 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
               onClick={() => {
                 void chooseBackgroundImage().then(async (path) => {
                   if (!path) return;
+                  const originalName = path.split(/[/\\]/).pop() ?? "";
                   const saved = await invoke<string>("copy_background_image", {
                     sourcePath: path,
                   });
+                  localStorage.setItem("backgroundImageName", originalName);
                   setConfigValue("backgroundImagePath", saved);
                 });
               }}
@@ -356,16 +360,19 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             >
               {t("settings.background.choose", { defaultValue: "选择" })}
             </button>
+            {config.backgroundImagePath && (
+              <button
+                type="button"
+                onClick={() => {
+                  localStorage.removeItem("backgroundImageName");
+                  setConfigValue("backgroundImagePath", "");
+                }}
+                className="h-8 px-3 rounded-lg border border-red-400/40 text-[11px] text-red-400 hover:bg-red-400/10 transition-colors cursor-pointer"
+              >
+                {t("settings.background.clear", { defaultValue: "清除" })}
+              </button>
+            )}
           </div>
-          {config.backgroundImagePath && (
-            <button
-              type="button"
-              onClick={() => setConfigValue("backgroundImagePath", "")}
-              className="text-[11px] text-ink-ghost hover:text-red-400 transition-colors cursor-pointer"
-            >
-              {t("settings.background.clear", { defaultValue: "清除背景图片" })}
-            </button>
-          )}
           <SlidingButtonGroup
             options={backgroundFits}
             value={config.backgroundFit ?? "cover"}
@@ -375,8 +382,8 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             label={t("settings.background.dim", { defaultValue: "遮罩" })}
             value={config.backgroundDim ?? 0.25}
             min={0}
-            max={0.85}
-            step={0.05}
+            max={1}
+            step={0.01}
             format={(value) => `${Math.round(value * 100)}%`}
             onChange={(value) => setConfigValue("backgroundDim", value)}
           />
@@ -411,7 +418,7 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             label={t("settings.background.blur", { defaultValue: "模糊" })}
             value={config.backgroundBlur ?? 0}
             min={0}
-            max={16}
+            max={20}
             step={1}
             format={(value) => `${value}px`}
             onChange={(value) => setConfigValue("backgroundBlur", value)}

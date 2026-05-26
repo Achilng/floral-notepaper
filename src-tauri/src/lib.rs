@@ -5,7 +5,7 @@ pub mod services;
 use locales::Locale;
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
 use std::{fs, path::PathBuf};
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{AppHandle, Emitter};
 
 #[tauri::command]
 fn app_name() -> Result<String, AppError> {
@@ -147,7 +147,7 @@ fn config_get() -> Result<AppConfig, AppError> {
 }
 
 #[tauri::command]
-fn copy_background_image(app: AppHandle, source_path: String) -> Result<String, AppError> {
+fn copy_background_image(_app: AppHandle, source_path: String) -> Result<String, AppError> {
     let source = PathBuf::from(source_path.trim());
     if !source.is_file() {
         return Err(AppError {
@@ -157,13 +157,17 @@ fn copy_background_image(app: AppHandle, source_path: String) -> Result<String, 
         });
     }
 
-    let app_data = app.path().app_data_dir().map_err(|error| AppError {
-        code: "path".into(),
-        message: error.to_string(),
-        details: Default::default(),
-    })?;
-    let dir = app_data.join("backgrounds");
+    let store = default_store()?;
+    let dir = store.base_dir().join("backgrounds");
     fs::create_dir_all(&dir)?;
+
+    let old_config = store.load_config()?;
+    if !old_config.background_image_path.is_empty() {
+        let old_path = PathBuf::from(&old_config.background_image_path);
+        if old_path.starts_with(&dir) && old_path.is_file() {
+            let _ = fs::remove_file(&old_path);
+        }
+    }
 
     let ext = source
         .extension()

@@ -13,8 +13,8 @@ export function BackgroundLayer({ config }: BackgroundLayerProps) {
   if (!rawPath) return null;
 
   const fit = config?.backgroundFit ?? "cover";
-  const dim = Math.max(0, Math.min(0.85, config?.backgroundDim ?? 0.25));
-  const blur = Math.max(0, Math.min(16, config?.backgroundBlur ?? 0));
+  const dim = Math.max(0, Math.min(1, config?.backgroundDim ?? 0.25));
+  const blur = Math.max(0, Math.min(20, config?.backgroundBlur ?? 0));
   const scale = Math.max(0.5, Math.min(2, config?.backgroundScale ?? 1));
   const positionX = Math.max(0, Math.min(100, config?.backgroundPositionX ?? 50));
   const positionY = Math.max(0, Math.min(100, config?.backgroundPositionY ?? 50));
@@ -22,7 +22,8 @@ export function BackgroundLayer({ config }: BackgroundLayerProps) {
   const imageStyle = {
     objectPosition: `${positionX}% ${positionY}%` as const,
     filter: blur > 0 ? `blur(${blur}px)` : undefined,
-    transform: `scale(${blur > 0 ? scale * 1.03 : scale})`,
+    // CSS blur samples beyond image edges, causing pale fringes. No clean fix yet.
+    transform: `scale(${scale})`,
     transformOrigin: `${positionX}% ${positionY}%`,
   };
 
