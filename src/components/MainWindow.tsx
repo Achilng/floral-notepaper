@@ -312,6 +312,7 @@ export function MainWindow({
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameCategoryValue, setRenameCategoryValue] = useState("");
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
+  const [settingsOverlay, setSettingsOverlay] = useState(() => window.innerWidth < 1080);
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [splitRatio, setSplitRatio] = useState(0.5);
@@ -610,6 +611,12 @@ export function MainWindow({
     window.addEventListener("focus", handleFocus);
     return () => window.removeEventListener("focus", handleFocus);
   }, [refreshNotes]);
+
+  useEffect(() => {
+    const onResize = () => setSettingsOverlay(window.innerWidth < 1080);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   useEffect(() => {
     const unlisten = listen<string>("open-external-file", (event) => {
@@ -2226,10 +2233,15 @@ export function MainWindow({
               </div>
             </div>
           </div>
+          {settingsConfig && settingsOpen && settingsOverlay && (
+            <div className="absolute inset-0 z-20" onClick={handleCloseSettings} />
+          )}
           {settingsConfig && (
             <div
-              className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden h-full ${
-                settingsOpen ? "w-[360px]" : "w-0"
+              className={`transition-all duration-[600ms] overflow-hidden h-full ${
+                settingsOverlay
+                  ? `absolute right-0 top-0 bottom-0 z-30 ${settingsOpen ? "w-[360px] shadow-xl" : "w-0"}`
+                  : `relative shrink-0 ${settingsOpen ? "w-[360px]" : "w-0"}`
               }`}
             >
               <div className="w-[360px] h-full">
