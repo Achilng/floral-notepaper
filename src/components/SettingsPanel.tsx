@@ -267,6 +267,26 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
+            {t("settings.tabIndentSize", { defaultValue: "Tab 缩进宽度" })}
+          </label>
+          <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
+            <input
+              type="range"
+              min={1}
+              max={8}
+              step={1}
+              value={config.tabIndentSize ?? 2}
+              onChange={(event) => setConfigValue("tabIndentSize", Number(event.target.value))}
+              className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
+            />
+            <span className="text-[12px] font-mono text-ink-soft tabular-nums w-10 text-right">
+              {config.tabIndentSize ?? 2}
+            </span>
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
             {t("settings.tileColor.label", { defaultValue: "磁贴颜色" })}
           </label>
           <SlidingButtonGroup
@@ -369,9 +389,7 @@ function UpdateSection() {
     } catch {
       setStatus("error");
       setMessage(
-        manual
-          ? t("settings.updates.error", { defaultValue: "检查失败，请稍后重试" })
-          : "",
+        manual ? t("settings.updates.error", { defaultValue: "检查失败，请稍后重试" }) : "",
       );
     }
   };
@@ -381,11 +399,7 @@ function UpdateSection() {
   }, []);
 
   const statusClass =
-    status === "available"
-      ? "text-bamboo"
-      : status === "error"
-        ? "text-red-400"
-        : "text-ink-ghost";
+    status === "available" ? "text-bamboo" : status === "error" ? "text-red-400" : "text-ink-ghost";
 
   return (
     <section className="space-y-2">
@@ -462,16 +476,24 @@ interface ShortcutRecorderProps {
   onChange: (value: string) => void;
 }
 
+type ShortcutMsg = { key: string; params?: Record<string, string> } | { raw: string };
+
 function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const { t } = useTranslation();
   const [heldKeys, setHeldKeys] = useState<string[]>([]);
   const [checkState, setCheckState] = useState<"idle" | "checking" | "ok" | "warning" | "error">(
     "idle",
   );
-  const [checkMessage, setCheckMessage] = useState("用于打开快捷记录小窗");
+  const [checkMsg, setCheckMsg] = useState<ShortcutMsg>({
+    key: "settings.shortcut.forQuickNote",
+  });
   const shortcutCheckRequestId = useRef(0);
   const isMounted = useRef(true);
   const platform = shortcutPlatform();
+
+  const resolveMsg = (msg: ShortcutMsg): string =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    "raw" in msg ? msg.raw : (t as any)(msg.key, msg.params);
 
   useEffect(() => {
     isMounted.current = true;
@@ -492,24 +514,30 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     const requestId = shortcutCheckRequestId.current + 1;
     shortcutCheckRequestId.current = requestId;
     setCheckState("checking");
-    setCheckMessage("正在检测快捷键...");
+    setCheckMsg({ key: "settings.shortcut.checking" });
     try {
       const result = await checkGlobalShortcut(shortcut);
       if (!isCurrentShortcutCheck(requestId)) return;
+      const conflictMsg: ShortcutMsg = {
+        key: `settings.shortcut.conflict.${result.conflictType}`,
+        params: { shortcut },
+      };
       if (result.available) {
         setCheckState("ok");
-        setCheckMessage(result.message);
+        setCheckMsg(conflictMsg);
         if (saveWhenAvailable) {
           onChange(shortcut);
         }
       } else {
         setCheckState("warning");
-        setCheckMessage(result.message);
+        setCheckMsg(conflictMsg);
       }
     } catch (error) {
       if (!isCurrentShortcutCheck(requestId)) return;
       setCheckState("error");
-      setCheckMessage(error instanceof Error ? error.message : "快捷键检测失败");
+      setCheckMsg(
+        error instanceof Error ? { raw: error.message } : { key: "settings.shortcut.checkFailed" },
+      );
     }
   };
 
@@ -519,14 +547,14 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
         invalidateShortcutChecks();
         onChange("");
         setCheckState("idle");
-        setCheckMessage("快捷键已清空");
+        setCheckMsg({ key: "settings.shortcut.cleared" });
       } else if (isValidGlobalShortcut(hotkey)) {
         const nextShortcut = hotkeyToConfigString(hotkey, platform);
         void runShortcutCheck(nextShortcut, true);
       } else {
         invalidateShortcutChecks();
         setCheckState("warning");
-        setCheckMessage("快捷键需要包含 Ctrl、Option/Alt 或 Command/Meta");
+        setCheckMsg({ key: "settings.shortcut.needsModifier" });
       }
     },
   });
@@ -642,7 +670,7 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
             : t("settings.shortcut.check", { defaultValue: "检测" })}
         </button>
       </div>
-      <p className={`min-h-4 text-[11px] ${statusClass}`}>{checkMessage}</p>
+      <p className={`min-h-4 text-[11px] ${statusClass}`}>{resolveMsg(checkMsg)}</p>
     </div>
   );
 }

@@ -15,11 +15,7 @@ import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
 import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
-import {
-  checkForGitHubUpdate,
-  openUpdateDownload,
-  type UpdateInfo,
-} from "../features/updates/api";
+import { checkForGitHubUpdate, openUpdateDownload, type UpdateInfo } from "../features/updates/api";
 import {
   createNote,
   createCategory,
@@ -331,6 +327,8 @@ export function MainWindow({
   const lastExternalSaveRef = useRef<number>(0);
   const saveStateRef = useRef(saveState);
   saveStateRef.current = saveState;
+  const selectedIdRef = useRef(selectedId);
+  selectedIdRef.current = selectedId;
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -579,12 +577,14 @@ export function MainWindow({
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
       void refreshNotes().then((loaded) => {
-        if (!selectedId) return;
-        const stillExists = loaded.some((n) => n.id === selectedId);
+        const currentId = selectedIdRef.current;
+        if (!currentId) return;
+        const stillExists = loaded.some((n) => n.id === currentId);
         if (stillExists) {
           if (saveStateRef.current !== "dirty") {
-            void getNote(selectedId)
+            void getNote(currentId)
               .then((note) => {
+                if (selectedIdRef.current !== currentId) return;
                 setTitle(note.title);
                 setContent(note.content);
                 setSaveState("saved");
@@ -603,7 +603,7 @@ export function MainWindow({
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [refreshNotes, selectedId, loadNote, clearCurrentNote]);
+  }, [refreshNotes, loadNote, clearCurrentNote]);
 
   useEffect(() => {
     function handleFocus() {
@@ -812,6 +812,9 @@ export function MainWindow({
 
   const handleNewNote = async () => {
     setErrorMessage(null);
+    if (saveState === "dirty") {
+      await saveCurrentNote();
+    }
     try {
       const note = await createNote({ title: "", content: "", category: activeCategory });
       replaceNoteMetadata(note);
@@ -2188,13 +2191,17 @@ export function MainWindow({
                       <div className="flex-1 overflow-hidden px-5 pb-4">
                         <textarea
                           ref={contentRef}
+                          data-tab-indent="true"
                           value={content}
                           onChange={(event) => {
                             setContent(event.target.value);
                             markDirty();
                           }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-body placeholder:text-ink-ghost/40"
-                          style={{ fontSize: `${settingsConfig?.fontSize ?? 14}px` }}
+                          style={{
+                            fontSize: `${settingsConfig?.fontSize ?? 14}px`,
+                            tabSize: `var(--tab-indent-size, 2)`,
+                          }}
                           placeholder={t("main.editor.contentPlaceholder", {
                             defaultValue: "开始写作……",
                           })}

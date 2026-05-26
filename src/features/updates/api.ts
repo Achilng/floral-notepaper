@@ -81,14 +81,18 @@ function chooseReleaseAssetUrl(assets: GitHubReleaseAsset[]): string {
 
   const preferred = candidates.find((asset) => {
     if (isWindows) {
-      return asset.name.endsWith(".exe") || asset.name.endsWith(".msi") || asset.name.includes("setup");
+      return (
+        asset.name.endsWith(".exe") || asset.name.endsWith(".msi") || asset.name.includes("setup")
+      );
     }
 
     if (isMac) {
       return asset.name.endsWith(".dmg") || asset.name.endsWith(".app.tar.gz");
     }
 
-    return asset.name.endsWith(".appimage") || asset.name.endsWith(".deb") || asset.name.endsWith(".rpm");
+    return (
+      asset.name.endsWith(".appimage") || asset.name.endsWith(".deb") || asset.name.endsWith(".rpm")
+    );
   });
 
   return preferred?.url ?? candidates[0]?.url ?? "";
