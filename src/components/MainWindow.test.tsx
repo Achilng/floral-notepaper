@@ -21,6 +21,7 @@ describe("MainWindow settings", () => {
           theme: "light",
           fontSize: 14,
           surfaceFontSize: 14,
+          tabIndentSize: 2,
           externalFileAutoSave: true,
           rememberSurfaceSize: true,
           tileCtrlClose: true,

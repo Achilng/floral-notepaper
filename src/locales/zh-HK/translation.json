@@ -195,6 +195,7 @@
     "openAtCursor": "快捷鍵開啟時跟隨滑鼠位置",
     "quickNoteShortcut": "快捷記錄快捷鍵",
     "rememberSurfaceSize": "記住小窗尺寸",
+    "tabIndentSize": "Tab 縮排寬度",
     "selectFolder": "選擇資料夾",
     "shortcut": {
       "cancelHint": "Esc 取消",
@@ -229,7 +230,23 @@
     "tileCtrlClose": "Ctrl+右鍵快速關閉磁貼",
     "tileRenderMarkdown": "磁貼渲染 Markdown",
     "title": "應用程式設定",
-    "visibilityShortcut": "顯示／隱藏視窗快捷鍵"
+    "visibilityShortcut": "顯示／隱藏視窗快捷鍵",
+    "background": {
+      "label": "背景圖片",
+      "default": "預設背景",
+      "choose": "選擇",
+      "clear": "清除背景圖片",
+      "dim": "遮罩",
+      "scale": "縮放",
+      "positionX": "橫向",
+      "positionY": "縱向",
+      "blur": "模糊",
+      "fit": {
+        "cover": "填充",
+        "contain": "完整",
+        "repeat": "平鋪"
+      }
+    }
   },
   "tile": {
     "empty": "空"

@@ -3,6 +3,7 @@ export type ViewMode = "edit" | "split" | "preview";
 export type ThemeOption = "light" | "dark" | "system";
 
 export type TileColorMode = "system" | "custom";
+export type BackgroundFit = "cover" | "contain" | "repeat";
 
 export interface AppConfig {
   locale: string;
@@ -18,6 +19,7 @@ export interface AppConfig {
   theme: ThemeOption;
   fontSize: number;
   surfaceFontSize: number;
+  tabIndentSize: number;
   externalFileAutoSave: boolean;
   rememberSurfaceSize: boolean;
   tileCtrlClose: boolean;
@@ -26,4 +28,11 @@ export interface AppConfig {
   surfaceHeight?: number;
   toggleVisibilityShortcut: string;
   openAtCursor: boolean;
+  backgroundImagePath?: string;
+  backgroundFit?: BackgroundFit;
+  backgroundDim?: number;
+  backgroundBlur?: number;
+  backgroundScale?: number;
+  backgroundPositionX?: number;
+  backgroundPositionY?: number;
 }

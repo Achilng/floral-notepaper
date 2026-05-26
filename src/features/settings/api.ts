@@ -29,6 +29,16 @@ export async function chooseNotesDirectory(): Promise<string | null> {
   return typeof path === "string" ? path : null;
 }
 
+export async function chooseBackgroundImage(): Promise<string | null> {
+  const path = await open({
+    directory: false,
+    multiple: false,
+    filters: [{ name: "Images", extensions: ["png", "jpg", "jpeg", "webp", "gif"] }],
+  });
+
+  return typeof path === "string" ? path : null;
+}
+
 export function normalizeViewMode(value: string): ViewMode {
   if (value === "edit" || value === "split" || value === "preview") {
     return value;

@@ -16,6 +16,7 @@ const config = {
   theme: "light" as const,
   fontSize: 14,
   surfaceFontSize: 14,
+  tabIndentSize: 2,
   externalFileAutoSave: true,
   rememberSurfaceSize: true,
   tileCtrlClose: true,
@@ -45,6 +46,7 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("开机自启");
     expect(markup).toContain("自动保存笔记");
     expect(markup).toContain("小窗笔记自动保存");
+    expect(markup).toContain("Tab 缩进宽度");
     expect(markup).toContain("磁贴颜色");
     expect(markup).toContain("跟随主题");
     expect(markup).toContain("自定义");
