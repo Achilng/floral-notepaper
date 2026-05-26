@@ -220,9 +220,11 @@ impl RuntimeState {
         }
 
         if let Ok(mut guard) = self.hidden_window_labels.lock() {
-            guard.retain(|hidden_label| hidden_label != label);
-            if guard.is_empty() {
-                self.windows_hidden.store(false, Ordering::SeqCst);
+            if let Some(index) = guard.iter().position(|hidden_label| hidden_label == label) {
+                guard.remove(index);
+                if guard.is_empty() {
+                    self.windows_hidden.store(false, Ordering::SeqCst);
+                }
             }
         }
     }
@@ -515,6 +517,8 @@ fn toggle_app_visibility(app: &AppHandle) {
             if let Some(window) = app.get_webview_window(&label) {
                 let _ = window.set_focus();
             }
+        } else if let Err(error) = show_main_window(app) {
+            eprintln!("failed to show main window from visibility shortcut: {error}");
         }
         return;
     }
@@ -618,6 +622,7 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
 
 pub fn handle_window_event(window: &Window, event: &WindowEvent) {
     if matches!(event, WindowEvent::Destroyed) {
+        untrack_hidden_window(window.app_handle(), window.label());
         if let Some(note_id) = window.label().strip_prefix("tile-") {
             let _ = window
                 .app_handle()
