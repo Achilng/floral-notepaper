@@ -214,6 +214,19 @@ impl RuntimeState {
             .ok()
     }
 
+    fn remove_hidden_window_label(&self, label: &str) {
+        if !self.windows_hidden.load(Ordering::SeqCst) {
+            return;
+        }
+
+        if let Ok(mut guard) = self.hidden_window_labels.lock() {
+            guard.retain(|hidden_label| hidden_label != label);
+            if guard.is_empty() {
+                self.windows_hidden.store(false, Ordering::SeqCst);
+            }
+        }
+    }
+
     fn hide_windows(&self, labels: Vec<String>) {
         if labels.is_empty() {
             self.clear_hidden_windows();
@@ -475,21 +488,9 @@ pub fn runtime_config_changes(previous: &AppConfig, next: &AppConfig) -> Runtime
     }
 }
 
-fn clear_hidden_window_state(app: &AppHandle) {
-    let labels = app
-        .try_state::<RuntimeState>()
-        .and_then(|state| state.take_hidden_window_labels());
-
-    let Some(labels) = labels else {
-        return;
-    };
-
-    for label in &labels {
-        if label.starts_with("notepad-") || label.starts_with("tile-") {
-            if let Some(window) = app.get_webview_window(label) {
-                let _ = window.close();
-            }
-        }
+fn untrack_hidden_window(app: &AppHandle, label: &str) {
+    if let Some(state) = app.try_state::<RuntimeState>() {
+        state.remove_hidden_window_label(label);
     }
 }
 
@@ -525,6 +526,14 @@ fn toggle_app_visibility(app: &AppHandle) {
             let _ = window.hide();
         }
     }
+
+    if labels.is_empty() {
+        if let Err(error) = show_main_window(app) {
+            eprintln!("failed to show main window from visibility shortcut: {error}");
+        }
+        return;
+    }
+
     state.hide_windows(labels);
 }
 
@@ -734,10 +743,10 @@ fn toggle_close_to_tray(_app: &AppHandle) -> Result<AppConfig, Box<dyn Error>> {
 }
 
 pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
-    clear_hidden_window_state(app);
     let locale = configured_locale();
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        untrack_hidden_window(app, MAIN_WINDOW_LABEL);
         window.set_title(locales::main_window_title(locale))?;
         window.unminimize()?;
         window.show()?;
@@ -779,7 +788,7 @@ fn open_notepad_window_now(
 ) -> Result<String, AppError> {
     if note_id.is_none() {
         if let Some(reused) = activate_pooled_notepad(app, bounds) {
-            clear_hidden_window_state(app);
+            untrack_hidden_window(app, &reused);
             return Ok(reused);
         }
     }
@@ -1122,11 +1131,10 @@ fn open_or_focus_window(
     label: &str,
     opts: WindowOpenOptions,
 ) -> Result<String, AppError> {
-    clear_hidden_window_state(app);
-
     let visual_options = dynamic_window_visual_options(label);
 
     if let Some(window) = app.get_webview_window(label) {
+        untrack_hidden_window(app, label);
         window.set_title(&opts.title)?;
         apply_window_bounds(&window, opts.bounds)?;
         window.set_shadow(opts.shadow)?;
@@ -1816,6 +1824,7 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            open_at_cursor: true,
             tile_ctrl_close: true,
             tile_render_markdown: false,
             surface_width: None,
@@ -1865,6 +1874,7 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            open_at_cursor: true,
             tile_ctrl_close: true,
             tile_render_markdown: false,
             surface_width: None,
@@ -1895,6 +1905,7 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            open_at_cursor: true,
             tile_ctrl_close: true,
             tile_render_markdown: false,
             surface_width: None,
@@ -1918,6 +1929,36 @@ mod tests {
                 toggle_visibility_shortcut_changed: false,
             }
         );
+    }
+
+    #[test]
+    fn untracks_reopened_hidden_window_without_discarding_others() {
+        let state = RuntimeState::default();
+        state.hide_windows(vec![
+            MAIN_WINDOW_LABEL.to_string(),
+            "notepad-existing".to_string(),
+            "tile-existing".to_string(),
+        ]);
+
+        state.remove_hidden_window_label(MAIN_WINDOW_LABEL);
+
+        assert_eq!(
+            state.take_hidden_window_labels(),
+            Some(vec![
+                "notepad-existing".to_string(),
+                "tile-existing".to_string(),
+            ])
+        );
+    }
+
+    #[test]
+    fn untracking_last_hidden_window_clears_hidden_state() {
+        let state = RuntimeState::default();
+        state.hide_windows(vec![MAIN_WINDOW_LABEL.to_string()]);
+
+        state.remove_hidden_window_label(MAIN_WINDOW_LABEL);
+
+        assert_eq!(state.take_hidden_window_labels(), None);
     }
 
     #[test]
