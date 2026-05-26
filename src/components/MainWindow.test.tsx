@@ -27,6 +27,7 @@ describe("MainWindow settings", () => {
           tileCtrlClose: true,
           toggleVisibilityShortcut: "",
           tileRenderMarkdown: false,
+          openAtCursor: true,
         }}
       />,
     );

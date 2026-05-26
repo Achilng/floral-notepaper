@@ -192,6 +192,7 @@
       "zhHK": "繁體中文"
     },
     "notesDir": "笔记目录",
+    "openAtCursor": "快捷键打开时跟随鼠标位置",
     "quickNoteShortcut": "快捷记录快捷键",
     "rememberSurfaceSize": "记住小窗尺寸",
     "tabIndentSize": "Tab 缩进宽度",

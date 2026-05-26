@@ -74,6 +74,8 @@ pub struct AppConfig {
     pub surface_height: Option<u32>,
     #[serde(default = "default_toggle_visibility_shortcut")]
     pub toggle_visibility_shortcut: String,
+    #[serde(default = "default_open_at_cursor")]
+    pub open_at_cursor: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -686,6 +688,7 @@ impl NoteStore {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
+            open_at_cursor: default_open_at_cursor(),
         }
     }
 
@@ -1042,6 +1045,10 @@ fn default_toggle_visibility_shortcut() -> String {
     String::new()
 }
 
+fn default_open_at_cursor() -> bool {
+    true
+}
+
 fn default_locale() -> String {
     "zh-CN".into()
 }
@@ -1193,6 +1200,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            open_at_cursor: true,
         };
 
         store.save_config(saved.clone()).expect("save config");

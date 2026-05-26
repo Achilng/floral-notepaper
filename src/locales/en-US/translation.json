@@ -192,6 +192,7 @@
       "zhHK": "繁體中文"
     },
     "notesDir": "Notes directory",
+    "openAtCursor": "Open near cursor with shortcut",
     "quickNoteShortcut": "Quick Note shortcut",
     "rememberSurfaceSize": "Remember surface size",
     "tabIndentSize": "Tab indent width",

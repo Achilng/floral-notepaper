@@ -211,6 +211,11 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             checked={config.tileCtrlClose}
             onChange={(checked) => setConfigValue("tileCtrlClose", checked)}
           />
+          <ToggleRow
+            label={t("settings.openAtCursor", { defaultValue: "快捷键打开时跟随鼠标位置" })}
+            checked={config.openAtCursor ?? true}
+            onChange={(checked) => setConfigValue("openAtCursor", checked)}
+          />
           <div className="space-y-1.5">
             <label className="block text-[11px] font-body text-ink-faint/70 px-0.5">
               {t("settings.quickNoteShortcut", { defaultValue: "快捷记录快捷键" })}

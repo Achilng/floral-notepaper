@@ -22,6 +22,7 @@ const config = {
   tileCtrlClose: true,
   toggleVisibilityShortcut: "",
   tileRenderMarkdown: false,
+  openAtCursor: true,
 };
 
 describe("SettingsPanel", () => {
