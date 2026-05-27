@@ -44,12 +44,12 @@ pub fn update_mirror_cdk_clear(state: State<'_, UpdaterState>) -> Result<(), App
 }
 
 #[tauri::command]
-pub fn update_check(
+pub async fn update_check(
     app: tauri::AppHandle,
     state: State<'_, UpdaterState>,
     manual: bool,
 ) -> Result<UpdateCheckResult, AppError> {
-    let _guard = state.begin_task(UpdateTaskKind::Check)?;
+    let task = state.begin_task(UpdateTaskKind::Check)?;
     let mut checking_state = state.load_state().unwrap_or_default();
     checking_state.status = UpdateStatus::Checking;
     checking_state.checked_at = Some(Utc::now());
@@ -57,17 +57,32 @@ pub fn update_check(
     state.save_state(&checking_state)?;
     let _ = app.emit("update://checking", &checking_state);
 
-    let service = UpdateCheckService::from_env();
-    match service.run(state.paths(), manual) {
-        Ok(result) => {
-            if let Ok(next_state) = state.load_state() {
-                let _ = app.emit("update://checked", &next_state);
+    let paths = state.paths().clone();
+    let result_paths = paths.clone();
+    let app_handle = app.clone();
+
+    let result = async_runtime::spawn_blocking(move || {
+        let _task = task;
+        let service = UpdateCheckService::from_env();
+        service.run(&paths, manual)
+    })
+    .await
+    .map_err(|error| {
+        errors::app_error(
+            "updateCheckTaskJoinFailed",
+            format!("检查更新任务执行失败：{error}"),
+        )
+    })?;
+
+    match result {
+        Ok(check_result) => {
+            if let Ok(next_state) = super::state::load(&result_paths) {
+                let _ = app_handle.emit("update://checked", &next_state);
             }
-            Ok(result)
+            Ok(check_result)
         }
         Err(error) => {
-            let error_payload = state
-                .load_state()
+            let error_payload = super::state::load(&result_paths)
                 .ok()
                 .and_then(|saved_state| saved_state.last_error)
                 .unwrap_or_else(|| {
@@ -78,7 +93,7 @@ pub fn update_check(
                     )
                 });
             if manual {
-                let _ = app.emit("update://error", &error_payload);
+                let _ = app_handle.emit("update://error", &error_payload);
             }
             Err(error)
         }

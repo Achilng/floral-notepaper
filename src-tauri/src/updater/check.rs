@@ -4,21 +4,26 @@ use super::{
     settings::{self, StoredUpdateSettings},
     state,
     types::{
-        DownloadSourcePreference, DownloadSourceUsed, UpdateCheckResult, UpdateCheckStatus,
-        UpdateErrorDto, UpdateStateDto, UpdateStatus,
+        CheckSourcePreference, DownloadSourcePreference, DownloadSourceUsed, UpdateCheckResult,
+        UpdateCheckStatus, UpdateErrorDto, UpdateStateDto, UpdateStatus,
     },
     version, UpdatePaths,
 };
 use crate::services::notes::AppError;
 use chrono::Utc;
+use reqwest::blocking::Client;
 use semver::Version;
+use serde::Deserialize;
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    time::Duration,
 };
 
 const MIRROR_MANIFEST_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_MIRROR_MANIFEST_PATH";
 const GITHUB_MANIFEST_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_GITHUB_MANIFEST_PATH";
+const GITHUB_REPO_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_GITHUB_REPO";
+const DEFAULT_GITHUB_REPO: &str = "Achilng/floral-notepaper";
 
 #[derive(Debug, Clone)]
 struct UpdateCheckContext {
@@ -41,8 +46,9 @@ struct UpdateCandidate {
     release_notes: Option<String>,
     mandatory: bool,
     asset_name: String,
-    asset_sha256: String,
+    asset_sha256: Option<String>,
     asset_size: u64,
+    asset_url: Option<String>,
     can_download_from_mirror: bool,
     can_download_from_github: bool,
 }
@@ -103,12 +109,14 @@ impl UpdateCheckProvider for MirrorProvider {
 #[derive(Debug, Clone, Default)]
 struct GithubProvider {
     manifest_path: Option<PathBuf>,
+    offline: bool,
 }
 
 impl GithubProvider {
     pub fn from_env() -> Self {
         Self {
             manifest_path: env_manifest_path(GITHUB_MANIFEST_PATH_ENV),
+            offline: env::var("FLORAL_NOTEPAPER_UPDATE_OFFLINE").is_ok(),
         }
     }
 
@@ -116,6 +124,15 @@ impl GithubProvider {
     fn with_manifest_path(path: PathBuf) -> Self {
         Self {
             manifest_path: Some(path),
+            offline: false,
+        }
+    }
+
+    #[cfg(test)]
+    fn offline() -> Self {
+        Self {
+            manifest_path: None,
+            offline: true,
         }
     }
 }
@@ -130,11 +147,22 @@ impl UpdateCheckProvider for GithubProvider {
         context: &UpdateCheckContext,
         priority: usize,
     ) -> Result<ProviderCheck, AppError> {
-        let manifest_path = self
-            .manifest_path
-            .as_deref()
-            .ok_or_else(|| errors::provider_not_configured(self.label()))?;
-        load_manifest_candidate(self.label(), manifest_path, context, priority, false, true)
+        if let Some(manifest_path) = &self.manifest_path {
+            return load_manifest_candidate(
+                self.label(),
+                manifest_path,
+                context,
+                priority,
+                false,
+                true,
+            );
+        }
+
+        if self.offline {
+            return Err(errors::provider_not_configured(self.label()));
+        }
+
+        check_github_api(context, priority)
     }
 }
 
@@ -196,7 +224,7 @@ impl UpdateCheckService {
         settings: &StoredUpdateSettings,
         context: &UpdateCheckContext,
     ) -> Result<(UpdateCheckResult, UpdateStateDto), AppError> {
-        let provider_order = provider_order(&settings.download_source_preference);
+        let provider_order = check_provider_order(&settings.check_source_preference);
         let mut available = Vec::new();
         let mut saw_not_available = false;
         let mut provider_errors = Vec::new();
@@ -215,6 +243,11 @@ impl UpdateCheckService {
         }
 
         if let Some(candidate) = merge_candidates(available) {
+            let recommended_source = recommended_source(
+                &settings.download_source_preference,
+                candidate.can_download_from_mirror,
+                candidate.can_download_from_github,
+            );
             let result = UpdateCheckResult {
                 status: UpdateCheckStatus::Available,
                 current_version: context.current_version_text(),
@@ -223,11 +256,8 @@ impl UpdateCheckService {
                 mandatory: candidate.mandatory,
                 can_download_from_mirror: candidate.can_download_from_mirror,
                 can_download_from_github: candidate.can_download_from_github,
-                recommended_source: recommended_source(
-                    &settings.download_source_preference,
-                    candidate.can_download_from_mirror,
-                    candidate.can_download_from_github,
-                ),
+                recommended_source: recommended_source.clone(),
+                asset_url: candidate.asset_url.clone(),
             };
             let next_state = UpdateStateDto {
                 status: UpdateStatus::Available,
@@ -236,9 +266,10 @@ impl UpdateCheckService {
                 channel: settings.channel.clone(),
                 asset_name: Some(candidate.asset_name),
                 asset_path: None,
-                asset_sha256: Some(candidate.asset_sha256),
+                asset_sha256: candidate.asset_sha256,
                 asset_size: Some(candidate.asset_size),
-                source: result.recommended_source.clone(),
+                asset_url: candidate.asset_url,
+                source: recommended_source,
                 checked_at: Some(Utc::now()),
                 downloaded_at: None,
                 install_log_path: None,
@@ -260,6 +291,7 @@ impl UpdateCheckService {
                 can_download_from_mirror: false,
                 can_download_from_github: false,
                 recommended_source: None,
+                asset_url: None,
             };
             let next_state = UpdateStateDto {
                 status: UpdateStatus::Idle,
@@ -270,6 +302,7 @@ impl UpdateCheckService {
                 asset_path: None,
                 asset_sha256: None,
                 asset_size: None,
+                asset_url: None,
                 source: None,
                 checked_at: Some(Utc::now()),
                 downloaded_at: None,
@@ -291,6 +324,150 @@ fn env_manifest_path(key: &str) -> Option<PathBuf> {
         let value = value.to_string_lossy().trim().to_string();
         (!value.is_empty()).then(|| PathBuf::from(value))
     })
+}
+
+fn github_repo() -> String {
+    env::var(GITHUB_REPO_ENV)
+        .ok()
+        .map(|v| v.trim().to_string())
+        .filter(|v| !v.is_empty())
+        .unwrap_or_else(|| DEFAULT_GITHUB_REPO.to_string())
+}
+
+fn build_github_api_client() -> Result<Client, AppError> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
+        .user_agent("floral-notepaper-updater")
+        .build()
+        .map_err(|error| errors::github_api_error(format!("无法创建 HTTP 客户端：{error}")))
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubApiAsset {
+    name: String,
+    browser_download_url: String,
+    size: u64,
+}
+
+#[derive(Debug, Deserialize)]
+struct GithubApiRelease {
+    tag_name: String,
+    #[allow(dead_code)]
+    name: Option<String>,
+    body: Option<String>,
+    assets: Vec<GithubApiAsset>,
+}
+
+fn check_github_api(
+    context: &UpdateCheckContext,
+    priority: usize,
+) -> Result<ProviderCheck, AppError> {
+    let repo = github_repo();
+    let url = format!("https://api.github.com/repos/{repo}/releases/latest");
+
+    let client = build_github_api_client()?;
+    let response = client.get(&url).send().map_err(|error| {
+        if error.is_timeout() {
+            errors::github_api_error("请求超时")
+        } else {
+            errors::github_api_error(error.to_string())
+        }
+    })?;
+
+    let status = response.status();
+    if status.as_u16() == 403 || status.as_u16() == 429 {
+        return Err(errors::github_rate_limited());
+    }
+    if !status.is_success() {
+        return Err(errors::github_api_error(format!(
+            "HTTP {}",
+            status.as_u16()
+        )));
+    }
+
+    let body = response
+        .text()
+        .map_err(|error| errors::github_api_error(format!("响应读取失败：{error}")))?;
+    let release: GithubApiRelease = serde_json::from_str(&body)
+        .map_err(|error| errors::github_api_error(format!("响应解析失败：{error}")))?;
+
+    let version_str = release
+        .tag_name
+        .trim_start_matches('v')
+        .trim_start_matches('V');
+    let normalized_version = version::normalize_version(version_str)?;
+
+    if !version::is_newer_version(
+        &context.current_version,
+        &normalized_version,
+        context.allow_prerelease,
+    ) {
+        return Ok(ProviderCheck::NotAvailable);
+    }
+
+    if release.assets.is_empty() {
+        return Err(errors::github_release_no_assets());
+    }
+
+    let matched = release
+        .assets
+        .iter()
+        .filter_map(|asset| {
+            platform::infer_asset_from_filename(
+                &asset.name,
+                &asset.browser_download_url,
+                asset.size,
+            )
+        })
+        .find(|inferred| {
+            inferred.os == context.platform.os
+                && inferred.arch == context.platform.arch
+                && matches_install_kind(&inferred.kind, &context.platform.install_kind)
+        });
+
+    let matched = matched.ok_or_else(|| {
+        errors::with_detail(
+            errors::manifest_asset_not_found(),
+            "platform",
+            format!(
+                "{:?}-{:?}-{:?}",
+                context.platform.os, context.platform.arch, context.platform.install_kind
+            ),
+        )
+    })?;
+
+    Ok(ProviderCheck::Available(UpdateCandidate {
+        priority,
+        version: version_str.to_string(),
+        normalized_version,
+        release_notes: release.body,
+        mandatory: false,
+        asset_name: matched.name,
+        asset_sha256: None,
+        asset_size: matched.size,
+        asset_url: Some(matched.url),
+        can_download_from_mirror: false,
+        can_download_from_github: true,
+    }))
+}
+
+fn matches_install_kind(
+    inferred: &super::types::InstallKind,
+    current: &super::types::InstallKind,
+) -> bool {
+    use super::types::InstallKind;
+    if *current == InstallKind::Unknown {
+        return true;
+    }
+    matches!(
+        (inferred, current),
+        (InstallKind::MacosAppBundle, InstallKind::MacosAppBundle)
+            | (InstallKind::WindowsNsis, InstallKind::WindowsNsis)
+            | (InstallKind::WindowsNsis, InstallKind::WindowsPortable)
+            | (InstallKind::WindowsPortable, InstallKind::WindowsPortable)
+            | (InstallKind::WindowsPortable, InstallKind::WindowsNsis)
+    )
 }
 
 fn persist_last_auto_check_at(
@@ -336,30 +513,32 @@ fn load_manifest_candidate(
         return Ok(ProviderCheck::NotAvailable);
     }
 
+    let github_url = asset.github_url.clone();
     Ok(ProviderCheck::Available(UpdateCandidate {
         priority,
         version: manifest.version.clone(),
         normalized_version: candidate_version,
         release_notes: manifest.release_notes.clone(),
         mandatory: manifest.mandatory,
-        asset_name: asset.name,
-        asset_sha256: asset.sha256,
+        asset_name: asset.name.clone(),
+        asset_sha256: Some(asset.sha256),
         asset_size: asset.size,
+        asset_url: Some(github_url.clone()),
         can_download_from_mirror,
-        can_download_from_github: can_download_from_github && !asset.github_url.trim().is_empty(),
+        can_download_from_github: can_download_from_github && !github_url.trim().is_empty(),
     }))
 }
 
-fn provider_order(preference: &DownloadSourcePreference) -> Vec<DownloadSourceUsed> {
+fn check_provider_order(preference: &CheckSourcePreference) -> Vec<DownloadSourceUsed> {
     match preference {
-        DownloadSourcePreference::MirrorFirst => {
+        CheckSourcePreference::MirrorFirst => {
             vec![DownloadSourceUsed::Mirror, DownloadSourceUsed::Github]
         }
-        DownloadSourcePreference::GithubFirst => {
+        CheckSourcePreference::GithubFirst => {
             vec![DownloadSourceUsed::Github, DownloadSourceUsed::Mirror]
         }
-        DownloadSourcePreference::MirrorOnly => vec![DownloadSourceUsed::Mirror],
-        DownloadSourcePreference::GithubOnly => vec![DownloadSourceUsed::Github],
+        CheckSourcePreference::MirrorOnly => vec![DownloadSourceUsed::Mirror],
+        CheckSourcePreference::GithubOnly => vec![DownloadSourceUsed::Github],
     }
 }
 
@@ -485,6 +664,7 @@ fn failed_state(
         asset_path: None,
         asset_sha256: None,
         asset_size: None,
+        asset_url: None,
         source: None,
         checked_at: Some(Utc::now()),
         downloaded_at: None,
@@ -507,6 +687,7 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
         }
         "updateProviderFixtureUnreadable" => Some("fixFixturePath"),
         "updatePlatformUnsupported" => Some("useSupportedInstall"),
+        "updateGithubApi" | "updateGithubRateLimited" | "updateGithubNoAssets" => Some("retry"),
         _ => Some("retry"),
     }
 }
@@ -516,7 +697,7 @@ mod tests {
     use super::*;
     use crate::updater::{
         platform::{Arch, Os},
-        types::{InstallKind, UpdateChannel},
+        types::InstallKind,
         UpdatePaths,
     };
 
@@ -537,14 +718,23 @@ mod tests {
             platform: PlatformInfo {
                 os: Os::Macos,
                 arch: Arch::Aarch64,
-                app_version: "1.0.4".into(),
+                app_version: "1.0.3".into(),
                 app_id: super::super::APP_ID.into(),
                 install_kind,
                 current_exe: None,
                 current_app_bundle: None,
             },
-            current_version: Version::new(1, 0, 4),
+            current_version: Version::new(1, 0, 3),
             allow_prerelease: false,
+        }
+    }
+
+    fn test_settings(preference: CheckSourcePreference) -> StoredUpdateSettings {
+        StoredUpdateSettings {
+            download_source_preference: DownloadSourcePreference::GithubFirst,
+            check_source_preference: preference,
+            channel: super::super::types::UpdateChannel::Stable,
+            ..StoredUpdateSettings::default()
         }
     }
 
@@ -559,22 +749,29 @@ mod tests {
     }
 
     #[test]
-    fn returns_source_not_configured_when_no_provider_fixture_exists() {
+    fn returns_source_not_configured_when_no_provider_fixture_exists_and_github_only() {
         let service = UpdateCheckService::with_providers(
             MirrorProvider::default(),
-            GithubProvider::default(),
+            GithubProvider::offline(),
         );
-        let settings = StoredUpdateSettings::default();
+        let settings = test_settings(CheckSourcePreference::GithubOnly);
 
-        let error = service
-            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
-            .expect_err("missing fixtures should fail");
+        let result = service.evaluate(&settings, &test_context(InstallKind::MacosAppBundle));
+        assert!(result.is_err());
+    }
 
-        assert_eq!(error.code, "updateSourceNotConfigured");
-        assert_eq!(
-            error.details.get("providers").map(String::as_str),
-            Some("Mirror,GitHub")
+    #[test]
+    fn returns_not_available_when_only_mirror_is_configured_but_github_only_is_selected() {
+        let paths = test_paths("check-github-only-mirror-present");
+        let mirror_manifest = write_manifest(&paths, "mirror.json", "1.0.5");
+        let service = UpdateCheckService::with_providers(
+            MirrorProvider::with_manifest_path(mirror_manifest),
+            GithubProvider::offline(),
         );
+        let settings = test_settings(CheckSourcePreference::GithubOnly);
+
+        let result = service.evaluate(&settings, &test_context(InstallKind::MacosAppBundle));
+        assert!(result.is_err());
     }
 
     #[test]
@@ -586,11 +783,7 @@ mod tests {
             MirrorProvider::with_manifest_path(mirror_manifest),
             GithubProvider::with_manifest_path(github_manifest),
         );
-        let settings = StoredUpdateSettings {
-            download_source_preference: DownloadSourcePreference::MirrorFirst,
-            channel: UpdateChannel::Stable,
-            ..StoredUpdateSettings::default()
-        };
+        let settings = test_settings(CheckSourcePreference::MirrorFirst);
 
         let (result, next_state) = service
             .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
@@ -606,16 +799,12 @@ mod tests {
     #[test]
     fn returns_not_available_when_candidate_is_not_newer() {
         let paths = test_paths("check-not-available");
-        let github_manifest = write_manifest(&paths, "github.json", "1.0.4");
+        let github_manifest = write_manifest(&paths, "github.json", "1.0.3");
         let service = UpdateCheckService::with_providers(
             MirrorProvider::default(),
             GithubProvider::with_manifest_path(github_manifest),
         );
-        let settings = StoredUpdateSettings {
-            download_source_preference: DownloadSourcePreference::GithubOnly,
-            channel: UpdateChannel::Stable,
-            ..StoredUpdateSettings::default()
-        };
+        let settings = test_settings(CheckSourcePreference::GithubOnly);
 
         let (result, next_state) = service
             .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
@@ -624,5 +813,23 @@ mod tests {
         assert_eq!(result.status, UpdateCheckStatus::NotAvailable);
         assert_eq!(next_state.status, UpdateStatus::Idle);
         assert!(next_state.latest_version.is_none());
+    }
+
+    #[test]
+    fn stores_asset_url_in_state_from_manifest_fixture() {
+        let paths = test_paths("check-asset-url");
+        let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
+        let service = UpdateCheckService::with_providers(
+            MirrorProvider::default(),
+            GithubProvider::with_manifest_path(github_manifest),
+        );
+        let settings = test_settings(CheckSourcePreference::GithubOnly);
+
+        let (result, next_state) = service
+            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
+            .expect("available update should have asset url");
+
+        assert!(result.asset_url.is_some());
+        assert!(next_state.asset_url.is_some());
     }
 }

@@ -58,6 +58,8 @@ pub struct AppConfig {
     pub surface_height: Option<u32>,
     #[serde(default = "default_toggle_visibility_shortcut")]
     pub toggle_visibility_shortcut: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_known_base_dir: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -196,18 +198,42 @@ fn default_base_dir() -> Result<PathBuf, AppError> {
     }
 
     #[cfg(target_os = "macos")]
-    if let Ok(home) = env::var("HOME") {
-        return Ok(PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("花笺"));
+    if let Some(dir) = dirs::data_dir() {
+        return Ok(dir.join(".floral"));
     }
 
-    if let Ok(user_profile) = env::var("USERPROFILE") {
-        return Ok(PathBuf::from(user_profile).join("Documents").join("花笺"));
+    if let Some(dir) = dirs::document_dir() {
+        return Ok(dir.join(".floral"));
     }
 
     Ok(env::current_dir()?.join("data"))
+}
+
+fn move_or_copy_dir(from: &Path, to: &Path) -> Result<(), AppError> {
+    if fs::rename(from, to).is_ok() {
+        return Ok(());
+    }
+    // cross-filesystem fallback
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    copy_dir_recursive(from, to)?;
+    fs::remove_dir_all(from)?;
+    Ok(())
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> Result<(), AppError> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 fn is_filesystem_root(path: &Path) -> bool {
@@ -300,6 +326,9 @@ impl NoteStore {
         self.ensure_base_dir()?;
         let path = self.config_path();
         if !path.exists() {
+            self.migrate_from_known_locations()?;
+        }
+        if !path.exists() {
             let config = self.default_config();
             self.save_config(config.clone())?;
             self.mark_macos_shortcut_migration_handled()?;
@@ -307,10 +336,12 @@ impl NoteStore {
         }
 
         let mut config: AppConfig = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        self.migrate_base_dir_if_changed(&mut config)?;
         if is_safe_notes_dir(Path::new(&config.notes_dir)).is_err() {
             config.notes_dir = self.default_config().notes_dir;
-            write_json_atomic(&path, &config)?;
         }
+        config.last_known_base_dir = Some(self.base_dir.to_string_lossy().to_string());
+        write_json_atomic(&path, &config)?;
         fs::create_dir_all(&config.notes_dir)?;
         if self.migrate_macos_shortcut_default(&mut config)? {
             write_json_atomic(&path, &config)?;
@@ -661,7 +692,64 @@ impl NoteStore {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
+            last_known_base_dir: Some(self.base_dir.to_string_lossy().to_string()),
         }
+    }
+
+    fn migrate_from_known_locations(&self) -> Result<(), AppError> {
+        let current = &self.base_dir;
+        if current.join("config.json").exists() {
+            return Ok(());
+        }
+        let candidates: &[fn() -> Option<PathBuf>] = &[
+            || {
+                std::env::var("HOME")
+                    .ok()
+                    .map(|h| PathBuf::from(h).join("Documents").join(".floral"))
+            },
+            || {
+                std::env::var("HOME").ok().map(|h| {
+                    PathBuf::from(h)
+                        .join("Library")
+                        .join("Application Support")
+                        .join(".floral")
+                })
+            },
+        ];
+        for candidate_fn in candidates {
+            if let Some(old_dir) = candidate_fn() {
+                if old_dir != *current && old_dir.join("config.json").exists() {
+                    eprintln!(
+                        "migrating data from {} to {}",
+                        old_dir.display(),
+                        current.display()
+                    );
+                    return move_or_copy_dir(&old_dir, current);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn migrate_base_dir_if_changed(&self, config: &mut AppConfig) -> Result<(), AppError> {
+        let Some(ref last_known) = config.last_known_base_dir else {
+            return Ok(());
+        };
+        if Path::new(last_known.as_str()) == self.base_dir.as_path() {
+            return Ok(());
+        }
+        let old_dir = Path::new(last_known);
+        if !old_dir.exists() {
+            return Ok(());
+        }
+        if self.base_dir.exists() {
+            return Ok(());
+        }
+        eprintln!(
+            "migrating data from {last_known} to {}",
+            self.base_dir.display()
+        );
+        move_or_copy_dir(old_dir, &self.base_dir)
     }
 
     fn ensure_base_dir(&self) -> Result<(), AppError> {
@@ -1115,7 +1203,7 @@ mod tests {
         assert!(default_config.notes_dir.ends_with("notes"));
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
-        let saved = AppConfig {
+        let mut saved = AppConfig {
             locale: "en-US".into(),
             notes_dir: custom_notes_dir.join("notes").to_string_lossy().to_string(),
             global_shortcut: "Alt+Space".into(),
@@ -1136,11 +1224,13 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            last_known_base_dir: None,
         };
 
         store.save_config(saved.clone()).expect("save config");
 
         let loaded = store.load_config().expect("reload config");
+        saved.last_known_base_dir = Some(store.base_dir().to_string_lossy().to_string());
         assert_eq!(loaded, saved);
         assert!(custom_notes_dir.exists());
     }

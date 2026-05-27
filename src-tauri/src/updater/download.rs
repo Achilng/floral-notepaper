@@ -53,7 +53,7 @@ pub(crate) struct UpdateDownloadService {
 struct DownloadPlan {
     version: String,
     asset_name: String,
-    asset_sha256: String,
+    asset_sha256: Option<String>,
     asset_size: u64,
     source: DownloadSourceUsed,
     url: Url,
@@ -102,8 +102,9 @@ impl UpdateDownloadService {
             channel: current_state.channel.clone(),
             asset_name: Some(plan.asset_name.clone()),
             asset_path: None,
-            asset_sha256: Some(plan.asset_sha256.clone()),
+            asset_sha256: plan.asset_sha256.clone(),
             asset_size: Some(plan.asset_size),
+            asset_url: current_state.asset_url.clone(),
             source: Some(plan.source.clone()),
             checked_at: current_state.checked_at,
             downloaded_at: None,
@@ -116,8 +117,9 @@ impl UpdateDownloadService {
         state::save(paths, &downloading_state)?;
 
         match self.download_with_plan(&plan, cancel_flag, emit_progress) {
-            Ok(asset_path) => {
+            Ok((asset_path, computed_sha256)) => {
                 let asset_path_text = asset_path.to_string_lossy().to_string();
+                let sha256_to_store = plan.asset_sha256.clone().or(computed_sha256);
                 let downloaded_state = UpdateStateDto {
                     status: UpdateStatus::Downloaded,
                     current_version: current_state.current_version,
@@ -125,8 +127,9 @@ impl UpdateDownloadService {
                     channel: current_state.channel,
                     asset_name: Some(plan.asset_name.clone()),
                     asset_path: Some(asset_path_text.clone()),
-                    asset_sha256: Some(plan.asset_sha256.clone()),
+                    asset_sha256: sha256_to_store,
                     asset_size: Some(plan.asset_size),
+                    asset_url: current_state.asset_url.clone(),
                     source: Some(plan.source.clone()),
                     checked_at: downloading_state.checked_at,
                     downloaded_at: Some(Utc::now()),
@@ -167,10 +170,6 @@ impl UpdateDownloadService {
             .asset_name
             .clone()
             .ok_or_else(|| errors::app_error("updateDownloadNotReady", "当前没有可下载的更新包"))?;
-        let asset_sha256 = current_state
-            .asset_sha256
-            .clone()
-            .ok_or_else(|| errors::app_error("updateDownloadNotReady", "当前没有可下载的更新包"))?;
         let asset_size = current_state
             .asset_size
             .ok_or_else(|| errors::app_error("updateDownloadNotReady", "当前没有可下载的更新包"))?;
@@ -179,15 +178,64 @@ impl UpdateDownloadService {
             .or_else(|| current_state.source.clone())
             .unwrap_or(DownloadSourceUsed::Github);
 
+        if let Some(direct_url) = &current_state.asset_url {
+            return self.resolve_direct_plan(
+                paths,
+                &version,
+                &asset_name,
+                current_state.asset_sha256.clone(),
+                asset_size,
+                direct_url,
+                &source,
+            );
+        }
+
         match source {
-            DownloadSourceUsed::Github => {
-                self.resolve_github_plan(paths, &version, &asset_name, &asset_sha256, asset_size)
-            }
+            DownloadSourceUsed::Github => self.resolve_github_plan(
+                paths,
+                &version,
+                &asset_name,
+                &current_state.asset_sha256.clone().unwrap_or_default(),
+                asset_size,
+            ),
             DownloadSourceUsed::Mirror => Err(errors::app_error(
                 "updateMirrorDownloadUnavailable",
                 "Mirror 下载源尚未配置，当前阶段请改用 GitHub 下载",
             )),
         }
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn resolve_direct_plan(
+        &self,
+        paths: &UpdatePaths,
+        version: &str,
+        asset_name: &str,
+        asset_sha256: Option<String>,
+        asset_size: u64,
+        url: &str,
+        source: &DownloadSourceUsed,
+    ) -> Result<DownloadPlan, AppError> {
+        let url = validate_download_url(
+            url,
+            DownloadValidationOptions {
+                allow_insecure_localhost: self.allow_insecure_localhost,
+            },
+        )?;
+        let version_dir = paths.downloads_dir().join(version);
+        let final_path = version_dir.join(asset_name);
+        let part_path = version_dir.join(format!("{asset_name}.part"));
+
+        Ok(DownloadPlan {
+            version: version.to_string(),
+            asset_name: asset_name.to_string(),
+            asset_sha256,
+            asset_size,
+            source: source.clone(),
+            url,
+            final_path,
+            part_path,
+        })
     }
 
     fn resolve_github_plan(
@@ -262,7 +310,7 @@ impl UpdateDownloadService {
         Ok(DownloadPlan {
             version: version.to_string(),
             asset_name: asset_name.to_string(),
-            asset_sha256: asset_sha256.to_string(),
+            asset_sha256: Some(asset_sha256.to_string()),
             asset_size,
             source: DownloadSourceUsed::Github,
             url,
@@ -276,7 +324,7 @@ impl UpdateDownloadService {
         plan: &DownloadPlan,
         cancel_flag: Arc<AtomicBool>,
         mut emit_progress: F,
-    ) -> Result<PathBuf, AppError>
+    ) -> Result<(PathBuf, Option<String>), AppError>
     where
         F: FnMut(UpdateDownloadProgressDto),
     {
@@ -285,14 +333,14 @@ impl UpdateDownloadService {
         }
 
         if plan.final_path.exists() {
-            if verify_existing_file(plan)? {
+            if let Some(computed) = verify_existing_file(plan)? {
                 emit_progress(progress_payload(
                     plan,
                     plan.asset_size,
                     Some(plan.asset_size),
                     progress_speed(plan.asset_size, Instant::now()),
                 ));
-                return Ok(plan.final_path.clone());
+                return Ok((plan.final_path.clone(), computed));
             }
             remove_file_if_exists(&plan.final_path)?;
         }
@@ -326,7 +374,7 @@ impl UpdateDownloadService {
         plan: &DownloadPlan,
         cancel_flag: &Arc<AtomicBool>,
         emit_progress: &mut F,
-    ) -> Result<PathBuf, AppError>
+    ) -> Result<(PathBuf, Option<String>), AppError>
     where
         F: FnMut(UpdateDownloadProgressDto),
     {
@@ -393,9 +441,14 @@ impl UpdateDownloadService {
         }
 
         let actual_sha256 = format!("{:x}", hasher.finalize());
-        if actual_sha256 != plan.asset_sha256 {
-            return Err(hash_mismatch_error(&plan.asset_sha256, &actual_sha256));
-        }
+        let computed = if let Some(ref expected) = plan.asset_sha256 {
+            if actual_sha256 != *expected {
+                return Err(hash_mismatch_error(expected, &actual_sha256));
+            }
+            None
+        } else {
+            Some(actual_sha256)
+        };
 
         fs::rename(&plan.part_path, &plan.final_path)?;
         emit_progress(progress_payload(
@@ -405,7 +458,7 @@ impl UpdateDownloadService {
             progress_speed(downloaded_bytes, started_at),
         ));
 
-        Ok(plan.final_path.clone())
+        Ok((plan.final_path.clone(), computed))
     }
 }
 
@@ -563,10 +616,10 @@ fn fetch_response(
     ))
 }
 
-fn verify_existing_file(plan: &DownloadPlan) -> Result<bool, AppError> {
+fn verify_existing_file(plan: &DownloadPlan) -> Result<Option<Option<String>>, AppError> {
     let metadata = fs::metadata(&plan.final_path)?;
     if metadata.len() != plan.asset_size {
-        return Ok(false);
+        return Ok(None);
     }
 
     let mut reader = BufReader::new(fs::File::open(&plan.final_path)?);
@@ -581,7 +634,15 @@ fn verify_existing_file(plan: &DownloadPlan) -> Result<bool, AppError> {
         hasher.update(&buffer[..read]);
     }
 
-    Ok(format!("{:x}", hasher.finalize()) == plan.asset_sha256)
+    let actual = format!("{:x}", hasher.finalize());
+    if let Some(ref expected) = plan.asset_sha256 {
+        if actual != *expected {
+            return Ok(None);
+        }
+        Ok(Some(None))
+    } else {
+        Ok(Some(Some(actual)))
+    }
 }
 
 fn progress_payload(
@@ -710,8 +771,9 @@ fn failed_state(
         channel: current_state.channel.clone(),
         asset_name: Some(plan.asset_name.clone()),
         asset_path: None,
-        asset_sha256: Some(plan.asset_sha256.clone()),
+        asset_sha256: plan.asset_sha256.clone(),
         asset_size: Some(plan.asset_size),
+        asset_url: current_state.asset_url.clone(),
         source: Some(plan.source.clone()),
         checked_at: current_state.checked_at,
         downloaded_at: None,
@@ -749,7 +811,7 @@ mod tests {
         DownloadPlan {
             version: "1.0.5".into(),
             asset_name: name.into(),
-            asset_sha256: hash,
+            asset_sha256: Some(hash),
             asset_size: bytes.len() as u64,
             source: DownloadSourceUsed::Github,
             url: validate_download_url(
@@ -809,7 +871,7 @@ mod tests {
         let cancel_flag = Arc::new(AtomicBool::new(false));
         let mut progress = Vec::new();
 
-        let final_path = service
+        let (final_path, _) = service
             .download_with_plan(&plan, cancel_flag, |payload| progress.push(payload))
             .expect("download success");
 
@@ -906,13 +968,14 @@ mod tests {
         };
         let current_state = UpdateStateDto {
             status: UpdateStatus::Available,
-            current_version: "1.0.4".into(),
+            current_version: "1.0.3".into(),
             latest_version: Some("1.0.5".into()),
             channel: UpdateChannel::Stable,
             asset_name: Some(asset_name.into()),
             asset_path: None,
             asset_sha256: Some(format!("{:x}", Sha256::digest(body))),
             asset_size: Some(body.len() as u64),
+            asset_url: None,
             source: Some(DownloadSourceUsed::Github),
             checked_at: Some(Utc::now()),
             downloaded_at: None,

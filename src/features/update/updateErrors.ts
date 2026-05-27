@@ -86,6 +86,10 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
       return translate("settings.update.error.downloadSourceInvalid", {
         defaultValue: "无效的下载源参数",
       });
+    case "updateCheckTaskJoinFailed":
+      return translate("settings.update.error.checkTaskJoinFailed", {
+        defaultValue: "检查更新任务执行失败",
+      });
     case "updateDownloadTaskJoinFailed":
       return translate("settings.update.error.downloadTaskJoinFailed", {
         defaultValue: "下载任务执行失败",
@@ -141,6 +145,18 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
     case "updateCancelUnavailable":
       return translate("settings.update.error.cancelUnavailable", {
         defaultValue: "当前没有可取消的更新任务",
+      });
+    case "updateGithubApi":
+      return translate("settings.update.error.githubApi", {
+        defaultValue: "GitHub API 请求失败，请检查网络后重试",
+      });
+    case "updateGithubRateLimited":
+      return translate("settings.update.error.githubRateLimited", {
+        defaultValue: "GitHub API 频率限制，请稍后重试",
+      });
+    case "updateGithubNoAssets":
+      return translate("settings.update.error.githubNoAssets", {
+        defaultValue: "GitHub Release 中没有找到可用资产",
       });
     default:
       if (message) return message;

@@ -360,7 +360,7 @@ mod tests {
             log_path: root.join("helper.log"),
             asset_path,
             target_path,
-            current_version: "1.0.4".into(),
+            current_version: "1.0.3".into(),
             target_version: "1.0.5".into(),
         }
     }
@@ -381,7 +381,7 @@ mod tests {
             OsString::from("--log-path"),
             OsString::from("/tmp/helper.log"),
             OsString::from("--current-version"),
-            OsString::from("1.0.4"),
+            OsString::from("1.0.3"),
             OsString::from("--target-version"),
             OsString::from("1.0.5"),
         ];
@@ -390,7 +390,7 @@ mod tests {
 
         assert_eq!(parsed.mode, UpdateHelperMode::DryRun);
         assert_eq!(parsed.asset_size, 42);
-        assert_eq!(parsed.current_version, "1.0.4");
+        assert_eq!(parsed.current_version, "1.0.3");
     }
 
     #[test]

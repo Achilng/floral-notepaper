@@ -229,6 +229,12 @@ impl UpdaterState {
     }
 }
 
+impl Default for UpdaterState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 fn default_updates_dir() -> PathBuf {
     if let Ok(store) = default_store() {
         return store.base_dir().join("updates");

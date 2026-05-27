@@ -1012,9 +1012,10 @@ dependencies = [
 
 [[package]]
 name = "floral-notepaper"
-version = "1.0.4"
+version = "1.0.3"
 dependencies = [
  "chrono",
+ "dirs 6.0.0",
  "keyring",
  "reqwest 0.12.28",
  "semver",

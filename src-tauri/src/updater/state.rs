@@ -16,7 +16,14 @@ pub fn load(paths: &UpdatePaths) -> Result<UpdateStateDto, AppError> {
     }
 
     match serde_json::from_str::<UpdateStateDto>(&fs::read_to_string(&path)?) {
-        Ok(state) => Ok(state),
+        Ok(mut state) => {
+            let build_version = env!("CARGO_PKG_VERSION");
+            if state.current_version != build_version {
+                state.current_version = build_version.to_string();
+                save(paths, &state)?;
+            }
+            Ok(state)
+        }
         Err(_error) => {
             rename_corrupt_file(&path, "state")?;
             let state = UpdateStateDto::failed(UpdateErrorDto::recoverable(

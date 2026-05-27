@@ -1735,6 +1735,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
+            last_known_base_dir: None,
         };
 
         let error = match shortcut_bindings_from_config(&config) {
@@ -1776,6 +1777,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            last_known_base_dir: None,
         };
         let next = AppConfig {
             locale: "en-US".into(),
@@ -1798,6 +1800,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),
+            last_known_base_dir: None,
         };
 
         assert_eq!(

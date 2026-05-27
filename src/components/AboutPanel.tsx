@@ -36,11 +36,11 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
 
       <div className="flex-1 overflow-y-auto scrollbar-hidden px-4 py-4 space-y-5">
         <section className="space-y-1.5">
-          <h3 className="text-[20px] font-display font-medium text-ink-soft">
+          <h3 className="text-[20px] font-serif font-medium text-ink-soft">
             {t("about.productName", { defaultValue: "花笺" })}
           </h3>
           <p className="text-[11px] text-ink-ghost font-body">
-            {t("about.summary", { defaultValue: "本地桌面便签" })}
+            {t("about.summary", { defaultValue: "轻量、优雅、现代化的本地便签工具" })}
           </p>
         </section>
 

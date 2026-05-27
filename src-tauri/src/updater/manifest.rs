@@ -195,7 +195,7 @@ mod tests {
         PlatformInfo {
             os,
             arch,
-            app_version: "1.0.4".into(),
+            app_version: "1.0.3".into(),
             app_id: APP_ID.into(),
             install_kind,
             current_exe: None,

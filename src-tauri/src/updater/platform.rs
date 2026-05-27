@@ -113,6 +113,47 @@ fn find_macos_app_bundle(exe: &Path) -> Option<PathBuf> {
     None
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct InferredAsset {
+    pub name: String,
+    pub url: String,
+    pub size: u64,
+    pub os: Os,
+    pub arch: Arch,
+    pub kind: InstallKind,
+}
+
+pub(crate) fn infer_asset_from_filename(name: &str, url: &str, size: u64) -> Option<InferredAsset> {
+    let lower = name.to_lowercase();
+
+    let arch = if lower.contains("aarch64") || lower.contains("arm64") {
+        Arch::Aarch64
+    } else if lower.contains("x64") || lower.contains("x86_64") {
+        Arch::X86_64
+    } else {
+        return None;
+    };
+
+    let (os, kind) = if lower.ends_with(".dmg") {
+        (Os::Macos, InstallKind::MacosAppBundle)
+    } else if lower.ends_with(".msi") || lower.ends_with("-setup.exe") || lower.contains("setup") {
+        (Os::Windows, InstallKind::WindowsNsis)
+    } else if lower.ends_with(".exe") {
+        (Os::Windows, InstallKind::WindowsPortable)
+    } else {
+        return None;
+    };
+
+    Some(InferredAsset {
+        name: name.to_string(),
+        url: url.to_string(),
+        size,
+        os,
+        arch,
+        kind,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -157,6 +198,57 @@ mod tests {
                 )),
             ),
             InstallKind::MacosAppBundle
+        );
+    }
+
+    #[test]
+    fn infers_macos_aarch64_dmg() {
+        let asset = infer_asset_from_filename(
+            "floral-notepaper_1.0.5_aarch64.dmg",
+            "https://github.com/example/releases/download/v1.0.5/app.dmg",
+            5000,
+        );
+        let asset = asset.expect("should match dmg");
+        assert_eq!(asset.os, Os::Macos);
+        assert_eq!(asset.arch, Arch::Aarch64);
+        assert_eq!(asset.kind, InstallKind::MacosAppBundle);
+        assert_eq!(asset.size, 5000);
+    }
+
+    #[test]
+    fn infers_windows_x64_msi() {
+        let asset = infer_asset_from_filename(
+            "floral-notepaper_1.0.5_x64_en-US.msi",
+            "https://github.com/example/releases/download/v1.0.5/app.msi",
+            8000,
+        );
+        let asset = asset.expect("should match msi");
+        assert_eq!(asset.os, Os::Windows);
+        assert_eq!(asset.arch, Arch::X86_64);
+        assert_eq!(asset.kind, InstallKind::WindowsNsis);
+    }
+
+    #[test]
+    fn infers_windows_x64_setup_exe() {
+        let asset = infer_asset_from_filename(
+            "floral-notepaper_1.0.5_x64-setup.exe",
+            "https://github.com/example/releases/download/v1.0.5/setup.exe",
+            9000,
+        );
+        let asset = asset.expect("should match setup exe");
+        assert_eq!(asset.os, Os::Windows);
+        assert_eq!(asset.arch, Arch::X86_64);
+        assert_eq!(asset.kind, InstallKind::WindowsNsis);
+    }
+
+    #[test]
+    fn rejects_unknown_filename() {
+        assert!(
+            infer_asset_from_filename("README.md", "https://example.com/readme", 100).is_none()
+        );
+        assert!(
+            infer_asset_from_filename("app_1.0.5.deb", "https://example.com/app.deb", 100)
+                .is_none()
         );
     }
 

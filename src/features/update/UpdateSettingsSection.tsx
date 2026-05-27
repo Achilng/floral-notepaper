@@ -16,6 +16,7 @@ import {
 } from "./api";
 import { getUpdateErrorMessage } from "./updateErrors";
 import type {
+  CheckSourcePreference,
   DownloadSourcePreference,
   DownloadSourceUsed,
   UpdateChannel,
@@ -53,6 +54,28 @@ export function UpdateSettingsSection({
   const [cdkInput, setCdkInput] = useState("");
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const [notice, setNotice] = useState<Notice | null>(null);
+
+  const checkSourceOptions = useMemo<Array<{ value: CheckSourcePreference; label: string }>>(
+    () => [
+      {
+        value: "githubFirst",
+        label: t("settings.update.checkSource.githubFirst", { defaultValue: "GitHub 优先" }),
+      },
+      {
+        value: "mirrorFirst",
+        label: t("settings.update.checkSource.mirrorFirst", { defaultValue: "Mirror 优先" }),
+      },
+      {
+        value: "githubOnly",
+        label: t("settings.update.checkSource.githubOnly", { defaultValue: "仅 GitHub" }),
+      },
+      {
+        value: "mirrorOnly",
+        label: t("settings.update.checkSource.mirrorOnly", { defaultValue: "仅 Mirror" }),
+      },
+    ],
+    [t],
+  );
 
   const sourceOptions = useMemo<Array<{ value: DownloadSourcePreference; label: string }>>(
     () => [
@@ -404,10 +427,14 @@ export function UpdateSettingsSection({
             {t("settings.update.title", { defaultValue: "更新" })}
           </h3>
           <p className="mt-1 text-[10px] font-mono text-ink-ghost">
-            {t("settings.update.currentVersion", {
-              version: currentVersion,
-              defaultValue: "当前版本：{{version}}",
-            })}
+            {busyAction === "checking"
+              ? t("settings.update.checking", { defaultValue: "正在检查..." })
+              : notice
+                ? notice.text
+                : t("settings.update.currentVersion", {
+                    version: currentVersion,
+                    defaultValue: "当前版本：{{version}}",
+                  })}
           </p>
         </div>
         <button
@@ -465,6 +492,18 @@ export function UpdateSettingsSection({
               options={intervalOptions}
               value={intervalValue}
               onChange={handleIntervalChange}
+            />
+          </div>
+
+          <div className="space-y-2">
+            <label className="block text-[11px] font-body text-ink-faint">
+              {t("settings.update.checkSource.label", { defaultValue: "检查更新源" })}
+            </label>
+            <SlidingButtonGroup
+              options={checkSourceOptions}
+              value={settings.checkSourcePreference}
+              onChange={(value) => updateSettings("checkSourcePreference", value)}
+              className="grid grid-cols-2"
             />
           </div>
 

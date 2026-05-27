@@ -56,7 +56,7 @@ mod tests {
     fn prerelease_follows_channel_or_setting() {
         let stable_candidate = normalize_version("1.0.5").expect("stable candidate");
         let prerelease_candidate = normalize_version("1.0.5-beta.1").expect("beta candidate");
-        let current = normalize_version("1.0.4").expect("current");
+        let current = normalize_version("1.0.3").expect("current");
 
         assert!(is_newer_version(&current, &stable_candidate, false));
         assert!(!is_newer_version(&current, &prerelease_candidate, false));

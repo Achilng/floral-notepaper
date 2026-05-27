@@ -2,7 +2,7 @@
   "about": {
     "closeTitle": "Close About",
     "productName": "花笺",
-    "summary": "Local desktop notes",
+    "summary": "A lightweight, elegant, modern local note-taking tool",
     "title": "About"
   },
   "common": {
@@ -252,6 +252,7 @@
         "stable": "stable"
       },
       "check": "Check Updates",
+      "checking": "Checking...",
       "confirmClearCdk": "Clear the Mirror CDK?",
       "currentVersion": "Current version: {{version}}",
       "error": {
@@ -285,7 +286,10 @@
         "platformUnsupported": "This platform or install type does not support in-app updates yet",
         "providerFixtureUnreadable": "The local update manifest fixture could not be read",
         "secureStoreUnavailable": "System secure storage is unavailable. Try again later.",
-        "sourceNotConfigured": "Update sources are not configured; this stage only supports local manifest injection"
+        "sourceNotConfigured": "Update sources are not configured; this stage only supports local manifest injection",
+        "githubApi": "GitHub API request failed; check your network and try again",
+        "githubRateLimited": "GitHub API rate limit exceeded; please try again later",
+        "githubNoAssets": "No usable assets found in GitHub Release"
       },
       "download": "Download Update",
       "downloaded": "Version {{version}} has finished downloading",
@@ -317,6 +321,13 @@
       "notAvailable": "You are on the latest version",
       "saved": "Update settings saved",
       "speed": "Speed: {{speed}}",
+      "checkSource": {
+        "label": "Check API source",
+        "mirrorFirst": "Mirror first",
+        "githubFirst": "GitHub first",
+        "mirrorOnly": "Mirror only",
+        "githubOnly": "GitHub only"
+      },
       "source": {
         "github": "GitHub",
         "githubFirst": "GitHub first",

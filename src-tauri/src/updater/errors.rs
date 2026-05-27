@@ -70,3 +70,18 @@ pub fn source_not_configured() -> AppError {
         "更新源尚未配置，当前阶段仅支持本地测试清单注入",
     )
 }
+
+pub fn github_api_error(message: impl Into<String>) -> AppError {
+    app_error(
+        "updateGithubApi",
+        format!("GitHub API 请求失败：{}", message.into()),
+    )
+}
+
+pub fn github_rate_limited() -> AppError {
+    app_error("updateGithubRateLimited", "GitHub API 频率限制，请稍后重试")
+}
+
+pub fn github_release_no_assets() -> AppError {
+    app_error("updateGithubNoAssets", "GitHub Release 中没有找到可用资产")
+}

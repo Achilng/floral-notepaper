@@ -17,6 +17,8 @@ pub struct StoredUpdateSettings {
     #[serde(default = "default_check_interval_hours")]
     pub check_interval_hours: u32,
     #[serde(default)]
+    pub check_source_preference: CheckSourcePreference,
+    #[serde(default)]
     pub download_source_preference: DownloadSourcePreference,
     #[serde(default)]
     pub channel: UpdateChannel,
@@ -32,6 +34,7 @@ impl StoredUpdateSettings {
             auto_check: settings.auto_check,
             auto_download: settings.auto_download,
             check_interval_hours: normalize_check_interval(settings.check_interval_hours),
+            check_source_preference: settings.check_source_preference,
             download_source_preference: settings.download_source_preference,
             channel: settings.channel,
             allow_prerelease: settings.allow_prerelease,
@@ -44,6 +47,7 @@ impl StoredUpdateSettings {
             auto_check: self.auto_check,
             auto_download: self.auto_download,
             check_interval_hours: self.check_interval_hours,
+            check_source_preference: self.check_source_preference,
             download_source_preference: self.download_source_preference,
             channel: self.channel,
             allow_prerelease: self.allow_prerelease,
@@ -59,6 +63,7 @@ impl Default for StoredUpdateSettings {
             auto_check: true,
             auto_download: false,
             check_interval_hours: 24,
+            check_source_preference: CheckSourcePreference::GithubFirst,
             download_source_preference: DownloadSourcePreference::MirrorFirst,
             channel: UpdateChannel::Stable,
             allow_prerelease: false,
@@ -165,6 +170,10 @@ mod tests {
         assert!(!settings.auto_download);
         assert_eq!(settings.check_interval_hours, 24);
         assert_eq!(
+            settings.check_source_preference,
+            CheckSourcePreference::GithubFirst
+        );
+        assert_eq!(
             settings.download_source_preference,
             DownloadSourcePreference::MirrorFirst
         );
@@ -178,6 +187,7 @@ mod tests {
             auto_check: false,
             auto_download: true,
             check_interval_hours: 168,
+            check_source_preference: CheckSourcePreference::GithubOnly,
             download_source_preference: DownloadSourcePreference::GithubOnly,
             channel: UpdateChannel::Beta,
             allow_prerelease: true,

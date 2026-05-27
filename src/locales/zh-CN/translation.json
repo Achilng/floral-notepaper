@@ -2,7 +2,7 @@
   "about": {
     "closeTitle": "关闭关于",
     "productName": "花笺",
-    "summary": "本地桌面便签",
+    "summary": "轻量、优雅、现代化的本地便签工具",
     "title": "关于"
   },
   "common": {
@@ -252,11 +252,13 @@
         "stable": "stable"
       },
       "check": "检查更新",
+      "checking": "正在检查...",
       "confirmClearCdk": "确认清除 Mirror 酱 CDK？",
       "currentVersion": "当前版本：{{version}}",
       "error": {
         "alreadyRunning": "已有更新任务正在运行",
         "cancelUnavailable": "当前没有可取消的更新任务",
+        "checkTaskJoinFailed": "检查更新任务执行失败",
         "cdkEmpty": "Mirror 酱 CDK 不能为空",
         "downloadHashMismatch": "下载文件哈希校验失败",
         "downloadHttpStatus": "下载请求失败，请稍后重试",
@@ -285,7 +287,10 @@
         "platformUnsupported": "当前平台或安装形态暂不支持应用内更新",
         "providerFixtureUnreadable": "无法读取本地更新测试清单",
         "secureStoreUnavailable": "系统安全存储暂不可用，请稍后重试",
-        "sourceNotConfigured": "更新源尚未配置，当前阶段仅支持本地测试清单注入"
+        "sourceNotConfigured": "更新源尚未配置，当前阶段仅支持本地测试清单注入",
+        "githubApi": "GitHub API 请求失败，请检查网络后重试",
+        "githubRateLimited": "GitHub API 频率限制，请稍后重试",
+        "githubNoAssets": "GitHub Release 中没有找到可用资产"
       },
       "download": "下载更新",
       "downloaded": "版本 {{version}} 已下载完成",
@@ -317,6 +322,13 @@
       "notAvailable": "当前已是最新版本",
       "saved": "更新设置已保存",
       "speed": "速度：{{speed}}",
+      "checkSource": {
+        "label": "检查更新源",
+        "mirrorFirst": "Mirror 优先",
+        "githubFirst": "GitHub 优先",
+        "mirrorOnly": "仅 Mirror",
+        "githubOnly": "仅 GitHub"
+      },
       "source": {
         "github": "GitHub",
         "githubFirst": "GitHub 优先",

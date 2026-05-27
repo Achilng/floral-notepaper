@@ -317,6 +317,7 @@ fn installing_state(
         asset_path: current_state.asset_path.clone(),
         asset_sha256: current_state.asset_sha256.clone(),
         asset_size: current_state.asset_size,
+        asset_url: current_state.asset_url.clone(),
         source: current_state.source.clone(),
         checked_at: current_state.checked_at,
         downloaded_at: current_state.downloaded_at,
@@ -344,6 +345,7 @@ fn scheduled_state(
         asset_path: current_state.asset_path.clone(),
         asset_sha256: current_state.asset_sha256.clone(),
         asset_size: current_state.asset_size,
+        asset_url: current_state.asset_url.clone(),
         source: current_state.source.clone(),
         checked_at: current_state.checked_at,
         downloaded_at: current_state.downloaded_at,
@@ -371,6 +373,7 @@ fn failed_state(
         asset_path: current_state.asset_path.clone(),
         asset_sha256: current_state.asset_sha256.clone(),
         asset_size: current_state.asset_size,
+        asset_url: current_state.asset_url.clone(),
         source: current_state.source.clone(),
         checked_at: current_state.checked_at,
         downloaded_at: current_state.downloaded_at,
@@ -510,13 +513,14 @@ mod tests {
 
         UpdateStateDto {
             status: UpdateStatus::Downloaded,
-            current_version: "1.0.4".into(),
+            current_version: "1.0.3".into(),
             latest_version: Some("1.0.5".into()),
             channel: UpdateChannel::Stable,
             asset_name: Some("asset.zip".into()),
             asset_path: Some(asset_path.to_string_lossy().to_string()),
             asset_sha256: Some("abc".repeat(21) + "a"),
             asset_size: Some(16),
+            asset_url: None,
             source: Some(DownloadSourceUsed::Github),
             checked_at: Some(Utc::now()),
             downloaded_at: Some(Utc::now()),
@@ -532,7 +536,7 @@ mod tests {
         PlatformInfo {
             os: platform::Os::Macos,
             arch: platform::Arch::Aarch64,
-            app_version: "1.0.4".into(),
+            app_version: "1.0.3".into(),
             app_id: super::super::APP_ID.into(),
             install_kind: super::super::types::InstallKind::MacosAppBundle,
             current_exe: Some(

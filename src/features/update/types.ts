@@ -1,3 +1,5 @@
+export type CheckSourcePreference = "mirrorFirst" | "githubFirst" | "mirrorOnly" | "githubOnly";
+
 export type DownloadSourcePreference = "mirrorFirst" | "githubFirst" | "mirrorOnly" | "githubOnly";
 
 export type DownloadSourceUsed = "mirror" | "github";
@@ -22,6 +24,7 @@ export interface UpdateSettings {
   autoCheck: boolean;
   autoDownload: boolean;
   checkIntervalHours: number;
+  checkSourcePreference: CheckSourcePreference;
   downloadSourcePreference: DownloadSourcePreference;
   channel: UpdateChannel;
   allowPrerelease: boolean;
@@ -45,6 +48,7 @@ export interface UpdateState {
   assetPath?: string | null;
   assetSha256?: string | null;
   assetSize?: number | null;
+  assetUrl?: string | null;
   source?: DownloadSourceUsed | null;
   checkedAt?: string | null;
   downloadedAt?: string | null;

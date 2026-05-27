@@ -8,6 +8,22 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Source Han Serif SC";
+  src: url("./assets/fonts/SourceHanSerifSC-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Han Serif SC";
+  src: url("./assets/fonts/SourceHanSerifSC-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-paper: #f6f3ec;
   --color-paper-warm: #f0ebe0;
@@ -32,6 +48,7 @@
   --font-body:
     "HarmonyOS Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-serif: "Source Han Serif SC", "Songti SC", "Noto Serif CJK SC", "STSong", "SimSun", serif;
   --font-mono: "SF Mono", "Menlo", "JetBrains Mono", "Fira Code", "HarmonyOS Sans SC", monospace;
 }
 

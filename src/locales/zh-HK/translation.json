@@ -2,7 +2,7 @@
   "about": {
     "closeTitle": "關閉關於",
     "productName": "花箋",
-    "summary": "本地桌面便箋",
+    "summary": "輕量、優雅、現代化的本地便箋工具",
     "title": "關於"
   },
   "common": {
@@ -252,11 +252,13 @@
         "stable": "stable"
       },
       "check": "檢查更新",
+      "checking": "正在檢查...",
       "confirmClearCdk": "確認清除 Mirror 醬 CDK？",
       "currentVersion": "目前版本：{{version}}",
       "error": {
         "alreadyRunning": "已有更新任務正在執行",
         "cancelUnavailable": "目前沒有可取消的更新任務",
+        "checkTaskJoinFailed": "檢查更新任務執行失敗",
         "cdkEmpty": "Mirror 醬 CDK 不能為空",
         "downloadHashMismatch": "下載檔案雜湊校驗失敗",
         "downloadHttpStatus": "下載請求失敗，請稍後重試",
@@ -285,7 +287,10 @@
         "platformUnsupported": "目前平台或安裝型態暫不支援應用內更新",
         "providerFixtureUnreadable": "無法讀取本地更新測試清單",
         "secureStoreUnavailable": "系統安全儲存區暫不可用，請稍後重試",
-        "sourceNotConfigured": "更新來源尚未配置，目前階段僅支援本地測試清單注入"
+        "sourceNotConfigured": "更新來源尚未配置，目前階段僅支援本地測試清單注入",
+        "githubApi": "GitHub API 請求失敗，請檢查網絡後重試",
+        "githubRateLimited": "GitHub API 頻率限制，請稍後重試",
+        "githubNoAssets": "GitHub Release 中沒有找到可用資產"
       },
       "download": "下載更新",
       "downloaded": "版本 {{version}} 已下載完成",
@@ -317,6 +322,13 @@
       "notAvailable": "目前已是最新版本",
       "saved": "更新設定已儲存",
       "speed": "速度：{{speed}}",
+      "checkSource": {
+        "label": "檢查更新來源",
+        "mirrorFirst": "Mirror 優先",
+        "githubFirst": "GitHub 優先",
+        "mirrorOnly": "僅 Mirror",
+        "githubOnly": "僅 GitHub"
+      },
       "source": {
         "github": "GitHub",
         "githubFirst": "GitHub 優先",

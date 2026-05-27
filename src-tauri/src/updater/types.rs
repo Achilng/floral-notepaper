@@ -1,19 +1,24 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
-pub enum DownloadSourcePreference {
+pub enum CheckSourcePreference {
     MirrorFirst,
+    #[default]
     GithubFirst,
     MirrorOnly,
     GithubOnly,
 }
 
-impl Default for DownloadSourcePreference {
-    fn default() -> Self {
-        Self::MirrorFirst
-    }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum DownloadSourcePreference {
+    #[default]
+    MirrorFirst,
+    GithubFirst,
+    MirrorOnly,
+    GithubOnly,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -23,22 +28,18 @@ pub enum DownloadSourceUsed {
     Github,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum UpdateChannel {
+    #[default]
     Stable,
     Beta,
 }
 
-impl Default for UpdateChannel {
-    fn default() -> Self {
-        Self::Stable
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase")]
 pub enum UpdateStatus {
+    #[default]
     Idle,
     Checking,
     Available,
@@ -54,12 +55,6 @@ pub enum UpdateStatus {
 pub enum UpdateInstallMode {
     DryRun,
     Test,
-}
-
-impl Default for UpdateStatus {
-    fn default() -> Self {
-        Self::Idle
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -85,6 +80,7 @@ pub struct UpdateSettingsDto {
     pub auto_check: bool,
     pub auto_download: bool,
     pub check_interval_hours: u32,
+    pub check_source_preference: CheckSourcePreference,
     pub download_source_preference: DownloadSourcePreference,
     pub channel: UpdateChannel,
     pub allow_prerelease: bool,
@@ -98,6 +94,7 @@ impl Default for UpdateSettingsDto {
             auto_check: true,
             auto_download: false,
             check_interval_hours: 24,
+            check_source_preference: CheckSourcePreference::default(),
             download_source_preference: DownloadSourcePreference::default(),
             channel: UpdateChannel::default(),
             allow_prerelease: false,
@@ -142,6 +139,7 @@ pub struct UpdateStateDto {
     pub asset_path: Option<String>,
     pub asset_sha256: Option<String>,
     pub asset_size: Option<u64>,
+    pub asset_url: Option<String>,
     pub source: Option<DownloadSourceUsed>,
     pub checked_at: Option<DateTime<Utc>>,
     pub downloaded_at: Option<DateTime<Utc>>,
@@ -163,6 +161,7 @@ impl UpdateStateDto {
             asset_path: None,
             asset_sha256: None,
             asset_size: None,
+            asset_url: None,
             source: None,
             checked_at: None,
             downloaded_at: None,
@@ -201,6 +200,7 @@ pub struct UpdateCheckResult {
     pub can_download_from_mirror: bool,
     pub can_download_from_github: bool,
     pub recommended_source: Option<DownloadSourceUsed>,
+    pub asset_url: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
