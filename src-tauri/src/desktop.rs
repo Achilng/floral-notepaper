@@ -32,6 +32,12 @@ const TRAY_TOGGLE_AUTOSTART_ID: &str = "toggle-autostart";
 const TRAY_QUIT_ID: &str = "quit";
 const NOTEPAD_POOL_CAPACITY: usize = 2;
 
+/// Stores the file path passed as a command-line argument on cold start.
+/// The frontend retrieves and clears this value after initialization via
+/// the `take_startup_file` command, avoiding a race condition with the
+/// previous approach of emitting an event after a hardcoded delay.
+static STARTUP_FILE: Mutex<Option<String>> = Mutex::new(None);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayMenuAction {
     ShowMain,
@@ -579,6 +585,13 @@ pub fn extract_file_arg(args: &[String]) -> Option<String> {
         .cloned()
 }
 
+/// Takes the startup file path stored during cold start, consuming it so
+/// subsequent calls return `None`. Called by the frontend after it finishes
+/// initializing to deterministically load the file without any timing risk.
+pub fn take_startup_file() -> Option<String> {
+    STARTUP_FILE.lock().ok()?.take()
+}
+
 pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     app.manage(RuntimeState::default());
     app.manage(NotepadPool::default());
@@ -597,11 +610,9 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
 
     let args: Vec<String> = std::env::args().collect();
     if let Some(file_path) = extract_file_arg(&args) {
-        let app_handle = app.handle().clone();
-        std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            let _ = app_handle.emit("open-external-file", file_path);
-        });
+        if let Ok(mut guard) = STARTUP_FILE.lock() {
+            *guard = Some(file_path);
+        }
     }
 
     Ok(())
