@@ -951,33 +951,33 @@ fn notepad_window_specs() -> WindowSizeSpec {
 #[cfg(target_os = "windows")]
 fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
     #[repr(C)]
-    struct POINT {
+    struct Point {
         x: i32,
         y: i32,
     }
     #[repr(C)]
-    struct RECT {
+    struct Rect {
         left: i32,
         top: i32,
         right: i32,
         bottom: i32,
     }
     #[repr(C)]
-    struct MONITORINFO {
+    struct Monitorinfo {
         cb_size: u32,
-        rc_monitor: RECT,
-        rc_work: RECT,
+        rc_monitor: Rect,
+        rc_work: Rect,
         dw_flags: u32,
     }
-    type HMONITOR = isize;
+    type Hmonitor = isize;
     const MONITOR_DEFAULTTONEAREST: u32 = 2;
     extern "system" {
-        fn GetCursorPos(lp_point: *mut POINT) -> i32;
-        fn MonitorFromPoint(pt: POINT, dw_flags: u32) -> HMONITOR;
-        fn GetMonitorInfoW(h_monitor: HMONITOR, lpmi: *mut MONITORINFO) -> i32;
+        fn GetCursorPos(lp_point: *mut Point) -> i32;
+        fn MonitorFromPoint(pt: Point, dw_flags: u32) -> Hmonitor;
+        fn GetMonitorInfoW(h_monitor: Hmonitor, lpmi: *mut Monitorinfo) -> i32;
         fn GetDpiForSystem() -> u32;
     }
-    let mut pt = POINT { x: 0, y: 0 };
+    let mut pt = Point { x: 0, y: 0 };
     if unsafe { GetCursorPos(&mut pt) } == 0 {
         return None;
     }
@@ -987,17 +987,17 @@ fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
     let mut x = pt.x - w / 2;
     let mut y = pt.y - h / 2;
 
-    let hmon = unsafe { MonitorFromPoint(POINT { x: pt.x, y: pt.y }, MONITOR_DEFAULTTONEAREST) };
+    let hmon = unsafe { MonitorFromPoint(Point { x: pt.x, y: pt.y }, MONITOR_DEFAULTTONEAREST) };
     if hmon != 0 {
-        let mut mi = MONITORINFO {
-            cb_size: std::mem::size_of::<MONITORINFO>() as u32,
-            rc_monitor: RECT {
+        let mut mi = Monitorinfo {
+            cb_size: std::mem::size_of::<Monitorinfo>() as u32,
+            rc_monitor: Rect {
                 left: 0,
                 top: 0,
                 right: 0,
                 bottom: 0,
             },
-            rc_work: RECT {
+            rc_work: Rect {
                 left: 0,
                 top: 0,
                 right: 0,
