@@ -1012,6 +1012,7 @@ fn notepad_window_specs() -> WindowSizeSpec {
 }
 
 #[cfg(target_os = "windows")]
+#[allow(clippy::upper_case_acronyms)]
 fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
     #[repr(C)]
     struct POINT {
