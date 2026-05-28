@@ -23,6 +23,9 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+#[cfg(target_os = "macos")]
+use raw_window_handle::HasWindowHandle;
+
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_ID: &str = "main-tray";
 const TRAY_SHOW_MAIN_ID: &str = "show-main";
@@ -637,6 +640,11 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         MainWindowCloseAction::AllowClose => {}
         MainWindowCloseAction::HideToTray => {
             api.prevent_close();
+            #[cfg(target_os = "macos")]
+            if let Err(error) = hide_window_ns(window) {
+                eprintln!("failed to hide main window to tray: {error}");
+            }
+            #[cfg(not(target_os = "macos"))]
             if let Err(error) = window.hide() {
                 eprintln!("failed to hide main window to tray: {error}");
             }
@@ -647,6 +655,61 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
             window.app_handle().exit(0);
         }
     }
+}
+
+/// Hide a window on macOS, correctly handling fullscreen state.
+///
+/// `window.hide()` (setIsVisible:false) leaves the fullscreen presentation
+/// layer active, causing a black screen. This function instead:
+/// 1. If fullscreen, exits via toggleFullScreen: and hides after animation
+/// 2. Otherwise, removes the window immediately via orderOut:
+#[cfg(target_os = "macos")]
+fn hide_window_ns(window: &Window) -> Result<(), Box<dyn Error>> {
+    use block2::RcBlock;
+    use objc2_app_kit::{NSView, NSWindowStyleMask};
+    use objc2_foundation::{NSNotificationCenter, NSString};
+    use raw_window_handle::RawWindowHandle;
+
+    let handle = window.window_handle()?;
+    let RawWindowHandle::AppKit(app_kit) = handle.as_raw() else {
+        return Err("expected AppKit window handle".into());
+    };
+
+    // SAFETY: ns_view is a valid NSView pointer from the window handle,
+    // and we are on the main thread (called from handle_window_event).
+    let ns_view: objc2::rc::Retained<NSView> =
+        unsafe { objc2::rc::Retained::retain(app_kit.ns_view.as_ptr().cast()) }
+            .ok_or("failed to retain NSView pointer")?;
+    let ns_window = ns_view
+        .window()
+        .ok_or("view is not installed in a window")?;
+
+    if ns_window
+        .styleMask()
+        .contains(NSWindowStyleMask::FullScreen)
+    {
+        // toggleFullScreen: is async — listen for the exit-fullscreen
+        // notification and hide the window once the animation completes.
+        let retained = ns_window.clone();
+        let block = RcBlock::new(move |_notification: std::ptr::NonNull<_>| {
+            retained.orderOut(None);
+        });
+        let name = NSString::from_str("NSWindowDidExitFullScreenNotification");
+        let observer = unsafe {
+            NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+                Some(&name),
+                Some(&ns_window),
+                None,
+                &block,
+            )
+        };
+        // Prevent the observer from being deallocated.
+        Box::leak(Box::new(observer));
+        ns_window.toggleFullScreen(None);
+    } else {
+        ns_window.orderOut(None);
+    }
+    Ok(())
 }
 
 fn main_window_close_action(app_is_exiting: bool, close_to_tray: bool) -> MainWindowCloseAction {
@@ -757,7 +820,9 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
                 min_width: 900.0,
                 min_height: 620.0,
             },
-            decorations: false,
+            // On macOS, tauri.macos.conf.json sets titleBarStyle: "Overlay"
+            // with native traffic lights; decorations: false would conflict.
+            decorations: !cfg!(target_os = "macos"),
             always_on_top: false,
             shadow: true,
             skip_taskbar: false,
@@ -1821,6 +1886,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
+            open_at_cursor: false,
         };
 
         let error = match shortcut_bindings_from_config(&config) {
@@ -1870,6 +1936,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            open_at_cursor: false,
         };
         let next = AppConfig {
             locale: "en-US".into(),
@@ -1900,6 +1967,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),
+            open_at_cursor: false,
         };
 
         assert_eq!(

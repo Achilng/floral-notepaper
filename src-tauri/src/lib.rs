@@ -296,6 +296,20 @@ pub fn run() {
             toggle_tile_window,
             open_note_in_editor
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app_handle, event| {
+            #[cfg(target_os = "macos")]
+            if let tauri::RunEvent::Reopen {
+                has_visible_windows,
+                ..
+            } = event
+            {
+                if !has_visible_windows {
+                    if let Err(error) = desktop::show_main_window(_app_handle) {
+                        eprintln!("failed to show main window on dock click: {error}");
+                    }
+                }
+            }
+        });
 }
