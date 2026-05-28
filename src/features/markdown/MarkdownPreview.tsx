@@ -6,6 +6,7 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
 import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import type { Pluggable } from "unified";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
@@ -67,7 +68,11 @@ const sanitizeSchema = {
   },
 };
 const rehypePluginsDefault = [rehypeKatex];
-const rehypePluginsWithHtml = [rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeKatex];
+const rehypePluginsWithHtml: Pluggable[] = [
+  rehypeRaw,
+  [rehypeSanitize, sanitizeSchema],
+  rehypeKatex,
+];
 
 const components: Components = {
   h1: ({ children }) => (
