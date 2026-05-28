@@ -23,9 +23,6 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-#[cfg(target_os = "macos")]
-use raw_window_handle::HasWindowHandle;
-
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_ID: &str = "main-tray";
 const TRAY_SHOW_MAIN_ID: &str = "show-main";
@@ -33,6 +30,9 @@ const TRAY_QUICK_NOTE_ID: &str = "quick-note";
 const TRAY_TOGGLE_CLOSE_TO_TRAY_ID: &str = "toggle-close-to-tray";
 const TRAY_TOGGLE_AUTOSTART_ID: &str = "toggle-autostart";
 const TRAY_QUIT_ID: &str = "quit";
+
+#[cfg(target_os = "macos")]
+static FULLSCREEN_HIDING: AtomicBool = AtomicBool::new(false);
 const NOTEPAD_POOL_CAPACITY: usize = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -641,10 +641,10 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         MainWindowCloseAction::HideToTray => {
             api.prevent_close();
             #[cfg(target_os = "macos")]
-            if let Err(error) = hide_window_ns(window) {
-                eprintln!("failed to hide main window to tray: {error}");
+            if window.is_fullscreen().unwrap_or(false) {
+                hide_fullscreen_window(window);
+                return;
             }
-            #[cfg(not(target_os = "macos"))]
             if let Err(error) = window.hide() {
                 eprintln!("failed to hide main window to tray: {error}");
             }
@@ -657,59 +657,57 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
     }
 }
 
-/// Hide a window on macOS, correctly handling fullscreen state.
-///
-/// `window.hide()` (setIsVisible:false) leaves the fullscreen presentation
-/// layer active, causing a black screen. This function instead:
-/// 1. If fullscreen, exits via toggleFullScreen: and hides after animation
-/// 2. Otherwise, removes the window immediately via orderOut:
+/// Exit fullscreen and hide the window once the fullscreen exit animation completes.
 #[cfg(target_os = "macos")]
-fn hide_window_ns(window: &Window) -> Result<(), Box<dyn Error>> {
+fn hide_fullscreen_window(window: &Window) {
     use block2::RcBlock;
-    use objc2_app_kit::{NSView, NSWindowStyleMask};
+    use objc2_app_kit::NSView;
     use objc2_foundation::{NSNotificationCenter, NSString};
-    use raw_window_handle::RawWindowHandle;
+    use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
 
-    let handle = window.window_handle()?;
+    let Ok(handle) = window.window_handle() else {
+        let _ = window.hide();
+        return;
+    };
     let RawWindowHandle::AppKit(app_kit) = handle.as_raw() else {
-        return Err("expected AppKit window handle".into());
+        let _ = window.hide();
+        return;
     };
 
-    // SAFETY: ns_view is a valid NSView pointer from the window handle,
-    // and we are on the main thread (called from handle_window_event).
+    // SAFETY: ns_view is a valid pointer from the window handle, on the main thread.
     let ns_view: objc2::rc::Retained<NSView> =
         unsafe { objc2::rc::Retained::retain(app_kit.ns_view.as_ptr().cast()) }
-            .ok_or("failed to retain NSView pointer")?;
-    let ns_window = ns_view
-        .window()
-        .ok_or("view is not installed in a window")?;
+            .expect("failed to retain NSView");
+    let Some(ns_window) = ns_view.window() else {
+        let _ = window.hide();
+        return;
+    };
 
-    if ns_window
-        .styleMask()
-        .contains(NSWindowStyleMask::FullScreen)
-    {
-        // toggleFullScreen: is async — listen for the exit-fullscreen
-        // notification and hide the window once the animation completes.
-        let retained = ns_window.clone();
-        let block = RcBlock::new(move |_notification: std::ptr::NonNull<_>| {
-            retained.orderOut(None);
-        });
-        let name = NSString::from_str("NSWindowDidExitFullScreenNotification");
-        let observer = unsafe {
-            NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
-                Some(&name),
-                Some(&ns_window),
-                None,
-                &block,
-            )
-        };
-        // Prevent the observer from being deallocated.
-        Box::leak(Box::new(observer));
-        ns_window.toggleFullScreen(None);
-    } else {
-        ns_window.orderOut(None);
-    }
-    Ok(())
+    let retained = window.app_handle().clone();
+    let label = window.label().to_string();
+    let block = RcBlock::new(move |_notification: std::ptr::NonNull<_>| {
+        // Only hide if this notification was triggered by our programmatic
+        // set_fullscreen(false), not by the user clicking the green button.
+        if FULLSCREEN_HIDING.swap(false, Ordering::SeqCst) {
+            if let Some(w) = retained.get_webview_window(&label) {
+                let _ = w.hide();
+            }
+        }
+    });
+    let name = NSString::from_str("NSWindowDidExitFullScreenNotification");
+    let observer = unsafe {
+        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+            Some(&name),
+            Some(&ns_window),
+            None,
+            &block,
+        )
+    };
+    // Leak the observer so it survives until the notification fires.
+    Box::leak(Box::new(observer));
+
+    FULLSCREEN_HIDING.store(true, Ordering::SeqCst);
+    let _ = window.set_fullscreen(false);
 }
 
 fn main_window_close_action(app_is_exiting: bool, close_to_tray: bool) -> MainWindowCloseAction {
@@ -1201,7 +1199,7 @@ fn open_or_focus_window(
         return Ok(label.to_string());
     }
 
-    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(opts.url.into()))
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(opts.url.into()))
         .title(opts.title)
         .inner_size(opts.specs.width, opts.specs.height)
         .min_inner_size(opts.specs.min_width, opts.specs.min_height)
@@ -1211,8 +1209,17 @@ fn open_or_focus_window(
         .always_on_top(opts.always_on_top)
         .shadow(opts.shadow)
         .skip_taskbar(opts.skip_taskbar)
-        .visible(false)
-        .build()?;
+        .visible(false);
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(
+            14.0, 23.0,
+        )));
+
+    let window = builder.build()?;
 
     apply_window_bounds(&window, opts.bounds)?;
 
