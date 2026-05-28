@@ -2201,6 +2201,7 @@ export function MainWindow({
                         <MarkdownPreview
                           content={content}
                           fontSize={settingsConfig?.fontSize ?? 14}
+                          renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                         />
                       </div>
                     </div>

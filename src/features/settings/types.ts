@@ -24,6 +24,7 @@ export interface AppConfig {
   rememberSurfaceSize: boolean;
   tileCtrlClose: boolean;
   tileRenderMarkdown: boolean;
+  renderHtmlMarkdown: boolean;
   surfaceWidth?: number;
   surfaceHeight?: number;
   toggleVisibilityShortcut: string;

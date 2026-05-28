@@ -4,6 +4,9 @@ import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
+import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
+import type { Pluggable } from "unified";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
@@ -50,10 +53,26 @@ function extractText(node: React.ReactNode): string {
 interface MarkdownPreviewProps {
   content: string;
   fontSize?: number;
+  renderHtml?: boolean;
 }
 
 const remarkPlugins = [remarkGfm, remarkMath];
-const rehypePlugins = [rehypeKatex];
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [...(defaultSchema.tagNames ?? []), "mark", "center", "font", "u", "abbr"],
+  attributes: {
+    ...defaultSchema.attributes,
+    "*": [...(defaultSchema.attributes?.["*"] ?? []), "style"],
+    font: ["color", "size", "face"],
+    abbr: ["title"],
+  },
+};
+const rehypePluginsDefault = [rehypeKatex];
+const rehypePluginsWithHtml: Pluggable[] = [
+  rehypeRaw,
+  [rehypeSanitize, sanitizeSchema],
+  rehypeKatex,
+];
 
 const components: Components = {
   h1: ({ children }) => (
@@ -146,14 +165,18 @@ const components: Components = {
   ),
 };
 
-export function MarkdownPreview({ content, fontSize = 14 }: MarkdownPreviewProps) {
+export function MarkdownPreview({
+  content,
+  fontSize = 14,
+  renderHtml = false,
+}: MarkdownPreviewProps) {
   const { t } = useTranslation();
   return (
     <div className="font-body" style={{ fontSize: `${fontSize}px` }}>
       {content.trim() ? (
         <Markdown
           remarkPlugins={remarkPlugins}
-          rehypePlugins={rehypePlugins}
+          rehypePlugins={renderHtml ? rehypePluginsWithHtml : rehypePluginsDefault}
           components={components}
         >
           {content}
