@@ -1824,7 +1824,6 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
-            open_at_cursor: true,
         };
 
         let error = match shortcut_bindings_from_config(&config) {
@@ -1876,7 +1875,6 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
-            open_at_cursor: true,
         };
         let next = AppConfig {
             locale: "en-US".into(),
@@ -1909,7 +1907,6 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),
-            open_at_cursor: true,
         };
 
         assert_eq!(
