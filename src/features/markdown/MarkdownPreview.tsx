@@ -124,7 +124,8 @@ const components: Components = {
         if (/^https?:\/\//i.test(href)) {
           openUrl(href);
         } else if (href.startsWith("#")) {
-          document.getElementById(href.slice(1))?.scrollIntoView({ behavior: "smooth" });
+          const id = decodeURIComponent(href.slice(1));
+          document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
         }
       }}
       className="text-bamboo hover:text-bamboo-light underline underline-offset-2 cursor-pointer"
