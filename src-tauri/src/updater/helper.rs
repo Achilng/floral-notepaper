@@ -844,7 +844,7 @@ fn process_is_running(pid: u32) -> bool {
 
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
-        if handle == 0 {
+        if handle.is_null() {
             return false;
         }
         let wait_result = WaitForSingleObject(handle, 0);
