@@ -17,6 +17,8 @@ obj/
 [Rr]elease/
 x64/
 x86/
+*.dmg
+*.app
 
 ## Node / Tauri
 node_modules/

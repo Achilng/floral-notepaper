@@ -199,8 +199,10 @@
       "zhHK": "繁體中文"
     },
     "notesDir": "Notes directory",
+    "openAtCursor": "Open near cursor with shortcut",
     "quickNoteShortcut": "Quick Note shortcut",
     "rememberSurfaceSize": "Remember surface size",
+    "tabIndentSize": "Tab indent width",
     "selectFolder": "Select Folder",
     "shortcut": {
       "cancelHint": "Esc to cancel",
@@ -234,6 +236,7 @@
     },
     "tileCtrlClose": "Ctrl+Right-click to close tile",
     "tileRenderMarkdown": "Render Markdown on tile",
+    "renderHtmlMarkdown": "Render HTML tags in Markdown",
     "title": "Settings",
     "update": {
       "advanced": "Advanced",
@@ -351,7 +354,23 @@
       },
       "title": "Updates"
     },
-    "visibilityShortcut": "Show/Hide window shortcut"
+    "visibilityShortcut": "Show/Hide window shortcut",
+    "background": {
+      "label": "Background image",
+      "default": "Default background",
+      "choose": "Choose",
+      "clear": "Clear background image",
+      "dim": "Overlay",
+      "scale": "Scale",
+      "positionX": "Horizontal",
+      "positionY": "Vertical",
+      "blur": "Blur",
+      "fit": {
+        "cover": "Cover",
+        "contain": "Contain",
+        "repeat": "Repeat"
+      }
+    }
   },
   "tile": {
     "empty": "Empty"

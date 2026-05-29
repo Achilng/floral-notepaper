@@ -26,7 +26,11 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": null,
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$DOCUMENT/花笺/backgrounds/**", "$APPDATA/花笺/backgrounds/**"]
+      }
     }
   },
   "bundle": {

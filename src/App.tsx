@@ -4,6 +4,7 @@ import { ContextMenuProvider } from "./components/ContextMenu";
 import { MainWindow } from "./components/MainWindow";
 import { NotePad } from "./components/NotePad";
 import { TileShowcase } from "./components/TileShowcase";
+import { tabToIndentListener } from "indent-textarea";
 import { getConfig } from "./features/settings/api";
 import { applyTheme, watchSystemTheme } from "./features/settings/theme";
 import type { AppConfig, ThemeOption } from "./features/settings/types";
@@ -22,6 +23,10 @@ function App() {
         const theme = (config.theme || "system") as ThemeOption;
         applyTheme(theme);
         cleanup = watchSystemTheme(theme);
+        document.documentElement.style.setProperty(
+          "--tab-indent-size",
+          String(config.tabIndentSize ?? 2),
+        );
         void syncLanguage(config.locale);
       })
       .catch(() => {});
@@ -35,12 +40,27 @@ function App() {
       applyTheme(theme);
       themeCleanup();
       themeCleanup = watchSystemTheme(theme);
+      document.documentElement.style.setProperty(
+        "--tab-indent-size",
+        String(event.payload.tabIndentSize ?? 2),
+      );
       void syncLanguage(event.payload.locale);
     });
     return () => {
       themeCleanup();
       void unlisten.then((fn) => fn());
     };
+  }, []);
+
+  useEffect(() => {
+    const handleTab = (event: KeyboardEvent) => {
+      const target = event.target;
+      if (!(target instanceof HTMLTextAreaElement)) return;
+      if (target.dataset.tabIndent !== "true") return;
+      tabToIndentListener(event);
+    };
+    window.addEventListener("keydown", handleTab, true);
+    return () => window.removeEventListener("keydown", handleTab, true);
   }, []);
 
   useEffect(() => {
