@@ -125,6 +125,9 @@ body {
   background: transparent;
   overflow: hidden;
   font-family: var(--font-body);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
 }
 
 .app-window-shell {
@@ -250,15 +253,37 @@ body {
 }
 
 textarea,
-input {
+input,
+select,
+[contenteditable="true"],
+[contenteditable="plaintext-only"] {
   resize: none;
   outline: none;
   border: none;
   background: transparent;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 textarea::placeholder,
 input::placeholder {
   color: var(--color-ink-ghost);
+}
+
+.markdown-selectable,
+.markdown-selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.markdown-selectable {
+  cursor: text;
+}
+
+.markdown-selectable button,
+.markdown-selectable svg {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Noise texture overlay for paper feel */

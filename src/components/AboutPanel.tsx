@@ -44,7 +44,7 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
           </p>
         </section>
 
-        <UpdateSettingsSection />
+        <UpdateSettingsSection mode="checkOnly" />
       </div>
     </aside>
   );

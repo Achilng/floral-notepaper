@@ -149,7 +149,7 @@ const components: Components = {
 export function MarkdownPreview({ content, fontSize = 14 }: MarkdownPreviewProps) {
   const { t } = useTranslation();
   return (
-    <div className="font-body" style={{ fontSize: `${fontSize}px` }}>
+    <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>
       {content.trim() ? (
         <Markdown
           remarkPlugins={remarkPlugins}

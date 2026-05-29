@@ -11,6 +11,7 @@
     "fmt": "oxfmt",
     "preview": "vite preview",
     "tauri": "tauri",
+    "version:sync": "node scripts/set-version.mjs",
     "prepare": "husky"
   },
   "dependencies": {

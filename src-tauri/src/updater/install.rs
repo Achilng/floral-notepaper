@@ -7,9 +7,20 @@ use super::{
 };
 use crate::services::notes::AppError;
 use chrono::Utc;
-use std::{env, path::PathBuf, process::Command};
+use std::{
+    env,
+    ffi::OsString,
+    fs,
+    path::{Path, PathBuf},
+    process::{Child, Command, Stdio},
+    thread,
+    time::Duration,
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 const UPDATE_HELPER_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_HELPER_PATH";
+const HELPER_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const HELPER_READY_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct HelperLaunchRequest {
@@ -18,9 +29,7 @@ pub(crate) struct HelperLaunchRequest {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct HelperLaunchOutcome {
-    exit_code: i32,
-}
+pub(crate) struct HelperLaunchOutcome;
 
 pub(crate) trait InstallExecutor: Clone + Send + Sync + 'static {
     fn execute(&self, request: &HelperLaunchRequest) -> Result<HelperLaunchOutcome, AppError>;
@@ -31,9 +40,19 @@ pub(crate) struct ProcessInstallExecutor;
 
 impl InstallExecutor for ProcessInstallExecutor {
     fn execute(&self, request: &HelperLaunchRequest) -> Result<HelperLaunchOutcome, AppError> {
-        let status = Command::new(&request.helper_path)
-            .args(request.command.to_args())
-            .status()
+        let mut args = vec![OsString::from("--update-helper")];
+        args.extend(request.command.to_args());
+
+        if request.command.ready_path.exists() {
+            let _ = fs::remove_file(&request.command.ready_path);
+        }
+
+        let mut child = Command::new(&request.helper_path)
+            .args(args)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
             .map_err(|error| {
                 errors::with_detail(
                     errors::app_error(
@@ -45,9 +64,9 @@ impl InstallExecutor for ProcessInstallExecutor {
                 )
             })?;
 
-        Ok(HelperLaunchOutcome {
-            exit_code: status.code().unwrap_or_default(),
-        })
+        wait_for_helper_ready(&mut child, request)?;
+
+        Ok(HelperLaunchOutcome)
     }
 }
 
@@ -56,7 +75,7 @@ pub(crate) struct UpdateInstallService<E = ProcessInstallExecutor>
 where
     E: InstallExecutor,
 {
-    helper_path_override: Option<PathBuf>,
+    helper_source_override: Option<PathBuf>,
     platform_override: Option<PlatformInfo>,
     helper_mode: helper::UpdateHelperMode,
     executor: E,
@@ -65,13 +84,13 @@ where
 impl UpdateInstallService<ProcessInstallExecutor> {
     pub(crate) fn from_env() -> Self {
         Self {
-            helper_path_override: env::var(UPDATE_HELPER_PATH_ENV)
+            helper_source_override: env::var(UPDATE_HELPER_PATH_ENV)
                 .ok()
                 .map(|value| value.trim().to_string())
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from),
             platform_override: None,
-            helper_mode: helper::UpdateHelperMode::DryRun,
+            helper_mode: helper::UpdateHelperMode::Apply,
             executor: ProcessInstallExecutor,
         }
     }
@@ -85,11 +104,11 @@ where
     fn with_executor(
         executor: E,
         helper_mode: helper::UpdateHelperMode,
-        helper_path_override: Option<PathBuf>,
+        helper_source_override: Option<PathBuf>,
         platform_override: Option<PlatformInfo>,
     ) -> Self {
         Self {
-            helper_path_override,
+            helper_source_override,
             platform_override,
             helper_mode,
             executor,
@@ -105,39 +124,17 @@ where
         let log_path_text = request.command.log_path.to_string_lossy().to_string();
         let install_mode = install_mode(self.helper_mode);
         let started_at = Utc::now();
-        state::save(
-            paths,
-            &installing_state(&current_state, &request, install_mode.clone(), started_at),
-        )?;
-
-        let execution_result = self.executor.execute(&request);
-        match execution_result {
-            Ok(outcome) if outcome.exit_code == helper::UpdateHelperExitCode::Success.as_i32() => {
-                let scheduled_at = Utc::now();
+        match self.executor.execute(&request) {
+            Ok(_) => {
                 state::save(
                     paths,
-                    &scheduled_state(
-                        &current_state,
-                        &request,
-                        install_mode.clone(),
-                        started_at,
-                        scheduled_at,
-                    ),
+                    &scheduled_state(&current_state, &request, install_mode.clone(), started_at),
                 )?;
-
                 Ok(UpdateInstallResult {
                     status: UpdateStatus::InstallScheduled,
                     log_path: Some(log_path_text),
                     mode: install_mode,
                 })
-            }
-            Ok(outcome) => {
-                let error = map_helper_exit_code(outcome.exit_code, &request.command);
-                state::save(
-                    paths,
-                    &failed_state(&current_state, &request, install_mode, started_at, &error),
-                )?;
-                Err(error)
             }
             Err(error) => {
                 state::save(
@@ -156,7 +153,7 @@ where
     ) -> Result<HelperLaunchRequest, AppError> {
         if !matches!(
             current_state.status,
-            UpdateStatus::Downloaded | UpdateStatus::InstallScheduled
+            UpdateStatus::Downloaded | UpdateStatus::InstallScheduled | UpdateStatus::Failed
         ) {
             return Err(errors::app_error(
                 "updateInstallNotReady",
@@ -180,35 +177,43 @@ where
             .as_ref()
             .ok_or_else(|| errors::app_error("updateInstallNotReady", "当前没有可安装的更新包"))?;
 
-        let platform = self
-            .platform_override
-            .clone()
-            .unwrap_or_else(platform::current_platform);
+        let platform = self.platform_override.clone().unwrap_or_else(|| {
+            platform::current_platform_with_version(current_state.current_version.clone())
+        });
+        if platform.install_kind == super::types::InstallKind::WindowsPortable {
+            return Err(errors::portable_manual_only());
+        }
         if !platform.supports_update_assets() {
             return Err(errors::unsupported_platform());
         }
 
         let target_path = resolve_install_target(&platform)?;
-        let helper_path = self.resolve_helper_path(&platform)?;
+        let helper_source_path = self.resolve_helper_source_path(&platform)?;
+        let helper_path = stage_helper_copy(paths, &platform, &helper_source_path)?;
         let log_path = build_log_path(paths, target_version);
+        let ready_path = build_ready_path(paths, target_version);
 
         Ok(HelperLaunchRequest {
             helper_path,
             command: helper::UpdateHelperCommand {
                 mode: self.helper_mode,
+                install_kind: platform.install_kind.clone(),
+                wait_pid: std::process::id(),
+                state_path: paths.state_path(),
                 asset_path: PathBuf::from(asset_path),
                 asset_sha256: asset_sha256.clone(),
                 asset_size,
                 target_path,
                 log_path,
+                ready_path,
                 current_version: current_state.current_version.clone(),
                 target_version: target_version.clone(),
             },
         })
     }
 
-    fn resolve_helper_path(&self, platform: &PlatformInfo) -> Result<PathBuf, AppError> {
-        if let Some(path) = self.helper_path_override.as_ref() {
+    fn resolve_helper_source_path(&self, platform: &PlatformInfo) -> Result<PathBuf, AppError> {
+        if let Some(path) = self.helper_source_override.as_ref() {
             if path.exists() {
                 return Ok(path.clone());
             }
@@ -219,57 +224,304 @@ where
             ));
         }
 
-        for candidate in helper_candidates(platform) {
-            if candidate.exists() {
-                return Ok(candidate);
-            }
+        if platform.install_kind == super::types::InstallKind::MacosAppBundle {
+            return resolve_macos_helper_source_path(platform).ok_or_else(|| {
+                build_helper_not_found_error(platform, "找不到更新安装助手可执行文件")
+            });
         }
 
-        Err(errors::app_error(
-            "updateHelperNotFound",
-            "找不到更新安装助手可执行文件",
-        ))
+        platform
+            .current_exe
+            .as_ref()
+            .map(PathBuf::from)
+            .filter(|path| path.exists())
+            .ok_or_else(|| {
+                errors::app_error("updateHelperNotFound", "找不到更新安装助手可执行文件")
+            })
+    }
+}
+
+fn wait_for_helper_ready(child: &mut Child, request: &HelperLaunchRequest) -> Result<(), AppError> {
+    let deadline = std::time::Instant::now() + HELPER_READY_TIMEOUT;
+    loop {
+        if request.command.ready_path.exists() {
+            return Ok(());
+        }
+        if let Some(status) = child.try_wait().map_err(|error| {
+            errors::app_error(
+                "updateInstallHelperHandshakeFailed",
+                format!("更新安装助手在握手前退出：{error}"),
+            )
+        })? {
+            return Err(errors::with_detail(
+                errors::app_error(
+                    "updateInstallHelperHandshakeFailed",
+                    format!("更新安装助手在握手前退出，状态码：{:?}", status.code()),
+                ),
+                "helperPath",
+                request.helper_path.display().to_string(),
+            ));
+        }
+        if std::time::Instant::now() >= deadline {
+            let _ = child.kill();
+            return Err(errors::with_detail(
+                errors::app_error(
+                    "updateInstallHelperHandshakeFailed",
+                    "等待更新安装助手就绪超时",
+                ),
+                "readyPath",
+                request.command.ready_path.display().to_string(),
+            ));
+        }
+        thread::sleep(HELPER_READY_POLL_INTERVAL);
     }
 }
 
 fn resolve_install_target(platform: &PlatformInfo) -> Result<PathBuf, AppError> {
     match platform.install_kind {
-        super::types::InstallKind::MacosAppBundle => platform
-            .current_app_bundle
+        super::types::InstallKind::MacosAppBundle => {
+            resolve_macos_bundle_path(platform).ok_or_else(errors::unsupported_platform)
+        }
+        super::types::InstallKind::WindowsNsis => platform
+            .current_exe
             .as_ref()
             .map(PathBuf::from)
             .ok_or_else(errors::unsupported_platform),
-        super::types::InstallKind::WindowsNsis | super::types::InstallKind::WindowsPortable => {
-            platform
-                .current_exe
-                .as_ref()
-                .map(PathBuf::from)
-                .ok_or_else(errors::unsupported_platform)
-        }
+        super::types::InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
         super::types::InstallKind::Unknown => Err(errors::unsupported_platform()),
     }
 }
 
-fn helper_candidates(platform: &PlatformInfo) -> Vec<PathBuf> {
+fn resolve_macos_bundle_path(platform: &PlatformInfo) -> Option<PathBuf> {
+    resolve_macos_bundle_path_in(platform, &macos_bundle_search_dirs())
+}
+
+fn resolve_macos_bundle_path_in(
+    platform: &PlatformInfo,
+    search_dirs: &[PathBuf],
+) -> Option<PathBuf> {
+    macos_bundle_candidates(platform, search_dirs)
+        .into_iter()
+        .find(|path| path.exists())
+}
+
+fn resolve_macos_helper_source_path(platform: &PlatformInfo) -> Option<PathBuf> {
+    resolve_macos_helper_source_path_in(platform, &macos_bundle_search_dirs())
+}
+
+fn resolve_macos_helper_source_path_in(
+    platform: &PlatformInfo,
+    search_dirs: &[PathBuf],
+) -> Option<PathBuf> {
+    for bundle in macos_bundle_candidates(platform, search_dirs) {
+        let helper_path = macos_helper_executable_path(&bundle);
+        if helper_path.exists() {
+            return Some(helper_path);
+        }
+    }
+    resolve_macos_bundle_path_in(platform, search_dirs)
+}
+
+fn macos_bundle_search_dirs() -> Vec<PathBuf> {
+    let mut dirs = vec![PathBuf::from("/Applications")];
+    if let Some(home_dir) = dirs::home_dir() {
+        dirs.push(home_dir.join("Applications"));
+    }
+    dirs
+}
+
+fn macos_bundle_candidates(platform: &PlatformInfo, search_dirs: &[PathBuf]) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
 
-    if let Some(bundle) = platform.current_app_bundle.as_ref() {
-        candidates.push(
-            PathBuf::from(bundle)
-                .join("Contents")
-                .join("MacOS")
-                .join(helper::HELPER_BINARY_NAME),
-        );
+    if let Some(bundle) = platform.current_app_bundle.as_ref().map(PathBuf::from) {
+        push_unique_candidate(&mut candidates, bundle);
     }
 
-    if let Some(current_exe) = platform.current_exe.as_ref() {
-        let current_exe = PathBuf::from(current_exe);
-        if let Some(parent) = current_exe.parent() {
-            candidates.push(parent.join(helper::HELPER_BINARY_NAME));
+    if let Some(bundle) = platform
+        .current_exe
+        .as_deref()
+        .map(Path::new)
+        .and_then(find_bundle_path_from_executable_path)
+    {
+        push_unique_candidate(&mut candidates, bundle);
+    }
+
+    if let Some(bundle_name) = current_bundle_name(platform) {
+        for search_dir in search_dirs {
+            push_unique_candidate(&mut candidates, search_dir.join(&bundle_name));
         }
     }
 
     candidates
+}
+
+fn push_unique_candidate(candidates: &mut Vec<PathBuf>, candidate: PathBuf) {
+    if !candidates.iter().any(|existing| existing == &candidate) {
+        candidates.push(candidate);
+    }
+}
+
+fn current_bundle_name(platform: &PlatformInfo) -> Option<std::ffi::OsString> {
+    platform
+        .current_app_bundle
+        .as_deref()
+        .map(Path::new)
+        .and_then(Path::file_name)
+        .map(|value| value.to_os_string())
+        .or_else(|| {
+            platform
+                .current_exe
+                .as_deref()
+                .map(Path::new)
+                .and_then(find_bundle_path_from_executable_path)
+                .and_then(|path| path.file_name().map(|value| value.to_os_string()))
+        })
+}
+
+fn find_bundle_path_from_executable_path(executable_path: &Path) -> Option<PathBuf> {
+    let mut current = executable_path.parent();
+    while let Some(path) = current {
+        if path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+        {
+            return Some(path.to_path_buf());
+        }
+        current = path.parent();
+    }
+    None
+}
+
+fn build_helper_not_found_error(platform: &PlatformInfo, message: &str) -> AppError {
+    let attempted_paths = macos_bundle_candidates(platform, &macos_bundle_search_dirs())
+        .into_iter()
+        .flat_map(|bundle_path| {
+            [
+                macos_helper_executable_path(&bundle_path)
+                    .display()
+                    .to_string(),
+                bundle_path.display().to_string(),
+            ]
+        })
+        .collect::<Vec<_>>()
+        .join(" | ");
+    let mut error = errors::app_error("updateHelperNotFound", message);
+    if !attempted_paths.is_empty() {
+        error = errors::with_detail(error, "attemptedPaths", attempted_paths);
+    }
+    error
+}
+
+fn macos_helper_executable_path(bundle_path: &Path) -> PathBuf {
+    bundle_path
+        .join("Contents")
+        .join("MacOS")
+        .join(helper::HELPER_BINARY_NAME)
+}
+
+fn stage_helper_copy(
+    paths: &UpdatePaths,
+    platform: &PlatformInfo,
+    source_path: &Path,
+) -> Result<PathBuf, AppError> {
+    paths.ensure_dirs()?;
+    if platform.install_kind == super::types::InstallKind::MacosAppBundle
+        && source_path
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+    {
+        return stage_helper_bundle_copy(platform, source_path, paths);
+    }
+
+    let extension = source_path.extension().and_then(|ext| ext.to_str());
+    let staged_path = unique_helper_path(paths, extension);
+    fs::copy(source_path, &staged_path).map_err(|error| {
+        let error = errors::with_detail(
+            errors::app_error(
+                "updateInstallSpawnFailed",
+                format!("准备更新安装助手失败：{error}"),
+            ),
+            "helperSourcePath",
+            source_path.display().to_string(),
+        );
+        errors::with_detail(error, "helperPath", staged_path.display().to_string())
+    })?;
+    Ok(staged_path)
+}
+
+fn stage_helper_bundle_copy(
+    platform: &PlatformInfo,
+    source_bundle: &Path,
+    paths: &UpdatePaths,
+) -> Result<PathBuf, AppError> {
+    let staged_bundle = unique_helper_path(paths, Some("app"));
+    Command::new("/usr/bin/ditto")
+        .arg(source_bundle)
+        .arg(&staged_bundle)
+        .status()
+        .map_err(|error| {
+            errors::with_detail(
+                errors::app_error(
+                    "updateInstallSpawnFailed",
+                    format!("准备更新安装助手失败：{error}"),
+                ),
+                "helperSourcePath",
+                source_bundle.display().to_string(),
+            )
+        })
+        .and_then(|status| {
+            if status.success() {
+                Ok(())
+            } else {
+                Err(errors::app_error(
+                    "updateInstallSpawnFailed",
+                    "复制更新安装助手应用包失败",
+                ))
+            }
+        })?;
+
+    let executable_name = platform
+        .current_exe
+        .as_deref()
+        .and_then(|file| Path::new(file).file_name())
+        .and_then(|name| name.to_str())
+        .unwrap_or(helper::HELPER_BINARY_NAME);
+    let executable_path = staged_bundle
+        .join("Contents")
+        .join("MacOS")
+        .join(executable_name);
+    if executable_path.exists() {
+        Ok(executable_path)
+    } else {
+        Err(errors::with_detail(
+            errors::app_error("updateInstallSpawnFailed", "复制后的更新安装助手不可执行"),
+            "helperPath",
+            executable_path.display().to_string(),
+        ))
+    }
+}
+
+fn unique_helper_path(paths: &UpdatePaths, extension: Option<&str>) -> PathBuf {
+    let unique = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let mut file_name = format!("embedded-update-helper-{unique}");
+    if let Some(extension) = extension.filter(|value| !value.is_empty()) {
+        file_name.push('.');
+        file_name.push_str(extension);
+    }
+    paths.staging_dir().join(file_name)
+}
+
+fn build_ready_path(paths: &UpdatePaths, version: &str) -> PathBuf {
+    let timestamp = Utc::now().format("%Y%m%dT%H%M%SZ");
+    let version = sanitize_segment(version);
+    paths
+        .staging_dir()
+        .join(format!("helper-ready-{version}-{timestamp}.marker"))
 }
 
 fn build_log_path(paths: &UpdatePaths, version: &str) -> PathBuf {
@@ -297,35 +549,8 @@ fn sanitize_segment(value: &str) -> String {
 
 fn install_mode(mode: helper::UpdateHelperMode) -> UpdateInstallMode {
     match mode {
-        helper::UpdateHelperMode::DryRun => UpdateInstallMode::DryRun,
+        helper::UpdateHelperMode::Apply => UpdateInstallMode::Apply,
         helper::UpdateHelperMode::Test => UpdateInstallMode::Test,
-    }
-}
-
-fn installing_state(
-    current_state: &UpdateStateDto,
-    request: &HelperLaunchRequest,
-    install_mode: UpdateInstallMode,
-    started_at: chrono::DateTime<Utc>,
-) -> UpdateStateDto {
-    UpdateStateDto {
-        status: UpdateStatus::Installing,
-        current_version: current_state.current_version.clone(),
-        latest_version: current_state.latest_version.clone(),
-        channel: current_state.channel.clone(),
-        asset_name: current_state.asset_name.clone(),
-        asset_path: current_state.asset_path.clone(),
-        asset_sha256: current_state.asset_sha256.clone(),
-        asset_size: current_state.asset_size,
-        asset_url: current_state.asset_url.clone(),
-        source: current_state.source.clone(),
-        checked_at: current_state.checked_at,
-        downloaded_at: current_state.downloaded_at,
-        install_log_path: Some(request.command.log_path.to_string_lossy().to_string()),
-        install_mode: Some(install_mode),
-        install_started_at: Some(started_at),
-        install_scheduled_at: None,
-        last_error: None,
     }
 }
 
@@ -334,7 +559,6 @@ fn scheduled_state(
     request: &HelperLaunchRequest,
     install_mode: UpdateInstallMode,
     started_at: chrono::DateTime<Utc>,
-    scheduled_at: chrono::DateTime<Utc>,
 ) -> UpdateStateDto {
     UpdateStateDto {
         status: UpdateStatus::InstallScheduled,
@@ -351,8 +575,8 @@ fn scheduled_state(
         downloaded_at: current_state.downloaded_at,
         install_log_path: Some(request.command.log_path.to_string_lossy().to_string()),
         install_mode: Some(install_mode),
-        install_started_at: Some(started_at),
-        install_scheduled_at: Some(scheduled_at),
+        install_started_at: None,
+        install_scheduled_at: Some(started_at),
         last_error: None,
     }
 }
@@ -393,61 +617,9 @@ fn install_failure_action(code: &str) -> &'static str {
     match code {
         "updateInstallAssetMissing"
         | "updateInstallAssetSizeMismatch"
-        | "updateInstallAssetHashMismatch" => "retryDownload",
+        | "updateInstallAssetHashMismatch"
+        | "updateInstallAssetExtractFailed" => "retryDownload",
         _ => "retryInstall",
-    }
-}
-
-fn map_helper_exit_code(code: i32, command: &helper::UpdateHelperCommand) -> AppError {
-    match code {
-        value if value == helper::UpdateHelperExitCode::InvalidArguments.as_i32() => {
-            errors::app_error(
-                "updateInstallHelperInvalidArguments",
-                "更新安装助手参数无效，当前不会执行安装",
-            )
-        }
-        value if value == helper::UpdateHelperExitCode::AssetMissing.as_i32() => {
-            errors::with_detail(
-                errors::app_error("updateInstallAssetMissing", "更新包文件不存在或无法读取"),
-                "assetPath",
-                command.asset_path.display().to_string(),
-            )
-        }
-        value if value == helper::UpdateHelperExitCode::AssetSizeMismatch.as_i32() => {
-            errors::with_detail(
-                errors::app_error("updateInstallAssetSizeMismatch", "更新包大小校验失败"),
-                "assetPath",
-                command.asset_path.display().to_string(),
-            )
-        }
-        value if value == helper::UpdateHelperExitCode::AssetHashMismatch.as_i32() => {
-            errors::with_detail(
-                errors::app_error("updateInstallAssetHashMismatch", "更新包哈希校验失败"),
-                "assetPath",
-                command.asset_path.display().to_string(),
-            )
-        }
-        value if value == helper::UpdateHelperExitCode::TargetMissing.as_i32() => {
-            errors::with_detail(
-                errors::app_error("updateInstallTargetMissing", "当前安装目标不存在，无法继续"),
-                "targetPath",
-                command.target_path.display().to_string(),
-            )
-        }
-        value if value == helper::UpdateHelperExitCode::LogWriteFailed.as_i32() => {
-            errors::with_detail(
-                errors::app_error(
-                    "updateInstallLogWriteFailed",
-                    "无法写入安装日志，当前不会执行安装",
-                ),
-                "logPath",
-                command.log_path.display().to_string(),
-            )
-        }
-        _ => errors::app_error(
-            "updateInstallHelperFailed",
-            "更新安装助手执行失败，当前不会执行安装",
-        ),
     }
 }
 
@@ -455,12 +627,11 @@ fn map_helper_exit_code(code: i32, command: &helper::UpdateHelperCommand) -> App
 mod tests {
     use super::*;
     use crate::updater::types::{DownloadSourceUsed, UpdateChannel};
-    use std::{fs, path::Path, sync::Arc};
+    use std::{fs, sync::Arc};
 
     #[derive(Debug, Clone)]
     enum FakeExecutorResult {
         Success,
-        Exit(i32),
         Error(AppError),
     }
 
@@ -487,10 +658,7 @@ mod tests {
         fn execute(&self, request: &HelperLaunchRequest) -> Result<HelperLaunchOutcome, AppError> {
             self.calls.lock().expect("calls lock").push(request.clone());
             match &self.result {
-                FakeExecutorResult::Success => Ok(HelperLaunchOutcome {
-                    exit_code: helper::UpdateHelperExitCode::Success.as_i32(),
-                }),
-                FakeExecutorResult::Exit(code) => Ok(HelperLaunchOutcome { exit_code: *code }),
+                FakeExecutorResult::Success => Ok(HelperLaunchOutcome),
                 FakeExecutorResult::Error(error) => Err(error.clone()),
             }
         }
@@ -551,72 +719,88 @@ mod tests {
         }
     }
 
-    #[test]
-    fn schedules_install_after_helper_dry_run() {
-        let paths = test_paths("install-success");
-        paths.ensure_dirs().expect("ensure dirs");
-        let bundle = paths.root_dir().join("Floral Notepaper.app");
-        fs::create_dir_all(bundle.join("Contents").join("MacOS")).expect("create bundle");
-        let helper_path = bundle
+    fn write_bundle_with_helper(bundle: &Path) {
+        let app_binary = bundle
+            .join("Contents")
+            .join("MacOS")
+            .join("floral-notepaper");
+        let helper_binary = bundle
             .join("Contents")
             .join("MacOS")
             .join(helper::HELPER_BINARY_NAME);
-        fs::write(&helper_path, b"helper").expect("write helper placeholder");
+        fs::create_dir_all(app_binary.parent().expect("app binary parent")).expect("create bundle");
+        fs::write(&app_binary, b"main app placeholder").expect("write app placeholder");
+        fs::write(&helper_binary, b"helper placeholder").expect("write helper placeholder");
+    }
+
+    #[test]
+    fn launches_real_install_helper_after_staging_copy() {
+        let paths = test_paths("install-success");
+        paths.ensure_dirs().expect("ensure dirs");
+        let bundle = paths.root_dir().join("Floral Notepaper.app");
+        write_bundle_with_helper(&bundle);
+        let app_binary = bundle
+            .join("Contents")
+            .join("MacOS")
+            .join("floral-notepaper");
 
         let executor = FakeExecutor::new(FakeExecutorResult::Success);
         let service = UpdateInstallService::with_executor(
             executor.clone(),
-            helper::UpdateHelperMode::DryRun,
-            Some(helper_path.clone()),
+            helper::UpdateHelperMode::Apply,
+            Some(app_binary.clone()),
             Some(platform_with_bundle(&bundle)),
         );
         let state = downloaded_state(&paths);
 
         let result = service
             .run(&paths, state.clone())
-            .expect("install scheduling should succeed");
+            .expect("install launch should succeed");
 
         let saved = state::load(&paths).expect("load saved state");
         assert_eq!(result.status, UpdateStatus::InstallScheduled);
-        assert_eq!(result.mode, UpdateInstallMode::DryRun);
+        assert_eq!(result.mode, UpdateInstallMode::Apply);
         assert_eq!(saved.status, UpdateStatus::InstallScheduled);
         assert_eq!(saved.latest_version, state.latest_version);
         assert!(saved.install_log_path.is_some());
 
         let calls = executor.calls();
         assert_eq!(calls.len(), 1);
-        assert_eq!(calls[0].helper_path, helper_path);
-        assert_eq!(calls[0].command.mode, helper::UpdateHelperMode::DryRun);
+        assert_eq!(calls[0].command.mode, helper::UpdateHelperMode::Apply);
+        assert_eq!(
+            calls[0].command.install_kind,
+            super::super::types::InstallKind::MacosAppBundle
+        );
+        assert_eq!(calls[0].command.state_path, paths.state_path());
+        assert!(calls[0].command.ready_path.starts_with(paths.staging_dir()));
+        assert!(calls[0].helper_path.exists());
+        assert_ne!(calls[0].helper_path, app_binary);
     }
 
     #[test]
-    fn maps_helper_hash_failure_into_failed_state() {
-        let paths = test_paths("install-hash-failure");
-        paths.ensure_dirs().expect("ensure dirs");
-        let helper_path = paths.root_dir().join(helper::HELPER_BINARY_NAME);
-        fs::write(&helper_path, b"helper").expect("write helper placeholder");
-        let executor = FakeExecutor::new(FakeExecutorResult::Exit(
-            helper::UpdateHelperExitCode::AssetHashMismatch.as_i32(),
-        ));
-        let bundle = paths.root_dir().join("Floral Notepaper.app");
-        fs::create_dir_all(bundle.join("Contents").join("MacOS")).expect("create bundle");
-        let service = UpdateInstallService::with_executor(
-            executor,
-            helper::UpdateHelperMode::DryRun,
-            Some(helper_path),
-            Some(platform_with_bundle(&bundle)),
-        );
+    fn resolves_macos_helper_and_target_from_fallback_search_dir() {
+        let paths = test_paths("install-macos-fallback-bundle");
+        let fallback_dir = paths.root_dir().join("Applications");
+        let actual_bundle = fallback_dir.join("花笺.app");
+        write_bundle_with_helper(&actual_bundle);
 
-        let error = service
-            .run(&paths, downloaded_state(&paths))
-            .expect_err("hash mismatch should fail");
+        let stale_bundle = paths.root_dir().join("gone").join("花笺.app");
+        let platform = platform_with_bundle(&stale_bundle);
 
-        let saved = state::load(&paths).expect("load failed state");
-        assert_eq!(error.code, "updateInstallAssetHashMismatch");
-        assert_eq!(saved.status, UpdateStatus::Failed);
+        let resolved_bundle =
+            resolve_macos_bundle_path_in(&platform, std::slice::from_ref(&fallback_dir))
+                .expect("resolve fallback bundle");
+        let resolved_helper =
+            resolve_macos_helper_source_path_in(&platform, std::slice::from_ref(&fallback_dir))
+                .expect("resolve fallback helper");
+
+        assert_eq!(resolved_bundle, actual_bundle);
         assert_eq!(
-            saved.last_error.expect("last error").action.as_deref(),
-            Some("retryDownload")
+            resolved_helper,
+            actual_bundle
+                .join("Contents")
+                .join("MacOS")
+                .join(helper::HELPER_BINARY_NAME)
         );
     }
 
@@ -627,7 +811,7 @@ mod tests {
         let service = UpdateInstallService::with_executor(
             executor,
             helper::UpdateHelperMode::Test,
-            Some(paths.root_dir().join(helper::HELPER_BINARY_NAME)),
+            Some(paths.root_dir().join("helper")),
             None,
         );
 
@@ -639,14 +823,14 @@ mod tests {
     }
 
     #[test]
-    fn helper_path_override_must_exist() {
+    fn helper_source_override_must_exist() {
         let paths = test_paths("install-helper-missing");
         let executor = FakeExecutor::new(FakeExecutorResult::Success);
         let bundle = paths.root_dir().join("Floral Notepaper.app");
         fs::create_dir_all(bundle.join("Contents").join("MacOS")).expect("create bundle");
         let service = UpdateInstallService::with_executor(
             executor,
-            helper::UpdateHelperMode::DryRun,
+            helper::UpdateHelperMode::Apply,
             Some(paths.root_dir().join("missing-helper")),
             Some(platform_with_bundle(&bundle)),
         );
@@ -662,18 +846,20 @@ mod tests {
     fn preserves_spawn_failures_as_failed_state() {
         let paths = test_paths("install-spawn-failure");
         paths.ensure_dirs().expect("ensure dirs");
-        let helper_path = paths.root_dir().join(helper::HELPER_BINARY_NAME);
-        fs::write(&helper_path, b"helper").expect("write helper placeholder");
         let bundle = paths.root_dir().join("Floral Notepaper.app");
-        fs::create_dir_all(bundle.join("Contents").join("MacOS")).expect("create bundle");
+        write_bundle_with_helper(&bundle);
+        let app_binary = bundle
+            .join("Contents")
+            .join("MacOS")
+            .join("floral-notepaper");
         let executor = FakeExecutor::new(FakeExecutorResult::Error(errors::app_error(
             "updateInstallSpawnFailed",
             "启动更新安装助手失败：boom",
         )));
         let service = UpdateInstallService::with_executor(
             executor,
-            helper::UpdateHelperMode::DryRun,
-            Some(helper_path),
+            helper::UpdateHelperMode::Apply,
+            Some(app_binary),
             Some(platform_with_bundle(&bundle)),
         );
 
@@ -687,18 +873,31 @@ mod tests {
     }
 
     #[test]
-    fn collects_default_helper_candidates() {
-        let bundle = PathBuf::from("/Applications/Floral Notepaper.app");
-        let platform = platform_with_bundle(&bundle);
+    fn stages_helper_copy_in_updater_staging_directory() {
+        let paths = test_paths("install-stage-helper");
+        paths.ensure_dirs().expect("ensure dirs");
+        let source = paths.root_dir().join("current-helper");
+        fs::write(&source, b"helper copy source").expect("write helper source");
 
-        let candidates = helper_candidates(&platform);
+        let staged = stage_helper_copy(
+            &paths,
+            &PlatformInfo {
+                os: platform::Os::Unsupported,
+                arch: platform::Arch::Unsupported,
+                app_version: "1.0.3".into(),
+                app_id: super::super::APP_ID.into(),
+                install_kind: super::super::types::InstallKind::Unknown,
+                current_exe: Some(source.to_string_lossy().to_string()),
+                current_app_bundle: None,
+            },
+            &source,
+        )
+        .expect("stage helper");
 
-        assert!(candidates.iter().any(|path| {
-            path.ends_with(
-                Path::new("Contents")
-                    .join("MacOS")
-                    .join(helper::HELPER_BINARY_NAME),
-            )
-        }));
+        assert!(staged.starts_with(paths.staging_dir()));
+        assert_eq!(
+            fs::read(&staged).expect("read staged helper"),
+            b"helper copy source"
+        );
     }
 }

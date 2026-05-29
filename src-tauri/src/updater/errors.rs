@@ -85,3 +85,10 @@ pub fn github_rate_limited() -> AppError {
 pub fn github_release_no_assets() -> AppError {
     app_error("updateGithubNoAssets", "GitHub Release 中没有找到可用资产")
 }
+
+pub fn portable_manual_only() -> AppError {
+    app_error(
+        "updatePortableManualOnly",
+        "当前便携版仅支持手动下载更新包后覆盖升级",
+    )
+}

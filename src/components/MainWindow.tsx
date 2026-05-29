@@ -3,6 +3,7 @@ import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { emit, listen } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AboutPanel } from "./AboutPanel";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
@@ -14,6 +15,15 @@ import {
 } from "../features/settings/api";
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
+import { getUpdateStatus, reportInstallPreparation } from "../features/update/api";
+import {
+  ABOUT_UPDATE_LABEL_DURATION_MS,
+  applyAboutUpdateStatus,
+  createAboutUpdateReminderState,
+  dismissAboutUpdateReminderText,
+  type AboutUpdateReminderState,
+} from "../features/update/presentation";
+import type { UpdateInstallPrepareRequest, UpdateState } from "../features/update/types";
 import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
@@ -62,6 +72,7 @@ import {
 } from "../features/windows/tileWindowEvents";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+type SidePanelMode = "about" | "settings";
 
 interface NoteMenuState {
   x: number;
@@ -270,12 +281,16 @@ interface MainWindowProps {
   initialSettingsOpen?: boolean;
   initialConfig?: AppConfig;
   initialErrorMessage?: string | null;
+  initialUpdateStatus?: UpdateState | null;
+  initialAboutUpdateLabelVisible?: boolean;
 }
 
 export function MainWindow({
   initialSettingsOpen = false,
   initialConfig = undefined,
   initialErrorMessage = null,
+  initialUpdateStatus = undefined,
+  initialAboutUpdateLabelVisible = false,
 }: MainWindowProps = {}) {
   const { t } = useTranslation();
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
@@ -296,6 +311,18 @@ export function MainWindow({
   const [noteMenuClosing, setNoteMenuClosing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
   const [aboutOpen, setAboutOpen] = useState(false);
+  const [mountedSidePanel, setMountedSidePanel] = useState<SidePanelMode | null>(
+    initialSettingsOpen && initialConfig ? "settings" : null,
+  );
+  const [sidePanelContentVisible, setSidePanelContentVisible] = useState(
+    Boolean(initialSettingsOpen && initialConfig),
+  );
+  const [aboutUpdateReminder, setAboutUpdateReminder] = useState<AboutUpdateReminderState>(() => {
+    const initialReminder = createAboutUpdateReminderState(initialUpdateStatus ?? null);
+    return initialAboutUpdateLabelVisible
+      ? { ...initialReminder, showText: true }
+      : initialReminder;
+  });
   const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(initialConfig ?? null);
   const [savedNotesDir, setSavedNotesDir] = useState<string | null>(
     initialConfig?.notesDir ?? null,
@@ -322,6 +349,7 @@ export function MainWindow({
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const windowLabelRef = useRef("main");
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
   const saveStateRef = useRef(saveState);
@@ -340,6 +368,7 @@ export function MainWindow({
     () => externalFiles.find((f) => f.id === selectedId) ?? null,
     [externalFiles, selectedId],
   );
+  const updateStatusHydratedRef = useRef(initialUpdateStatus !== undefined);
 
   const isExternal = selectedExternalFile !== null;
 
@@ -442,6 +471,29 @@ export function MainWindow({
     ],
     [t],
   );
+  const syncUpdateStatus = useCallback((nextStatus: UpdateState) => {
+    const shouldHydrate = !updateStatusHydratedRef.current;
+    if (shouldHydrate) {
+      updateStatusHydratedRef.current = true;
+    }
+
+    setAboutUpdateReminder((current) =>
+      shouldHydrate
+        ? createAboutUpdateReminderState(nextStatus)
+        : applyAboutUpdateStatus(current, nextStatus),
+    );
+  }, []);
+  const visibleSidePanel: SidePanelMode | null = aboutOpen
+    ? "about"
+    : settingsOpen && settingsConfig
+      ? "settings"
+      : null;
+  const sidePanelExpanded = visibleSidePanel !== null;
+  const openAboutPanel = useCallback(() => {
+    setSettingsOpen(false);
+    setAboutOpen(true);
+    setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
+  }, []);
 
   const filteredNotes = useMemo(() => filterNotes(notes, searchQuery), [notes, searchQuery]);
 
@@ -537,6 +589,14 @@ export function MainWindow({
   }, []);
 
   useEffect(() => {
+    try {
+      windowLabelRef.current = getCurrentWindow().label;
+    } catch {
+      windowLabelRef.current = "main";
+    }
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     async function bootstrap() {
@@ -572,6 +632,91 @@ export function MainWindow({
       cancelled = true;
     };
   }, [applyNote, clearCurrentNote]);
+
+  useEffect(() => {
+    let active = true;
+
+    void getUpdateStatus()
+      .then((status) => {
+        if (!active) return;
+        syncUpdateStatus(status);
+      })
+      .catch(() => undefined);
+
+    const bindEvents = async () => {
+      const unlistenChecking = await listen<UpdateState>("update://checking", (event) => {
+        if (!active) return;
+        syncUpdateStatus(event.payload);
+      });
+
+      const unlistenChecked = await listen<UpdateState>("update://checked", (event) => {
+        if (!active) return;
+        syncUpdateStatus(event.payload);
+      });
+
+      const unlistenDownloadFinished = await listen<UpdateState>(
+        "update://download-finished",
+        (event) => {
+          if (!active) return;
+          syncUpdateStatus(event.payload);
+        },
+      );
+
+      const unlistenInstallFinished = await listen<UpdateState>(
+        "update://install-finished",
+        (event) => {
+          if (!active) return;
+          syncUpdateStatus(event.payload);
+        },
+      );
+
+      return () => {
+        unlistenChecking();
+        unlistenChecked();
+        unlistenDownloadFinished();
+        unlistenInstallFinished();
+      };
+    };
+
+    const promise = bindEvents();
+
+    return () => {
+      active = false;
+      void promise.then((dispose) => dispose()).catch(() => undefined);
+    };
+  }, [syncUpdateStatus]);
+
+  useEffect(() => {
+    if (!aboutUpdateReminder.showText) return;
+
+    const timer = window.setTimeout(() => {
+      setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
+    }, ABOUT_UPDATE_LABEL_DURATION_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [aboutUpdateReminder.showText]);
+
+  useEffect(() => {
+    if (visibleSidePanel) {
+      setMountedSidePanel(visibleSidePanel);
+      setSidePanelContentVisible(false);
+
+      const frame = window.requestAnimationFrame(() => {
+        setSidePanelContentVisible(true);
+      });
+
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    setSidePanelContentVisible(false);
+    if (!mountedSidePanel) return;
+
+    const timer = window.setTimeout(() => {
+      setMountedSidePanel((current) => (current === mountedSidePanel ? null : current));
+    }, 320);
+
+    return () => window.clearTimeout(timer);
+  }, [mountedSidePanel, visibleSidePanel]);
 
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
@@ -629,6 +774,15 @@ export function MainWindow({
       void unlisten.then((fn) => fn());
     };
   }, [loadNote]);
+
+  useEffect(() => {
+    const unlisten = listen("open-about-panel", () => {
+      openAboutPanel();
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [openAboutPanel]);
 
   useEffect(() => {
     const unlisten = listen<string>("shortcut-register-failed", (event) => {
@@ -758,6 +912,46 @@ export function MainWindow({
     selectedNote,
     title,
   ]);
+
+  useEffect(() => {
+    const unlisten = listen<UpdateInstallPrepareRequest>("update://prepare-install", (event) => {
+      const respond = async () => {
+        const windowLabel = windowLabelRef.current;
+        if (saveStateRef.current !== "dirty") {
+          await reportInstallPreparation(event.payload.requestId, windowLabel, "ready");
+          return;
+        }
+
+        const saved = await saveCurrentNote();
+        await reportInstallPreparation(
+          event.payload.requestId,
+          windowLabel,
+          saved ? "ready" : "failed",
+          saved
+            ? undefined
+            : t("settings.update.error.installSaveFailed", {
+                defaultValue: "安装前自动保存失败，请先处理当前笔记后重试",
+              }),
+        );
+      };
+
+      void respond().catch(async (error) => {
+        await reportInstallPreparation(
+          event.payload.requestId,
+          windowLabelRef.current,
+          "failed",
+          error instanceof Error
+            ? error.message
+            : t("settings.update.error.installSaveFailed", {
+                defaultValue: "安装前自动保存失败，请先处理当前笔记后重试",
+              }),
+        ).catch(() => undefined);
+      });
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [saveCurrentNote, t]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -894,6 +1088,7 @@ export function MainWindow({
       const nextOpen = !open;
       if (nextOpen) {
         setSettingsOpen(false);
+        setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
       }
       return nextOpen;
     });
@@ -1249,6 +1444,11 @@ export function MainWindow({
   const handleClose = () => {
     void closeCurrentWindow();
   };
+  const aboutButtonLabel = t("settings.update.title", { defaultValue: "更新" });
+  const aboutButtonExpanded = aboutUpdateReminder.showText;
+  const aboutButtonTitle = aboutUpdateReminder.hasPendingUpdate
+    ? aboutButtonLabel
+    : t("main.window.about", { defaultValue: "关于" });
 
   return (
     <div className="w-full h-screen flex flex-col">
@@ -1259,11 +1459,11 @@ export function MainWindow({
           onDoubleClick={handleTitleBarDoubleClick}
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="text-[13px] font-display font-medium text-ink-soft tracking-wide">
+            <span className="text-[15px] font-serif font-medium text-ink-soft tracking-wide leading-none">
               花笺
             </span>
-            <span className="text-[11px] text-ink-ghost font-body">—</span>
-            <span className="text-[11px] text-ink-faint font-body truncate max-w-[240px]">
+            <span className="text-[11px] text-ink-ghost font-body leading-none">—</span>
+            <span className="text-[11px] text-ink-faint font-body truncate max-w-[240px] leading-none">
               {title ||
                 selectedNote?.preview ||
                 t("common.untitledNote", { defaultValue: "无标题笔记" })}
@@ -1315,23 +1515,57 @@ export function MainWindow({
             </button>
             <button
               onClick={handleOpenAbout}
-              className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-all cursor-pointer"
-              title={t("main.window.about", { defaultValue: "关于" })}
+              className={`h-11 flex items-center justify-center overflow-hidden text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-[width,padding,gap,background-color,color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer ${
+                aboutButtonExpanded ? "w-[72px] gap-1.5 px-3" : "w-10 gap-0 px-0"
+              }`}
+              title={aboutButtonTitle}
+              aria-label={aboutButtonTitle}
             >
-              <svg
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <circle cx="12" cy="12" r="10" />
-                <path d="M12 16v-4" />
-                <path d="M12 8h.01" />
-              </svg>
+              {aboutUpdateReminder.hasPendingUpdate ? (
+                <svg
+                  data-testid="main-about-update-icon"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 16V8" />
+                  <path d="m8.5 11.5 3.5-3.5 3.5 3.5" />
+                </svg>
+              ) : (
+                <svg
+                  data-testid="main-about-info-icon"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                >
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
+                </svg>
+              )}
+              {aboutUpdateReminder.hasPendingUpdate ? (
+                <span
+                  data-testid="main-about-update-label"
+                  className={`overflow-hidden whitespace-nowrap text-[11px] font-body leading-none transition-[max-width,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    aboutButtonExpanded
+                      ? "max-w-[24px] translate-x-0 opacity-100"
+                      : "max-w-0 translate-x-1 opacity-0"
+                  }`}
+                >
+                  {aboutButtonLabel}
+                </span>
+              ) : null}
             </button>
 
             <div className="w-px h-4 bg-paper-deep/30 mx-0.5" />
@@ -2257,26 +2491,41 @@ export function MainWindow({
               </div>
             </div>
           </div>
-          {((settingsOpen && settingsConfig) || aboutOpen) && (
+          <div
+            className={`relative shrink-0 overflow-hidden h-full transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              sidePanelExpanded || mountedSidePanel ? "border-l border-paper-deep/20" : "border-l-0"
+            } ${sidePanelExpanded ? "w-[360px]" : "w-0"}`}
+          >
             <div
-              className={`relative shrink-0 transition-all duration-[600ms] overflow-hidden h-full ${
-                settingsOpen || aboutOpen ? "w-[360px]" : "w-0"
+              className={`absolute inset-0 w-[360px] h-full transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                mountedSidePanel === "about"
+                  ? sidePanelContentVisible && visibleSidePanel === "about"
+                    ? "translate-x-0 opacity-100"
+                    : "pointer-events-none translate-x-4 opacity-0"
+                  : "pointer-events-none translate-x-4 opacity-0"
               }`}
             >
-              <div className="w-[360px] h-full">
-                {aboutOpen ? (
-                  <AboutPanel onClose={handleCloseAbout} />
-                ) : settingsConfig ? (
-                  <SettingsPanel
-                    config={settingsConfig}
-                    onChange={handleSettingsChange}
-                    onChooseNotesDir={() => void handleChooseNotesDir()}
-                    onClose={handleCloseSettings}
-                  />
-                ) : null}
-              </div>
+              {mountedSidePanel === "about" ? <AboutPanel onClose={handleCloseAbout} /> : null}
             </div>
-          )}
+            <div
+              className={`absolute inset-0 w-[360px] h-full transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                mountedSidePanel === "settings"
+                  ? sidePanelContentVisible && visibleSidePanel === "settings"
+                    ? "translate-x-0 opacity-100"
+                    : "pointer-events-none translate-x-4 opacity-0"
+                  : "pointer-events-none translate-x-4 opacity-0"
+              }`}
+            >
+              {mountedSidePanel === "settings" && settingsConfig ? (
+                <SettingsPanel
+                  config={settingsConfig}
+                  onChange={handleSettingsChange}
+                  onChooseNotesDir={() => void handleChooseNotesDir()}
+                  onClose={handleCloseSettings}
+                />
+              ) : null}
+            </div>
+          </div>
         </div>
       </div>
       {noteMenu && noteMenuTarget && (

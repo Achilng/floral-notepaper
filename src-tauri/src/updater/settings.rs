@@ -4,6 +4,8 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
     fs,
+    fs::OpenOptions,
+    io::Write,
     path::{Path, PathBuf},
 };
 
@@ -40,6 +42,15 @@ impl StoredUpdateSettings {
             allow_prerelease: settings.allow_prerelease,
             last_auto_check_at: settings.last_auto_check_at,
         }
+    }
+
+    pub fn from_user_settings(
+        existing: &StoredUpdateSettings,
+        settings: UpdateSettingsDto,
+    ) -> Self {
+        let mut next = Self::from_dto(settings);
+        next.last_auto_check_at = existing.last_auto_check_at;
+        next
     }
 
     pub fn into_dto(self, has_mirror_cdk: bool) -> UpdateSettingsDto {
@@ -106,8 +117,17 @@ pub fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), App
     }
 
     let temp_path = temporary_json_path(path);
-    fs::write(&temp_path, serde_json::to_string_pretty(value)?)?;
+    let mut temp_file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(true)
+        .open(&temp_path)?;
+    serde_json::to_writer_pretty(&mut temp_file, value)?;
+    temp_file.write_all(b"\n")?;
+    temp_file.sync_all()?;
+    drop(temp_file);
     fs::rename(&temp_path, path)?;
+    sync_parent_dir(path)?;
     Ok(())
 }
 
@@ -132,6 +152,19 @@ fn temporary_json_path(path: &Path) -> PathBuf {
         .and_then(|name| name.to_str())
         .unwrap_or("settings.json");
     path.with_file_name(format!("{file_name}.tmp"))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn sync_parent_dir(path: &Path) -> Result<(), AppError> {
+    if let Some(parent) = path.parent() {
+        fs::File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn sync_parent_dir(_path: &Path) -> Result<(), AppError> {
+    Ok(())
 }
 
 fn normalize_check_interval(value: u32) -> u32 {
@@ -187,8 +220,8 @@ mod tests {
             auto_check: false,
             auto_download: true,
             check_interval_hours: 168,
-            check_source_preference: CheckSourcePreference::GithubOnly,
-            download_source_preference: DownloadSourcePreference::GithubOnly,
+            check_source_preference: CheckSourcePreference::GithubFirst,
+            download_source_preference: DownloadSourcePreference::GithubFirst,
             channel: UpdateChannel::Beta,
             allow_prerelease: true,
             last_auto_check_at: None,
@@ -201,6 +234,33 @@ mod tests {
 
         assert!(!raw.contains("hasMirrorCdk"));
         assert_eq!(loaded, settings);
+    }
+
+    #[test]
+    fn preserves_last_auto_check_at_when_merging_user_settings() {
+        let existing_timestamp = Utc::now();
+        let merged = StoredUpdateSettings::from_user_settings(
+            &StoredUpdateSettings {
+                last_auto_check_at: Some(existing_timestamp),
+                ..StoredUpdateSettings::default()
+            },
+            UpdateSettingsDto {
+                auto_check: false,
+                auto_download: true,
+                check_interval_hours: 168,
+                check_source_preference: CheckSourcePreference::MirrorFirst,
+                download_source_preference: DownloadSourcePreference::GithubFirst,
+                channel: UpdateChannel::Beta,
+                allow_prerelease: true,
+                last_auto_check_at: None,
+                has_mirror_cdk: false,
+            },
+        );
+
+        assert_eq!(merged.last_auto_check_at, Some(existing_timestamp));
+        assert!(!merged.auto_check);
+        assert!(merged.auto_download);
+        assert_eq!(merged.check_interval_hours, 168);
     }
 
     #[test]

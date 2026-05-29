@@ -1,5 +1,5 @@
 use super::{
-    errors, manifest, state,
+    errors, manifest, platform, state,
     types::{
         DownloadSourceUsed, UpdateDownloadProgressDto, UpdateDownloadResult, UpdateErrorDto,
         UpdateStateDto, UpdateStatus,
@@ -93,6 +93,9 @@ impl UpdateDownloadService {
     where
         F: FnMut(UpdateDownloadProgressDto),
     {
+        if platform::current_platform().install_kind == super::types::InstallKind::WindowsPortable {
+            return Err(errors::portable_manual_only());
+        }
         let plan = self.resolve_plan(paths, &current_state, source)?;
 
         let downloading_state = UpdateStateDto {

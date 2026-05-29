@@ -5,6 +5,9 @@ use std::{
     path::{Path, PathBuf},
 };
 
+#[cfg(target_os = "windows")]
+use std::process::Command;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Os {
@@ -42,13 +45,18 @@ impl PlatformInfo {
 }
 
 pub fn current_platform() -> PlatformInfo {
+    current_platform_with_version(version::CURRENT_APP_VERSION.to_string())
+}
+
+pub fn current_platform_with_version(app_version: impl Into<String>) -> PlatformInfo {
     let current_exe = env::current_exe().ok();
+    let os = current_os();
     PlatformInfo {
-        os: current_os(),
+        os: os.clone(),
         arch: current_arch(),
-        app_version: version::CURRENT_APP_VERSION.to_string(),
+        app_version: app_version.into(),
         app_id: APP_ID.into(),
-        install_kind: detect_install_kind(current_os(), current_exe.as_deref()),
+        install_kind: detect_install_kind(os, current_exe.as_deref()),
         current_exe: current_exe
             .as_ref()
             .map(|path| path.to_string_lossy().to_string()),
@@ -88,6 +96,9 @@ fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
             let Some(path) = current_exe else {
                 return InstallKind::Unknown;
             };
+            if registry_reports_windows_nsis(path) {
+                return InstallKind::WindowsNsis;
+            }
             let normalized = path.to_string_lossy().to_lowercase();
             if normalized.contains("\\program files\\")
                 || normalized.contains("\\program files (x86)\\")
@@ -100,6 +111,70 @@ fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
         }
         Os::Unsupported => InstallKind::Unknown,
     }
+}
+
+#[cfg(target_os = "windows")]
+fn registry_reports_windows_nsis(current_exe: &Path) -> bool {
+    const ROOTS: [&str; 4] = [
+        r"HKCU\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"HKLM\Software\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"HKLM\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        r"HKCU\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+    ];
+
+    let exe_name = current_exe
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or_default();
+    let current_exe_normalized = normalize_windows_path(&current_exe.to_string_lossy());
+    let install_dir_normalized = current_exe
+        .parent()
+        .map(|path| normalize_windows_path(&path.to_string_lossy()))
+        .unwrap_or_default();
+
+    ROOTS.iter().any(|root| {
+        Command::new("reg")
+            .args(["query", root, "/s", "/f", exe_name])
+            .output()
+            .ok()
+            .filter(|output| output.status.success())
+            .and_then(|output| String::from_utf8(output.stdout).ok())
+            .is_some_and(|output| {
+                registry_output_matches_installation(
+                    &output,
+                    &current_exe_normalized,
+                    &install_dir_normalized,
+                )
+            })
+    })
+}
+
+#[cfg(not(target_os = "windows"))]
+fn registry_reports_windows_nsis(_current_exe: &Path) -> bool {
+    false
+}
+
+#[cfg(target_os = "windows")]
+fn registry_output_matches_installation(
+    output: &str,
+    current_exe_normalized: &str,
+    install_dir_normalized: &str,
+) -> bool {
+    output.lines().any(|line| {
+        let normalized = normalize_windows_path(line);
+        normalized.contains(current_exe_normalized)
+            || (!install_dir_normalized.is_empty()
+                && normalized.contains(install_dir_normalized)
+                && (normalized.contains("displayicon")
+                    || normalized.contains("installdir")
+                    || normalized.contains("installlocation")
+                    || normalized.contains("uninstallstring")))
+    })
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_windows_path(value: &str) -> String {
+    value.replace('/', "\\").to_ascii_lowercase()
 }
 
 fn find_macos_app_bundle(exe: &Path) -> Option<PathBuf> {

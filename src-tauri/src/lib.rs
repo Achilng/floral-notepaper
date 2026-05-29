@@ -228,11 +228,12 @@ pub fn run() {
             let _ = desktop::show_main_window(app);
         }))
         .setup(|app| {
-            let updater_state = updater::UpdaterState::new();
+            let updater_state = updater::UpdaterState::new(app.package_info().version.to_string());
             if let Err(error) = updater_state.initialize() {
                 eprintln!("failed to initialize updater infrastructure: {error}");
             }
             app.manage(updater_state);
+            updater::start_auto_check_scheduler(app.handle().clone());
             desktop::setup_desktop(app)?;
             Ok(())
         })
@@ -270,6 +271,7 @@ pub fn run() {
             updater::commands::update_check,
             updater::commands::update_download,
             updater::commands::update_install,
+            updater::commands::update_install_prepare_report,
             updater::commands::update_cancel
         ])
         .run(tauri::generate_context!())

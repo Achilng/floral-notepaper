@@ -14,6 +14,11 @@ import {
   saveUpdateSettings,
   setMirrorCdk,
 } from "./api";
+import {
+  getInitialUpdateStatusNotice,
+  getUpdateCheckCompletionNotice,
+  type UpdateInlineNotice,
+} from "./presentation";
 import { getUpdateErrorMessage } from "./updateErrors";
 import type {
   CheckSourcePreference,
@@ -21,22 +26,18 @@ import type {
   DownloadSourceUsed,
   UpdateChannel,
   UpdateDownloadProgress,
+  UpdateErrorPayload,
   UpdateInstallResult,
   UpdateSettings,
   UpdateState,
 } from "./types";
 
-type NoticeTone = "idle" | "success" | "error";
 type BusyAction = "settings" | "checking" | "cdk" | "download" | "cancel" | "install" | null;
-
-interface Notice {
-  tone: NoticeTone;
-  text: string;
-}
 
 interface UpdateSettingsSectionProps {
   initialSettings?: UpdateSettings;
   initialStatus?: UpdateState;
+  mode?: "full" | "checkOnly" | "settingsOnly";
 }
 
 type IntervalOption = "24" | "168";
@@ -46,6 +47,7 @@ const MIRROR_SETTINGS_URL = "https://mirrorchyan.com/zh/projects?source=floral_n
 export function UpdateSettingsSection({
   initialSettings,
   initialStatus,
+  mode = "full",
 }: UpdateSettingsSectionProps) {
   const { t } = useTranslation();
   const [settings, setSettings] = useState<UpdateSettings | null>(initialSettings ?? null);
@@ -53,25 +55,23 @@ export function UpdateSettingsSection({
   const [downloadProgress, setDownloadProgress] = useState<UpdateDownloadProgress | null>(null);
   const [cdkInput, setCdkInput] = useState("");
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
-  const [notice, setNotice] = useState<Notice | null>(null);
+  const [notice, setNotice] = useState<UpdateInlineNotice | null>(() =>
+    getInitialUpdateStatusNotice(initialStatus, t),
+  );
 
   const checkSourceOptions = useMemo<Array<{ value: CheckSourcePreference; label: string }>>(
     () => [
       {
         value: "githubFirst",
-        label: t("settings.update.checkSource.githubFirst", { defaultValue: "GitHub 优先" }),
+        label: t("settings.update.checkSource.github", {
+          defaultValue: "GitHub",
+        }),
       },
       {
         value: "mirrorFirst",
-        label: t("settings.update.checkSource.mirrorFirst", { defaultValue: "Mirror 优先" }),
-      },
-      {
-        value: "githubOnly",
-        label: t("settings.update.checkSource.githubOnly", { defaultValue: "仅 GitHub" }),
-      },
-      {
-        value: "mirrorOnly",
-        label: t("settings.update.checkSource.mirrorOnly", { defaultValue: "仅 Mirror" }),
+        label: t("settings.update.checkSource.mirror", {
+          defaultValue: "Mirror酱",
+        }),
       },
     ],
     [t],
@@ -80,20 +80,12 @@ export function UpdateSettingsSection({
   const sourceOptions = useMemo<Array<{ value: DownloadSourcePreference; label: string }>>(
     () => [
       {
-        value: "mirrorFirst",
-        label: t("settings.update.source.mirrorFirst", { defaultValue: "Mirror 优先" }),
-      },
-      {
         value: "githubFirst",
-        label: t("settings.update.source.githubFirst", { defaultValue: "GitHub 优先" }),
+        label: t("settings.update.source.github", { defaultValue: "GitHub" }),
       },
       {
-        value: "mirrorOnly",
-        label: t("settings.update.source.mirrorOnly", { defaultValue: "仅 Mirror" }),
-      },
-      {
-        value: "githubOnly",
-        label: t("settings.update.source.githubOnly", { defaultValue: "仅 GitHub" }),
+        value: "mirrorFirst",
+        label: t("settings.update.source.mirror", { defaultValue: "Mirror酱" }),
       },
     ],
     [t],
@@ -101,16 +93,28 @@ export function UpdateSettingsSection({
 
   const channelOptions = useMemo<Array<{ value: UpdateChannel; label: string }>>(
     () => [
-      { value: "stable", label: t("settings.update.channel.stable", { defaultValue: "stable" }) },
-      { value: "beta", label: t("settings.update.channel.beta", { defaultValue: "beta" }) },
+      {
+        value: "stable",
+        label: t("settings.update.channel.stable", { defaultValue: "stable" }),
+      },
+      {
+        value: "beta",
+        label: t("settings.update.channel.beta", { defaultValue: "beta" }),
+      },
     ],
     [t],
   );
 
   const intervalOptions = useMemo<Array<{ value: IntervalOption; label: string }>>(
     () => [
-      { value: "24", label: t("settings.update.interval.daily", { defaultValue: "每天" }) },
-      { value: "168", label: t("settings.update.interval.weekly", { defaultValue: "每周" }) },
+      {
+        value: "24",
+        label: t("settings.update.interval.daily", { defaultValue: "每天" }),
+      },
+      {
+        value: "168",
+        label: t("settings.update.interval.weekly", { defaultValue: "每周" }),
+      },
     ],
     [t],
   );
@@ -124,6 +128,7 @@ export function UpdateSettingsSection({
         if (!alive) return;
         setSettings(loadedSettings);
         setStatus(loadedStatus);
+        setNotice(getInitialUpdateStatusNotice(loadedStatus, t));
       })
       .catch((error) => {
         if (!alive) return;
@@ -139,6 +144,20 @@ export function UpdateSettingsSection({
     let active = true;
 
     const bindEvents = async () => {
+      const unlistenChecking = await listen<UpdateState>("update://checking", (event) => {
+        if (!active) return;
+        setStatus(event.payload);
+      });
+
+      const unlistenChecked = await listen<UpdateState>("update://checked", (event) => {
+        if (!active) return;
+        setStatus(event.payload);
+        const nextNotice = getUpdateCheckCompletionNotice(event.payload, t);
+        if (nextNotice) {
+          setNotice(nextNotice);
+        }
+      });
+
       const unlistenProgress = await listen<UpdateDownloadProgress>(
         "update://download-progress",
         (event) => {
@@ -189,10 +208,21 @@ export function UpdateSettingsSection({
         },
       );
 
+      const unlistenError = await listen<UpdateErrorPayload>("update://error", (event) => {
+        if (!active) return;
+        setNotice({
+          tone: "error",
+          text: getUpdateErrorMessage(event.payload, t),
+        });
+      });
+
       return () => {
+        unlistenChecking();
+        unlistenChecked();
         unlistenProgress();
         unlistenFinished();
         unlistenInstallFinished();
+        unlistenError();
       };
     };
 
@@ -202,9 +232,11 @@ export function UpdateSettingsSection({
       active = false;
       void promise.then((dispose) => dispose()).catch(() => undefined);
     };
-  }, [settings?.channel]);
+  }, [settings?.channel, t]);
 
   const currentVersion = status?.currentVersion ?? "--";
+  const showCheckControls = mode !== "settingsOnly";
+  const showSettingsControls = mode !== "checkOnly";
   const intervalValue: IntervalOption = settings?.checkIntervalHours === 168 ? "168" : "24";
   const isDownloading = status?.status === "downloading";
   const isInstalling = status?.status === "installing";
@@ -224,7 +256,14 @@ export function UpdateSettingsSection({
     status?.status !== "installScheduled" &&
     !isDownloading;
   const canInstall =
-    (status?.status === "downloaded" || status?.status === "installScheduled") && !isInstalling;
+    Boolean(
+      status?.latestVersion && status?.assetPath && status?.assetSha256 && status?.assetSize,
+    ) &&
+    (status?.status === "downloaded" ||
+      status?.status === "installScheduled" ||
+      status?.status === "failed") &&
+    status?.lastError?.action !== "retryDownload" &&
+    !isInstalling;
 
   const persistSettings = async (nextSettings: UpdateSettings) => {
     setSettings(nextSettings);
@@ -265,7 +304,9 @@ export function UpdateSettingsSection({
     if (!cdkInput.trim()) {
       setNotice({
         tone: "error",
-        text: t("settings.update.error.cdkEmpty", { defaultValue: "Mirror 酱 CDK 不能为空" }),
+        text: t("settings.update.error.cdkEmpty", {
+          defaultValue: "Mirror 酱 CDK 不能为空",
+        }),
       });
       return;
     }
@@ -279,7 +320,9 @@ export function UpdateSettingsSection({
       setCdkInput("");
       setNotice({
         tone: "success",
-        text: t("settings.update.cdkSaved", { defaultValue: "CDK 已保存到系统安全存储" }),
+        text: t("settings.update.cdkSaved", {
+          defaultValue: "CDK 已保存到系统安全存储",
+        }),
       });
     } catch (error) {
       setNotice({ tone: "error", text: getUpdateErrorMessage(error, t) });
@@ -290,7 +333,9 @@ export function UpdateSettingsSection({
 
   const handleClearCdk = async () => {
     const confirmed = window.confirm(
-      t("settings.update.confirmClearCdk", { defaultValue: "确认清除 Mirror 酱 CDK？" }),
+      t("settings.update.confirmClearCdk", {
+        defaultValue: "确认清除 Mirror 酱 CDK？",
+      }),
     );
     if (!confirmed) return;
 
@@ -324,7 +369,9 @@ export function UpdateSettingsSection({
                 version: result.latestVersion,
                 defaultValue: "发现新版本 {{version}}",
               })
-            : t("settings.update.notAvailable", { defaultValue: "当前已是最新版本" }),
+            : t("settings.update.notAvailable", {
+                defaultValue: "当前已是最新版本",
+              }),
       });
     } catch (error) {
       setNotice({ tone: "error", text: getUpdateErrorMessage(error, t) });
@@ -378,7 +425,9 @@ export function UpdateSettingsSection({
       await cancelUpdate();
       setNotice({
         tone: "idle",
-        text: t("settings.update.cancelRequested", { defaultValue: "已请求取消下载" }),
+        text: t("settings.update.cancelRequested", {
+          defaultValue: "已请求取消下载",
+        }),
       });
     } catch (error) {
       setNotice({ tone: "error", text: getUpdateErrorMessage(error, t) });
@@ -388,6 +437,14 @@ export function UpdateSettingsSection({
   };
 
   const handleInstall = async () => {
+    const confirmed = window.confirm(
+      t("settings.update.confirmInstall", {
+        defaultValue:
+          "应用会先保存所有未保存内容，然后关闭、安装更新，并在完成后重新打开。是否继续？",
+      }),
+    );
+    if (!confirmed) return;
+
     setBusyAction("install");
     setNotice(null);
     try {
@@ -421,182 +478,237 @@ export function UpdateSettingsSection({
 
   return (
     <section className="space-y-3 pt-2 border-t border-paper-deep/25">
-      <div className="flex items-center justify-between gap-2">
-        <div>
-          <h3 className="text-[11px] font-body text-ink-faint">
-            {t("settings.update.title", { defaultValue: "更新" })}
-          </h3>
-          <p className="mt-1 text-[10px] font-mono text-ink-ghost">
-            {busyAction === "checking"
-              ? t("settings.update.checking", { defaultValue: "正在检查..." })
-              : notice
-                ? notice.text
-                : t("settings.update.currentVersion", {
-                    version: currentVersion,
-                    defaultValue: "当前版本：{{version}}",
-                  })}
-          </p>
-        </div>
-        <button
-          type="button"
-          disabled={controlsDisabled}
-          onClick={() => void handleCheck()}
-          className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-        >
-          {busyAction === "checking"
-            ? t("settings.update.busy", { defaultValue: "处理中" })
-            : t("settings.update.check", { defaultValue: "检查更新" })}
-        </button>
-      </div>
-
-      {renderDownloadCard({
-        t,
-        status,
-        source: currentSource,
-        totalBytes,
-        downloadedBytes,
-        percent,
-        bytesPerSecond: downloadProgress?.bytesPerSecond ?? 0,
-        canDownload,
-        canCancel,
-        canInstall,
-        installBusy: busyAction === "install",
-        isInstalling,
-        onDownload: () => void handleDownload(),
-        onCancel: () => void handleCancel(),
-        onInstall: () => void handleInstall(),
-      })}
-
-      {settings ? (
+      {showCheckControls ? (
         <>
-          <div className="space-y-2">
-            <UpdateToggleRow
-              label={t("settings.update.autoCheck", { defaultValue: "启动后自动检查更新" })}
-              checked={settings.autoCheck}
-              disabled={controlsDisabled}
-              onChange={(checked) => updateSettings("autoCheck", checked)}
-            />
-            <UpdateToggleRow
-              label={t("settings.update.autoDownload", { defaultValue: "有新版本时自动下载" })}
-              checked={settings.autoDownload}
-              disabled={controlsDisabled}
-              onChange={(checked) => updateSettings("autoDownload", checked)}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-[11px] font-body text-ink-faint">
-              {t("settings.update.interval.label", { defaultValue: "检查频率" })}
-            </label>
-            <SlidingButtonGroup
-              options={intervalOptions}
-              value={intervalValue}
-              onChange={handleIntervalChange}
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-[11px] font-body text-ink-faint">
-              {t("settings.update.checkSource.label", { defaultValue: "检查更新源" })}
-            </label>
-            <SlidingButtonGroup
-              options={checkSourceOptions}
-              value={settings.checkSourcePreference}
-              onChange={(value) => updateSettings("checkSourcePreference", value)}
-              className="grid grid-cols-2"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-[11px] font-body text-ink-faint">
-              {t("settings.update.source.label", { defaultValue: "下载源" })}
-            </label>
-            <SlidingButtonGroup
-              options={sourceOptions}
-              value={settings.downloadSourcePreference}
-              onChange={(value) => updateSettings("downloadSourcePreference", value)}
-              className="grid grid-cols-2"
-            />
-          </div>
-
-          <div className="space-y-2">
-            <label className="block text-[11px] font-body text-ink-faint">
-              {t("settings.update.mirror.title", { defaultValue: "Mirror 酱" })}
-            </label>
-            <div className="flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
-              <span className="text-[12px] text-ink-soft">
-                {t("settings.update.mirror.cdkStatus", { defaultValue: "CDK" })}
-              </span>
-              <span className="text-[11px] font-mono text-ink-ghost">
-                {settings.hasMirrorCdk
-                  ? t("settings.update.mirror.set", { defaultValue: "已设置" })
-                  : t("settings.update.mirror.notSet", { defaultValue: "未设置" })}
-              </span>
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <h3 className="text-[11px] font-body text-ink-faint">
+                {t("settings.update.title", { defaultValue: "更新" })}
+              </h3>
+              <p className="mt-1 text-[10px] font-mono text-ink-ghost">
+                {busyAction === "checking" || status?.status === "checking"
+                  ? t("settings.update.checking", {
+                      defaultValue: "正在检查...",
+                    })
+                  : notice
+                    ? notice.text
+                    : t("settings.update.currentVersion", {
+                        version: currentVersion,
+                        defaultValue: "当前版本：{{version}}",
+                      })}
+              </p>
             </div>
-            <div className="flex gap-2">
-              <input
-                type="password"
-                value={cdkInput}
-                onChange={(event) => setCdkInput(event.target.value)}
-                placeholder={t("settings.update.mirror.placeholder", {
-                  defaultValue: "输入新的 CDK",
-                })}
-                className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
-              />
-              <button
-                type="button"
-                disabled={busyAction === "cdk" || !cdkInput.trim()}
-                onClick={() => void handleSetCdk()}
-                className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap"
-              >
-                {settings.hasMirrorCdk
-                  ? t("settings.update.mirror.replace", { defaultValue: "替换" })
-                  : t("settings.update.mirror.save", { defaultValue: "保存" })}
-              </button>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                disabled={busyAction === "cdk" || !settings.hasMirrorCdk}
-                onClick={() => void handleClearCdk()}
-                className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-red-400 hover:bg-danger-bg disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-              >
-                {t("settings.update.mirror.clear", { defaultValue: "清除 CDK" })}
-              </button>
-              <button
-                type="button"
-                onClick={handleOpenMirror}
-                className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer"
-              >
-                {t("settings.update.mirror.open", { defaultValue: "打开 Mirror 酱页面" })}
-              </button>
-            </div>
+            <button
+              type="button"
+              disabled={controlsDisabled}
+              onClick={() => void handleCheck()}
+              className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+            >
+              {busyAction === "checking"
+                ? t("settings.update.busy", { defaultValue: "处理中" })
+                : t("settings.update.check", { defaultValue: "检查更新" })}
+            </button>
           </div>
 
-          <div className="space-y-2">
-            <label className="block text-[11px] font-body text-ink-faint">
-              {t("settings.update.advanced", { defaultValue: "高级" })}
-            </label>
-            <SlidingButtonGroup
-              options={channelOptions}
-              value={settings.channel}
-              onChange={(value) => updateSettings("channel", value)}
-            />
-            <UpdateToggleRow
-              label={t("settings.update.allowPrerelease", {
-                defaultValue: "允许预发布版本",
-              })}
-              checked={settings.allowPrerelease}
-              disabled={controlsDisabled}
-              onChange={(checked) => updateSettings("allowPrerelease", checked)}
-            />
-          </div>
+          {renderDownloadCard({
+            t,
+            status,
+            source: currentSource,
+            totalBytes,
+            downloadedBytes,
+            percent,
+            bytesPerSecond: downloadProgress?.bytesPerSecond ?? 0,
+            canDownload,
+            canCancel,
+            canInstall,
+            installBusy: busyAction === "install",
+            isInstalling,
+            onDownload: () => void handleDownload(),
+            onCancel: () => void handleCancel(),
+            onInstall: () => void handleInstall(),
+          })}
         </>
-      ) : (
-        <p className="text-[11px] text-ink-ghost">
-          {t("settings.update.loading", { defaultValue: "正在读取更新设置..." })}
-        </p>
-      )}
+      ) : null}
+
+      {showSettingsControls ? (
+        settings ? (
+          <>
+            {!showCheckControls ? (
+              <div>
+                <h3 className="text-[11px] font-body text-ink-faint">
+                  {t("settings.update.settingsTitle", {
+                    defaultValue: "更新设置",
+                  })}
+                </h3>
+              </div>
+            ) : null}
+
+            <div className="space-y-2">
+              <UpdateToggleRow
+                label={t("settings.update.autoCheck", {
+                  defaultValue: "自动检查更新",
+                })}
+                checked={settings.autoCheck}
+                disabled={controlsDisabled}
+                onChange={(checked) => updateSettings("autoCheck", checked)}
+              />
+              <UpdateToggleRow
+                label={t("settings.update.autoDownload", {
+                  defaultValue: "有新版本时自动下载",
+                })}
+                checked={settings.autoDownload}
+                disabled={controlsDisabled}
+                onChange={(checked) => updateSettings("autoDownload", checked)}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[11px] font-body text-ink-faint">
+                {t("settings.update.interval.label", {
+                  defaultValue: "检查频率",
+                })}
+              </label>
+              <SlidingButtonGroup
+                options={intervalOptions}
+                value={intervalValue}
+                onChange={handleIntervalChange}
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[11px] font-body text-ink-faint">
+                {t("settings.update.checkSource.label", {
+                  defaultValue: "检查更新源",
+                })}
+              </label>
+              <SlidingButtonGroup
+                options={checkSourceOptions}
+                value={settings.checkSourcePreference}
+                onChange={(value) => updateSettings("checkSourcePreference", value)}
+                className="grid grid-cols-2"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[11px] font-body text-ink-faint">
+                {t("settings.update.source.label", { defaultValue: "下载源" })}
+              </label>
+              <SlidingButtonGroup
+                options={sourceOptions}
+                value={settings.downloadSourcePreference}
+                onChange={(value) => updateSettings("downloadSourcePreference", value)}
+                className="grid grid-cols-2"
+              />
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[11px] font-body text-ink-faint">
+                {t("settings.update.mirror.title", {
+                  defaultValue: "Mirror 酱",
+                })}
+              </label>
+              <div className="flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
+                <span className="text-[12px] text-ink-soft">
+                  {t("settings.update.mirror.cdkStatus", {
+                    defaultValue: "CDK",
+                  })}
+                </span>
+                <span className="text-[11px] font-mono text-ink-ghost">
+                  {settings.hasMirrorCdk
+                    ? t("settings.update.mirror.set", {
+                        defaultValue: "已设置",
+                      })
+                    : t("settings.update.mirror.notSet", {
+                        defaultValue: "未设置",
+                      })}
+                </span>
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="password"
+                  value={cdkInput}
+                  onChange={(event) => setCdkInput(event.target.value)}
+                  placeholder={t("settings.update.mirror.placeholder", {
+                    defaultValue: "输入新的 CDK",
+                  })}
+                  className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+                />
+                <button
+                  type="button"
+                  disabled={busyAction === "cdk" || !cdkInput.trim()}
+                  onClick={() => void handleSetCdk()}
+                  className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  {settings.hasMirrorCdk
+                    ? t("settings.update.mirror.replace", {
+                        defaultValue: "替换",
+                      })
+                    : t("settings.update.mirror.save", {
+                        defaultValue: "保存",
+                      })}
+                </button>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  disabled={busyAction === "cdk" || !settings.hasMirrorCdk}
+                  onClick={() => void handleClearCdk()}
+                  className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-red-400 hover:bg-danger-bg disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+                >
+                  {t("settings.update.mirror.clear", {
+                    defaultValue: "清除 CDK",
+                  })}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleOpenMirror}
+                  className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer"
+                >
+                  {t("settings.update.mirror.open", {
+                    defaultValue: "打开 Mirror 酱页面",
+                  })}
+                </button>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <label className="block text-[11px] font-body text-ink-faint">
+                {t("settings.update.advanced", { defaultValue: "高级" })}
+              </label>
+              <SlidingButtonGroup
+                options={channelOptions}
+                value={settings.channel}
+                onChange={(value) => updateSettings("channel", value)}
+              />
+              <UpdateToggleRow
+                label={t("settings.update.allowPrerelease", {
+                  defaultValue: "允许预发布版本",
+                })}
+                checked={settings.allowPrerelease}
+                disabled={controlsDisabled}
+                onChange={(checked) => updateSettings("allowPrerelease", checked)}
+              />
+            </div>
+          </>
+        ) : (
+          <>
+            {!showCheckControls ? (
+              <div>
+                <h3 className="text-[11px] font-body text-ink-faint">
+                  {t("settings.update.settingsTitle", {
+                    defaultValue: "更新设置",
+                  })}
+                </h3>
+              </div>
+            ) : null}
+            <p className="text-[11px] text-ink-ghost">
+              {t("settings.update.loading", {
+                defaultValue: "正在读取更新设置...",
+              })}
+            </p>
+          </>
+        )
+      ) : null}
 
       {notice && <p className={`min-h-4 text-[11px] ${noticeClass}`}>{notice.text}</p>}
     </section>
@@ -704,10 +816,10 @@ function renderDownloadCard({
           <p className="text-[10px] font-mono text-ink-ghost">
             {status.status === "installing"
               ? t("settings.update.installPreparing", {
-                  defaultValue: "正在执行安装前校验...",
+                  defaultValue: "正在准备退出应用并安装更新...",
                 })
               : t("settings.update.installScheduled", {
-                  defaultValue: "安装 helper 已完成 dry-run 校验，真实替换将在后续阶段接入",
+                  defaultValue: "检测到旧版待安装状态，请重新点击“安装并重启”完成替换",
                 })}
           </p>
           {status.installLogPath ? (
@@ -722,7 +834,7 @@ function renderDownloadCard({
         <div className="space-y-1.5 rounded-xl bg-danger-bg px-2.5 py-2">
           <p className="text-[10px] font-mono text-red-400">
             {t("settings.update.installFailed", {
-              defaultValue: "最近一次安装前校验失败，可查看日志后重试或重新下载",
+              defaultValue: "最近一次安装失败，可查看日志后重试或重新下载",
             })}
           </p>
           <p className="text-[10px] font-mono text-ink-ghost break-all">{status.installLogPath}</p>
@@ -755,8 +867,10 @@ function renderDownloadCard({
             onClick={onInstall}
             className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
           >
-            {status?.status === "installScheduled"
-              ? t("settings.update.installRetry", { defaultValue: "重新验证安装" })
+            {status?.status === "failed"
+              ? t("settings.update.installRetry", {
+                  defaultValue: "重新尝试安装",
+                })
               : t("settings.update.install", { defaultValue: "安装并重启" })}
           </button>
         ) : null}
@@ -833,6 +947,6 @@ function getInstallSuccessMessage(
   }
 
   return t("settings.update.installValidated", {
-    defaultValue: "安装 helper 已完成 dry-run 校验，真实替换将在后续阶段接入",
+    defaultValue: "即将退出应用并安装更新，完成后会自动重新打开",
   });
 }

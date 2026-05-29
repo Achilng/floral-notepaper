@@ -1,12 +1,12 @@
-export type CheckSourcePreference = "mirrorFirst" | "githubFirst" | "mirrorOnly" | "githubOnly";
+export type CheckSourcePreference = "mirrorFirst" | "githubFirst";
 
-export type DownloadSourcePreference = "mirrorFirst" | "githubFirst" | "mirrorOnly" | "githubOnly";
+export type DownloadSourcePreference = "mirrorFirst" | "githubFirst";
 
 export type DownloadSourceUsed = "mirror" | "github";
 
 export type UpdateChannel = "stable" | "beta";
 
-export type UpdateInstallMode = "dryRun" | "test";
+export type UpdateInstallMode = "apply" | "test";
 
 export type UpdateStatus =
   | "idle"
@@ -91,4 +91,10 @@ export interface UpdateDownloadProgress {
   percent?: number | null;
   bytesPerSecond: number;
   source: DownloadSourceUsed;
+}
+
+export type UpdateInstallPrepareReportStatus = "ready" | "failed";
+
+export interface UpdateInstallPrepareRequest {
+  requestId: string;
 }

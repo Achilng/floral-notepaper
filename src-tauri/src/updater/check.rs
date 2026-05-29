@@ -184,16 +184,20 @@ impl UpdateCheckService {
         &self,
         paths: &UpdatePaths,
         manual: bool,
+        current_version: &str,
     ) -> Result<UpdateCheckResult, AppError> {
         let settings = settings::load(paths)?;
         let context = UpdateCheckContext {
-            platform: platform::current_platform(),
-            current_version: version::current_version()?,
+            platform: platform::current_platform_with_version(current_version.to_string()),
+            current_version: version::normalize_version(current_version)?,
             allow_prerelease: version::allows_prerelease(
                 &settings.channel,
                 settings.allow_prerelease,
             ),
         };
+        if context.platform.install_kind == super::types::InstallKind::WindowsPortable {
+            return Err(errors::portable_manual_only());
+        }
 
         let outcome = self.evaluate(&settings, &context);
         match outcome {
@@ -464,9 +468,7 @@ fn matches_install_kind(
         (inferred, current),
         (InstallKind::MacosAppBundle, InstallKind::MacosAppBundle)
             | (InstallKind::WindowsNsis, InstallKind::WindowsNsis)
-            | (InstallKind::WindowsNsis, InstallKind::WindowsPortable)
             | (InstallKind::WindowsPortable, InstallKind::WindowsPortable)
-            | (InstallKind::WindowsPortable, InstallKind::WindowsNsis)
     )
 }
 
@@ -537,8 +539,6 @@ fn check_provider_order(preference: &CheckSourcePreference) -> Vec<DownloadSourc
         CheckSourcePreference::GithubFirst => {
             vec![DownloadSourceUsed::Github, DownloadSourceUsed::Mirror]
         }
-        CheckSourcePreference::MirrorOnly => vec![DownloadSourceUsed::Mirror],
-        CheckSourcePreference::GithubOnly => vec![DownloadSourceUsed::Github],
     }
 }
 
@@ -611,12 +611,6 @@ fn recommended_source(
             } else {
                 None
             }
-        }
-        DownloadSourcePreference::MirrorOnly => {
-            can_download_from_mirror.then_some(DownloadSourceUsed::Mirror)
-        }
-        DownloadSourcePreference::GithubOnly => {
-            can_download_from_github.then_some(DownloadSourceUsed::Github)
         }
     }
 }
@@ -754,24 +748,28 @@ mod tests {
             MirrorProvider::default(),
             GithubProvider::offline(),
         );
-        let settings = test_settings(CheckSourcePreference::GithubOnly);
+        let settings = test_settings(CheckSourcePreference::GithubFirst);
 
         let result = service.evaluate(&settings, &test_context(InstallKind::MacosAppBundle));
         assert!(result.is_err());
     }
 
     #[test]
-    fn returns_not_available_when_only_mirror_is_configured_but_github_only_is_selected() {
-        let paths = test_paths("check-github-only-mirror-present");
+    fn falls_back_to_mirror_when_github_is_not_configured() {
+        let paths = test_paths("check-github-first-mirror-fallback");
         let mirror_manifest = write_manifest(&paths, "mirror.json", "1.0.5");
         let service = UpdateCheckService::with_providers(
             MirrorProvider::with_manifest_path(mirror_manifest),
             GithubProvider::offline(),
         );
-        let settings = test_settings(CheckSourcePreference::GithubOnly);
+        let settings = test_settings(CheckSourcePreference::GithubFirst);
 
-        let result = service.evaluate(&settings, &test_context(InstallKind::MacosAppBundle));
-        assert!(result.is_err());
+        let (result, _) = service
+            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
+            .expect("github fails but mirror succeeds as fallback");
+
+        assert_eq!(result.status, UpdateCheckStatus::Available);
+        assert_eq!(result.latest_version.as_deref(), Some("1.0.5"));
     }
 
     #[test]
@@ -804,7 +802,7 @@ mod tests {
             MirrorProvider::default(),
             GithubProvider::with_manifest_path(github_manifest),
         );
-        let settings = test_settings(CheckSourcePreference::GithubOnly);
+        let settings = test_settings(CheckSourcePreference::GithubFirst);
 
         let (result, next_state) = service
             .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
@@ -823,7 +821,7 @@ mod tests {
             MirrorProvider::default(),
             GithubProvider::with_manifest_path(github_manifest),
         );
-        let settings = test_settings(CheckSourcePreference::GithubOnly);
+        let settings = test_settings(CheckSourcePreference::GithubFirst);
 
         let (result, next_state) = service
             .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))

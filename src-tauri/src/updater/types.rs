@@ -7,8 +7,6 @@ pub enum CheckSourcePreference {
     MirrorFirst,
     #[default]
     GithubFirst,
-    MirrorOnly,
-    GithubOnly,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -17,8 +15,6 @@ pub enum DownloadSourcePreference {
     #[default]
     MirrorFirst,
     GithubFirst,
-    MirrorOnly,
-    GithubOnly,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -53,7 +49,7 @@ pub enum UpdateStatus {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum UpdateInstallMode {
-    DryRun,
+    Apply,
     Test,
 }
 
@@ -152,9 +148,13 @@ pub struct UpdateStateDto {
 
 impl UpdateStateDto {
     pub fn idle() -> Self {
+        Self::idle_with_version(env!("CARGO_PKG_VERSION"))
+    }
+
+    pub fn idle_with_version(current_version: impl Into<String>) -> Self {
         Self {
             status: UpdateStatus::Idle,
-            current_version: env!("CARGO_PKG_VERSION").to_string(),
+            current_version: current_version.into(),
             latest_version: None,
             channel: UpdateChannel::Stable,
             asset_name: None,

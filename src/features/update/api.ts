@@ -3,6 +3,7 @@ import type {
   DownloadSourceUsed,
   UpdateCheckResult,
   UpdateDownloadResult,
+  UpdateInstallPrepareReportStatus,
   UpdateInstallResult,
   UpdateSettings,
   UpdateState,
@@ -18,6 +19,20 @@ export function downloadUpdate(source?: DownloadSourceUsed): Promise<UpdateDownl
 
 export function installUpdate(): Promise<UpdateInstallResult> {
   return invoke("update_install");
+}
+
+export function reportInstallPreparation(
+  requestId: string,
+  windowLabel: string,
+  status: UpdateInstallPrepareReportStatus,
+  message?: string,
+): Promise<void> {
+  return invoke("update_install_prepare_report", {
+    requestId,
+    windowLabel,
+    status,
+    message,
+  });
 }
 
 export function cancelUpdate(): Promise<void> {

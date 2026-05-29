@@ -88,6 +88,166 @@ pub fn tray_quit_label(locale: Locale) -> &'static str {
     }
 }
 
+pub fn macos_menu_file_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "文件",
+        Locale::EnUs => "File",
+        Locale::ZhHk => "檔案",
+    }
+}
+
+pub fn macos_menu_edit_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "编辑",
+        Locale::EnUs => "Edit",
+        Locale::ZhHk => "編輯",
+    }
+}
+
+pub fn macos_menu_view_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "显示",
+        Locale::EnUs => "View",
+        Locale::ZhHk => "顯示",
+    }
+}
+
+pub fn macos_menu_window_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "窗口",
+        Locale::EnUs => "Window",
+        Locale::ZhHk => "視窗",
+    }
+}
+
+pub fn macos_menu_help_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "帮助",
+        Locale::EnUs => "Help",
+        Locale::ZhHk => "幫助",
+    }
+}
+
+pub fn macos_menu_about_label(locale: Locale) -> String {
+    match locale {
+        Locale::ZhCn => format!("关于{}", app_name(locale)),
+        Locale::EnUs => format!("About {}", app_name(locale)),
+        Locale::ZhHk => format!("關於{}", app_name(locale)),
+    }
+}
+
+pub fn macos_menu_services_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "服务",
+        Locale::EnUs => "Services",
+        Locale::ZhHk => "服務",
+    }
+}
+
+pub fn macos_menu_hide_app_label(locale: Locale) -> String {
+    match locale {
+        Locale::ZhCn => format!("隐藏{}", app_name(locale)),
+        Locale::EnUs => format!("Hide {}", app_name(locale)),
+        Locale::ZhHk => format!("隱藏{}", app_name(locale)),
+    }
+}
+
+pub fn macos_menu_hide_others_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "隐藏其他",
+        Locale::EnUs => "Hide Others",
+        Locale::ZhHk => "隱藏其他",
+    }
+}
+
+pub fn macos_menu_quit_app_label(locale: Locale) -> String {
+    match locale {
+        Locale::ZhCn => format!("退出{}", app_name(locale)),
+        Locale::EnUs => format!("Quit {}", app_name(locale)),
+        Locale::ZhHk => format!("退出{}", app_name(locale)),
+    }
+}
+
+pub fn macos_menu_close_window_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "关闭窗口",
+        Locale::EnUs => "Close Window",
+        Locale::ZhHk => "關閉視窗",
+    }
+}
+
+pub fn macos_menu_minimize_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "最小化",
+        Locale::EnUs => "Minimize",
+        Locale::ZhHk => "最小化",
+    }
+}
+
+pub fn macos_menu_zoom_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "缩放",
+        Locale::EnUs => "Zoom",
+        Locale::ZhHk => "縮放",
+    }
+}
+
+pub fn macos_menu_fullscreen_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "进入全屏",
+        Locale::EnUs => "Enter Full Screen",
+        Locale::ZhHk => "進入全螢幕",
+    }
+}
+
+pub fn macos_menu_undo_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "撤销",
+        Locale::EnUs => "Undo",
+        Locale::ZhHk => "復原",
+    }
+}
+
+pub fn macos_menu_redo_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "重做",
+        Locale::EnUs => "Redo",
+        Locale::ZhHk => "重做",
+    }
+}
+
+pub fn macos_menu_cut_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "剪切",
+        Locale::EnUs => "Cut",
+        Locale::ZhHk => "剪下",
+    }
+}
+
+pub fn macos_menu_copy_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "复制",
+        Locale::EnUs => "Copy",
+        Locale::ZhHk => "複製",
+    }
+}
+
+pub fn macos_menu_paste_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "粘贴",
+        Locale::EnUs => "Paste",
+        Locale::ZhHk => "貼上",
+    }
+}
+
+pub fn macos_menu_select_all_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "全选",
+        Locale::EnUs => "Select All",
+        Locale::ZhHk => "全選",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,5 +281,36 @@ mod tests {
         );
         assert_eq!(tray_toggle_autostart_label(Locale::ZhHk), "開機自啟");
         assert_eq!(tray_quit_label(Locale::EnUs), "Quit");
+    }
+
+    #[test]
+    fn localizes_macos_native_menu_strings_for_supported_locales() {
+        assert_eq!(macos_menu_file_label(Locale::ZhCn), "文件");
+        assert_eq!(macos_menu_edit_label(Locale::ZhHk), "編輯");
+        assert_eq!(macos_menu_view_label(Locale::EnUs), "View");
+        assert_eq!(macos_menu_window_label(Locale::ZhHk), "視窗");
+        assert_eq!(macos_menu_help_label(Locale::ZhCn), "帮助");
+        assert_eq!(macos_menu_about_label(Locale::ZhCn), "关于花笺");
+        assert_eq!(
+            macos_menu_about_label(Locale::EnUs),
+            "About Floral Notepaper"
+        );
+        assert_eq!(macos_menu_services_label(Locale::ZhHk), "服務");
+        assert_eq!(macos_menu_hide_app_label(Locale::ZhCn), "隐藏花笺");
+        assert_eq!(macos_menu_hide_others_label(Locale::EnUs), "Hide Others");
+        assert_eq!(
+            macos_menu_quit_app_label(Locale::EnUs),
+            "Quit Floral Notepaper"
+        );
+        assert_eq!(macos_menu_close_window_label(Locale::ZhHk), "關閉視窗");
+        assert_eq!(macos_menu_minimize_label(Locale::EnUs), "Minimize");
+        assert_eq!(macos_menu_zoom_label(Locale::ZhCn), "缩放");
+        assert_eq!(macos_menu_fullscreen_label(Locale::ZhHk), "進入全螢幕");
+        assert_eq!(macos_menu_undo_label(Locale::ZhHk), "復原");
+        assert_eq!(macos_menu_redo_label(Locale::ZhCn), "重做");
+        assert_eq!(macos_menu_cut_label(Locale::ZhHk), "剪下");
+        assert_eq!(macos_menu_copy_label(Locale::ZhCn), "复制");
+        assert_eq!(macos_menu_paste_label(Locale::EnUs), "Paste");
+        assert_eq!(macos_menu_select_all_label(Locale::ZhHk), "全選");
     }
 }

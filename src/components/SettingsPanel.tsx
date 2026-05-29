@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeyRecorder } from "@tanstack/react-hotkeys";
 import { useTranslation } from "react-i18next";
 import { checkGlobalShortcut } from "../features/settings/api";
+import { UpdateSettingsSection } from "../features/update/UpdateSettingsSection";
 import type { AppConfig, ThemeOption, TileColorMode, ViewMode } from "../features/settings/types";
 import {
   formatHeldKeys,
@@ -302,6 +303,8 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             onChange={(v) => setConfigValue("defaultViewMode", v)}
           />
         </section>
+
+        <UpdateSettingsSection mode="settingsOnly" />
 
         <section className="pt-2 border-t border-paper-deep/25">
           <p className="text-[10px] leading-relaxed text-ink-ghost/75">

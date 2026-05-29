@@ -2,6 +2,14 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
 import { SettingsPanel } from "./SettingsPanel";
 
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/api/event", () => ({
+  listen: vi.fn(),
+}));
+
 const config = {
   locale: "zh-CN",
   notesDir: "D:\\Notes\\花笺",
@@ -55,5 +63,7 @@ describe("SettingsPanel", () => {
     expect(markup).toContain("编辑");
     expect(markup).toContain("分栏");
     expect(markup).toContain("预览");
+    expect(markup).toContain("更新设置");
+    expect(markup).not.toContain("当前版本：");
   });
 });

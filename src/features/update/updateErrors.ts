@@ -110,6 +110,70 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
       return translate("settings.update.error.installSpawnFailed", {
         defaultValue: "启动更新安装助手失败",
       });
+    case "updateInstallSaveFailed":
+      return translate("settings.update.error.installSaveFailed", {
+        defaultValue: "安装前自动保存失败，请先处理当前未保存内容后重试",
+      });
+    case "updateInstallSaveTimedOut":
+      return translate("settings.update.error.installSaveTimedOut", {
+        defaultValue: "等待窗口保存未保存内容超时，请稍后重试",
+      });
+    case "updateInstallHelperHandshakeFailed":
+      return translate("settings.update.error.installHelperHandshakeFailed", {
+        defaultValue: "更新安装助手未能在退出前完成就绪握手",
+      });
+    case "updateInstallWaitTimedOut":
+      return translate("settings.update.error.installWaitTimedOut", {
+        defaultValue: "等待应用退出超时，请重试安装",
+      });
+    case "updateInstallInsufficientSpace":
+      return translate("settings.update.error.installInsufficientSpace", {
+        defaultValue: "磁盘剩余空间不足，无法继续安装更新",
+      });
+    case "updateInstallUnsupportedKind":
+      return translate("settings.update.error.installUnsupportedKind", {
+        defaultValue: "当前安装形态暂不支持应用内安装",
+      });
+    case "updatePortableManualOnly":
+      return translate("settings.update.error.portableManualOnly", {
+        defaultValue: "当前便携版仅支持手动下载更新包后覆盖升级",
+      });
+    case "updateInstallAssetExtractFailed":
+      return translate("settings.update.error.installAssetExtractFailed", {
+        defaultValue: "无法解包更新资源，请重新下载后重试",
+      });
+    case "updateInstallReplaceFailed":
+      return translate("settings.update.error.installReplaceFailed", {
+        defaultValue: "替换当前安装内容失败，请稍后重试",
+      });
+    case "updateInstallRelaunchFailed":
+      return translate("settings.update.error.installRelaunchFailed", {
+        defaultValue: "更新完成后重新启动应用失败，请手动重新打开应用",
+      });
+    case "updateInstallStateWriteFailed":
+      return translate("settings.update.error.installStateWriteFailed", {
+        defaultValue: "无法写入安装状态文件",
+      });
+    case "updateInstallInstallerFailed":
+      return translate("settings.update.error.installInstallerFailed", {
+        defaultValue: "更新安装程序执行失败",
+      });
+    case "updateInstallInstallerTimedOut":
+      return translate("settings.update.error.installInstallerTimedOut", {
+        defaultValue: "更新安装程序执行超时，请稍后重试",
+      });
+    case "updateInstallInstallerCancelled":
+      return translate("settings.update.error.installInstallerCancelled", {
+        defaultValue: "更新安装已取消",
+      });
+    case "updateInstallInstallerBusy":
+      return translate("settings.update.error.installInstallerBusy", {
+        defaultValue: "另一个安装程序正在运行，请稍后重试",
+      });
+    case "updateInstallInstallerFatal":
+      return translate("settings.update.error.installInstallerFatal", {
+        defaultValue: "更新安装程序返回了致命错误",
+      });
     case "updateInstallTaskJoinFailed":
       return translate("settings.update.error.installTaskJoinFailed", {
         defaultValue: "安装任务执行失败",
@@ -133,6 +197,10 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
     case "updateInstallTargetMissing":
       return translate("settings.update.error.installTargetMissing", {
         defaultValue: "当前安装目标不存在，无法继续",
+      });
+    case "updateInstallVersionMismatch":
+      return translate("settings.update.error.installVersionMismatch", {
+        defaultValue: "安装后重新打开的仍是旧版本，请直接重试安装",
       });
     case "updateInstallLogWriteFailed":
       return translate("settings.update.error.installLogWriteFailed", {

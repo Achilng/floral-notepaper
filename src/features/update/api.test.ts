@@ -8,6 +8,7 @@ import {
   getUpdateSettings,
   getUpdateStatus,
   installUpdate,
+  reportInstallPreparation,
   saveUpdateSettings,
   setMirrorCdk,
 } from "./api";
@@ -55,6 +56,7 @@ describe("update api", () => {
       autoCheck: true,
       autoDownload: false,
       checkIntervalHours: 24,
+      checkSourcePreference: "githubFirst",
       downloadSourcePreference: "mirrorFirst",
       channel: "stable",
       allowPrerelease: false,
@@ -82,9 +84,9 @@ describe("update api", () => {
 
   test("keeps final command names for staged operations", async () => {
     mockedInvoke.mockResolvedValue({
-      status: "installScheduled",
+      status: "installing",
       logPath: "/tmp/install.log",
-      mode: "dryRun",
+      mode: "apply",
     });
 
     await checkForUpdates(true).catch(() => undefined);
@@ -96,5 +98,20 @@ describe("update api", () => {
     expect(invoke).toHaveBeenNthCalledWith(2, "update_download", { source: "github" });
     expect(invoke).toHaveBeenNthCalledWith(3, "update_install");
     expect(invoke).toHaveBeenNthCalledWith(4, "update_cancel");
+  });
+
+  test("reports install preparation results with the final command name", async () => {
+    mockedInvoke.mockResolvedValue(undefined);
+
+    await expect(
+      reportInstallPreparation("request-1", "main", "failed", "save failed"),
+    ).resolves.toBeUndefined();
+
+    expect(invoke).toHaveBeenCalledWith("update_install_prepare_report", {
+      requestId: "request-1",
+      windowLabel: "main",
+      status: "failed",
+      message: "save failed",
+    });
   });
 });
