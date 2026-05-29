@@ -27,11 +27,15 @@ src-tauri/target/
 src-tauri/gen/
 
 ## agent文档
-PLAN.md
+*PLAN.md
+PLAN*.md
 PROGRESS.md
 AGENTS.md
 CLAUDE.md
 .codex
+
+## 已从仓库历史清除的本地文件
+src/assets/fonts/SourceHanSerifSC-Bold.woff2
 
 ## IDE
 .idea/
