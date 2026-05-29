@@ -5,9 +5,7 @@ const disableMacosSigning = args.includes("--disable-macos-signing");
 const versionArg = args.find((arg) => !arg.startsWith("--"));
 
 if (!versionArg) {
-  console.error(
-    "Usage: node scripts/set-version.mjs <version> [--disable-macos-signing]",
-  );
+  console.error("Usage: node scripts/set-version.mjs <version> [--disable-macos-signing]");
   process.exit(1);
 }
 
@@ -18,10 +16,7 @@ if (!version) {
 }
 
 const packageJsonPath = new URL("../package.json", import.meta.url);
-const tauriConfigPath = new URL(
-  "../src-tauri/tauri.conf.json",
-  import.meta.url,
-);
+const tauriConfigPath = new URL("../src-tauri/tauri.conf.json", import.meta.url);
 const cargoTomlPath = new URL("../src-tauri/Cargo.toml", import.meta.url);
 
 const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, "utf8"));
@@ -38,10 +33,7 @@ if (disableMacosSigning) {
 fs.writeFileSync(tauriConfigPath, `${JSON.stringify(tauriConfig, null, 2)}\n`);
 
 const cargoToml = fs.readFileSync(cargoTomlPath, "utf8");
-const nextCargoToml = cargoToml.replace(
-  /^version = "[^"]*"/m,
-  `version = "${version}"`,
-);
+const nextCargoToml = cargoToml.replace(/^version = "[^"]*"/m, `version = "${version}"`);
 if (nextCargoToml === cargoToml) {
   console.error("Failed to update version in src-tauri/Cargo.toml.");
   process.exit(1);
