@@ -120,7 +120,13 @@ where
         paths: &UpdatePaths,
         current_state: UpdateStateDto,
     ) -> Result<UpdateInstallResult, AppError> {
-        let request = self.prepare_request(paths, &current_state)?;
+        let request = match self.prepare_request(paths, &current_state) {
+            Ok(request) => request,
+            Err(error) => {
+                state::save(paths, &failed_state_without_request(&current_state, &error))?;
+                return Err(error);
+            }
+        };
         let log_path_text = request.command.log_path.to_string_lossy().to_string();
         let install_mode = install_mode(self.helper_mode);
         let started_at = Utc::now();
@@ -180,12 +186,7 @@ where
         let platform = self.platform_override.clone().unwrap_or_else(|| {
             platform::current_platform_with_version(current_state.current_version.clone())
         });
-        if platform.install_kind == super::types::InstallKind::WindowsPortable {
-            return Err(errors::portable_manual_only());
-        }
-        if !platform.supports_update_assets() {
-            return Err(errors::unsupported_platform());
-        }
+        platform.ensure_in_app_updates_supported()?;
 
         let target_path = resolve_install_target(&platform)?;
         let helper_source_path = self.resolve_helper_source_path(&platform)?;
@@ -613,12 +614,42 @@ fn failed_state(
     }
 }
 
+fn failed_state_without_request(
+    current_state: &UpdateStateDto,
+    error: &AppError,
+) -> UpdateStateDto {
+    UpdateStateDto {
+        status: UpdateStatus::Failed,
+        current_version: current_state.current_version.clone(),
+        latest_version: current_state.latest_version.clone(),
+        channel: current_state.channel.clone(),
+        asset_name: current_state.asset_name.clone(),
+        asset_path: current_state.asset_path.clone(),
+        asset_sha256: current_state.asset_sha256.clone(),
+        asset_size: current_state.asset_size,
+        asset_url: current_state.asset_url.clone(),
+        source: current_state.source.clone(),
+        checked_at: current_state.checked_at,
+        downloaded_at: current_state.downloaded_at,
+        install_log_path: None,
+        install_mode: None,
+        install_started_at: None,
+        install_scheduled_at: None,
+        last_error: Some(UpdateErrorDto::recoverable(
+            error.code.clone(),
+            error.message.clone(),
+            Some(install_failure_action(&error.code).into()),
+        )),
+    }
+}
+
 fn install_failure_action(code: &str) -> &'static str {
     match code {
         "updateInstallAssetMissing"
         | "updateInstallAssetSizeMismatch"
         | "updateInstallAssetHashMismatch"
         | "updateInstallAssetExtractFailed" => "retryDownload",
+        "updatePlatformUnsupported" | "updatePortableManualOnly" => "useSupportedInstall",
         _ => "retryInstall",
     }
 }

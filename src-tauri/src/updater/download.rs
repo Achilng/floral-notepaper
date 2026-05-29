@@ -47,6 +47,7 @@ const DOWNLOAD_HOST_ALLOWLIST: &[&str] = &[
 pub(crate) struct UpdateDownloadService {
     github_manifest_path: Option<PathBuf>,
     allow_insecure_localhost: bool,
+    platform_override: Option<platform::PlatformInfo>,
 }
 
 #[derive(Debug, Clone)]
@@ -71,6 +72,7 @@ impl UpdateDownloadService {
         Self {
             github_manifest_path: env_manifest_path(GITHUB_MANIFEST_PATH_ENV),
             allow_insecure_localhost: false,
+            platform_override: None,
         }
     }
 
@@ -79,6 +81,7 @@ impl UpdateDownloadService {
         Self {
             github_manifest_path: None,
             allow_insecure_localhost: true,
+            platform_override: None,
         }
     }
 
@@ -93,10 +96,17 @@ impl UpdateDownloadService {
     where
         F: FnMut(UpdateDownloadProgressDto),
     {
-        if platform::current_platform().install_kind == super::types::InstallKind::WindowsPortable {
-            return Err(errors::portable_manual_only());
+        if let Err(error) = self.current_platform().ensure_in_app_updates_supported() {
+            state::save(paths, &failed_state_without_plan(&current_state, &error))?;
+            return Err(error);
         }
-        let plan = self.resolve_plan(paths, &current_state, source)?;
+        let plan = match self.resolve_plan(paths, &current_state, source) {
+            Ok(plan) => plan,
+            Err(error) => {
+                state::save(paths, &failed_state_without_plan(&current_state, &error))?;
+                return Err(error);
+            }
+        };
 
         let downloading_state = UpdateStateDto {
             status: UpdateStatus::Downloading,
@@ -157,6 +167,12 @@ impl UpdateDownloadService {
                 Err(error)
             }
         }
+    }
+
+    fn current_platform(&self) -> platform::PlatformInfo {
+        self.platform_override
+            .clone()
+            .unwrap_or_else(platform::current_platform)
     }
 
     fn resolve_plan(
@@ -747,19 +763,26 @@ fn should_retry(error: &AppError) -> bool {
     }
 }
 
-fn failed_state(
-    current_state: &UpdateStateDto,
-    plan: &DownloadPlan,
-    error: &AppError,
-) -> UpdateStateDto {
-    let action = match error.code.as_str() {
+fn download_failure_action(code: &str) -> Option<String> {
+    match code {
         "updateDownloadCancelled" => Some("retryDownload".to_string()),
         "updateDownloadUrlInvalid"
         | "updateDownloadUrlNotAllowed"
         | "updateDownloadManifestUnavailable"
         | "updateDownloadManifestUnreadable" => Some("configureUpdateSource".to_string()),
+        "updatePlatformUnsupported" | "updatePortableManualOnly" => {
+            Some("useSupportedInstall".to_string())
+        }
         _ => Some("retryDownload".to_string()),
-    };
+    }
+}
+
+fn failed_state(
+    current_state: &UpdateStateDto,
+    plan: &DownloadPlan,
+    error: &AppError,
+) -> UpdateStateDto {
+    let action = download_failure_action(&error.code);
 
     let status = if error.code == "updateDownloadCancelled" {
         UpdateStatus::Available
@@ -792,10 +815,39 @@ fn failed_state(
     }
 }
 
+fn failed_state_without_plan(current_state: &UpdateStateDto, error: &AppError) -> UpdateStateDto {
+    UpdateStateDto {
+        status: UpdateStatus::Failed,
+        current_version: current_state.current_version.clone(),
+        latest_version: current_state.latest_version.clone(),
+        channel: current_state.channel.clone(),
+        asset_name: current_state.asset_name.clone(),
+        asset_path: None,
+        asset_sha256: current_state.asset_sha256.clone(),
+        asset_size: current_state.asset_size,
+        asset_url: current_state.asset_url.clone(),
+        source: current_state.source.clone(),
+        checked_at: current_state.checked_at,
+        downloaded_at: None,
+        install_log_path: None,
+        install_mode: None,
+        install_started_at: None,
+        install_scheduled_at: None,
+        last_error: Some(UpdateErrorDto::recoverable(
+            error.code.clone(),
+            error.message.clone(),
+            download_failure_action(&error.code),
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::updater::types::UpdateChannel;
+    use crate::updater::{
+        platform::{Arch, Os, PlatformInfo},
+        types::{InstallKind, UpdateChannel},
+    };
     use std::{net::TcpListener, sync::mpsc};
 
     fn test_paths(name: &str) -> UpdatePaths {
@@ -826,6 +878,40 @@ mod tests {
             .expect("test url"),
             final_path: version_dir.join(name),
             part_path: version_dir.join(format!("{name}.part")),
+        }
+    }
+
+    fn test_platform(os: Os, arch: Arch, install_kind: InstallKind) -> PlatformInfo {
+        PlatformInfo {
+            os,
+            arch,
+            app_version: "1.0.3".into(),
+            app_id: super::super::APP_ID.into(),
+            install_kind,
+            current_exe: None,
+            current_app_bundle: None,
+        }
+    }
+
+    fn available_state(asset_name: &str, body: &[u8]) -> UpdateStateDto {
+        UpdateStateDto {
+            status: UpdateStatus::Available,
+            current_version: "1.0.3".into(),
+            latest_version: Some("1.0.5".into()),
+            channel: UpdateChannel::Stable,
+            asset_name: Some(asset_name.into()),
+            asset_path: None,
+            asset_sha256: Some(format!("{:x}", Sha256::digest(body))),
+            asset_size: Some(body.len() as u64),
+            asset_url: None,
+            source: Some(DownloadSourceUsed::Github),
+            checked_at: Some(Utc::now()),
+            downloaded_at: None,
+            install_log_path: None,
+            install_mode: None,
+            install_started_at: None,
+            install_scheduled_at: None,
+            last_error: None,
         }
     }
 
@@ -937,6 +1023,7 @@ mod tests {
         let final_path = paths.downloads_dir().join("1.0.5").join(asset_name);
         fs::create_dir_all(final_path.parent().expect("download dir")).expect("create dir");
         fs::write(&final_path, body).expect("write asset");
+        let sha256 = format!("{:x}", Sha256::digest(body));
 
         let manifest_path = paths.root_dir().join("manifest.json");
         let manifest = format!(
@@ -960,7 +1047,7 @@ mod tests {
     }}
   ]
 }}"#,
-            sha256 = format!("{:x}", Sha256::digest(body)),
+            sha256 = sha256,
             size = body.len()
         );
         fs::write(&manifest_path, manifest).expect("write manifest");
@@ -968,26 +1055,13 @@ mod tests {
         let service = UpdateDownloadService {
             github_manifest_path: Some(manifest_path),
             allow_insecure_localhost: false,
+            platform_override: Some(test_platform(
+                Os::Macos,
+                Arch::Aarch64,
+                InstallKind::MacosAppBundle,
+            )),
         };
-        let current_state = UpdateStateDto {
-            status: UpdateStatus::Available,
-            current_version: "1.0.3".into(),
-            latest_version: Some("1.0.5".into()),
-            channel: UpdateChannel::Stable,
-            asset_name: Some(asset_name.into()),
-            asset_path: None,
-            asset_sha256: Some(format!("{:x}", Sha256::digest(body))),
-            asset_size: Some(body.len() as u64),
-            asset_url: None,
-            source: Some(DownloadSourceUsed::Github),
-            checked_at: Some(Utc::now()),
-            downloaded_at: None,
-            install_log_path: None,
-            install_mode: None,
-            install_started_at: None,
-            install_scheduled_at: None,
-            last_error: None,
-        };
+        let current_state = available_state(asset_name, body);
 
         let result = service
             .run(
@@ -1009,6 +1083,76 @@ mod tests {
         assert_eq!(
             saved_state.asset_path.as_deref(),
             Some(final_path.to_string_lossy().as_ref())
+        );
+    }
+
+    #[test]
+    fn run_rejects_unknown_install_kind() {
+        let paths = test_paths("download-run-unknown-platform");
+        let service = UpdateDownloadService {
+            github_manifest_path: None,
+            allow_insecure_localhost: false,
+            platform_override: Some(test_platform(
+                Os::Macos,
+                Arch::Aarch64,
+                InstallKind::Unknown,
+            )),
+        };
+
+        let error = service
+            .run(
+                &paths,
+                available_state("asset.zip", b"payload"),
+                Some(DownloadSourceUsed::Github),
+                Arc::new(AtomicBool::new(false)),
+                |_| {},
+            )
+            .expect_err("unknown install kind should be rejected");
+
+        assert_eq!(error.code, "updatePlatformUnsupported");
+        let saved_state = state::load(&paths).expect("load failed state");
+        assert_eq!(saved_state.status, UpdateStatus::Failed);
+        assert_eq!(
+            saved_state
+                .last_error
+                .as_ref()
+                .and_then(|error| error.action.as_deref()),
+            Some("useSupportedInstall")
+        );
+    }
+
+    #[test]
+    fn run_rejects_windows_portable_install_kind() {
+        let paths = test_paths("download-run-portable-platform");
+        let service = UpdateDownloadService {
+            github_manifest_path: None,
+            allow_insecure_localhost: false,
+            platform_override: Some(test_platform(
+                Os::Windows,
+                Arch::X86_64,
+                InstallKind::WindowsPortable,
+            )),
+        };
+
+        let error = service
+            .run(
+                &paths,
+                available_state("asset.zip", b"payload"),
+                Some(DownloadSourceUsed::Github),
+                Arc::new(AtomicBool::new(false)),
+                |_| {},
+            )
+            .expect_err("portable install kind should be rejected");
+
+        assert_eq!(error.code, "updatePortableManualOnly");
+        let saved_state = state::load(&paths).expect("load failed state");
+        assert_eq!(saved_state.status, UpdateStatus::Failed);
+        assert_eq!(
+            saved_state
+                .last_error
+                .as_ref()
+                .and_then(|error| error.action.as_deref()),
+            Some("useSupportedInstall")
         );
     }
 

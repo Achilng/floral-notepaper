@@ -1,4 +1,5 @@
-use super::{types::InstallKind, version, APP_ID};
+use super::{errors, types::InstallKind, version, APP_ID};
+use crate::services::notes::AppError;
 use serde::{Deserialize, Serialize};
 use std::{
     env,
@@ -41,6 +42,18 @@ impl PlatformInfo {
         self.os != Os::Unsupported
             && self.arch != Arch::Unsupported
             && self.install_kind != InstallKind::Unknown
+    }
+
+    pub fn ensure_in_app_updates_supported(&self) -> Result<(), AppError> {
+        if self.os == Os::Unsupported || self.arch == Arch::Unsupported {
+            return Err(errors::unsupported_platform());
+        }
+
+        match self.install_kind {
+            InstallKind::WindowsNsis | InstallKind::MacosAppBundle => Ok(()),
+            InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
+            InstallKind::Unknown => Err(errors::unsupported_platform()),
+        }
     }
 }
 
@@ -335,5 +348,43 @@ mod tests {
         );
 
         assert_eq!(install_kind, InstallKind::Unknown);
+    }
+
+    #[test]
+    fn rejects_unknown_install_kind_for_in_app_updates() {
+        let platform = PlatformInfo {
+            os: Os::Macos,
+            arch: Arch::Aarch64,
+            app_version: "1.0.3".into(),
+            app_id: APP_ID.into(),
+            install_kind: InstallKind::Unknown,
+            current_exe: None,
+            current_app_bundle: None,
+        };
+
+        let error = platform
+            .ensure_in_app_updates_supported()
+            .expect_err("unknown installs should not support in-app updates");
+
+        assert_eq!(error.code, "updatePlatformUnsupported");
+    }
+
+    #[test]
+    fn rejects_windows_portable_for_in_app_updates() {
+        let platform = PlatformInfo {
+            os: Os::Windows,
+            arch: Arch::X86_64,
+            app_version: "1.0.3".into(),
+            app_id: APP_ID.into(),
+            install_kind: InstallKind::WindowsPortable,
+            current_exe: None,
+            current_app_bundle: None,
+        };
+
+        let error = platform
+            .ensure_in_app_updates_supported()
+            .expect_err("portable installs should not support in-app updates");
+
+        assert_eq!(error.code, "updatePortableManualOnly");
     }
 }

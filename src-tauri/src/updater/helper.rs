@@ -27,6 +27,7 @@ const WAIT_FOR_REPLACEMENT_TIMEOUT: Duration = Duration::from_secs(30);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const INSTALLER_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const UPDATE_STAGE_PREFIX: &str = ".floral-notepaper-update-stage-";
+#[cfg(target_os = "macos")]
 const MOUNT_STAGE_PREFIX: &str = ".floral-notepaper-mounted-dmg-";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1585,6 +1586,7 @@ mod tests {
         }
     }
 
+    #[cfg(unix)]
     fn temp_log(root: &Path, name: &str) -> File {
         open_log(&root.join(name)).expect("open temp log")
     }

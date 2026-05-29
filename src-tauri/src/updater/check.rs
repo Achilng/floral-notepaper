@@ -170,6 +170,7 @@ impl UpdateCheckProvider for GithubProvider {
 pub(crate) struct UpdateCheckService {
     mirror: MirrorProvider,
     github: GithubProvider,
+    platform_override: Option<PlatformInfo>,
 }
 
 impl UpdateCheckService {
@@ -177,6 +178,7 @@ impl UpdateCheckService {
         Self {
             mirror: MirrorProvider::from_env(),
             github: GithubProvider::from_env(),
+            platform_override: None,
         }
     }
 
@@ -188,15 +190,19 @@ impl UpdateCheckService {
     ) -> Result<UpdateCheckResult, AppError> {
         let settings = settings::load(paths)?;
         let context = UpdateCheckContext {
-            platform: platform::current_platform_with_version(current_version.to_string()),
+            platform: self.current_platform(current_version),
             current_version: version::normalize_version(current_version)?,
             allow_prerelease: version::allows_prerelease(
                 &settings.channel,
                 settings.allow_prerelease,
             ),
         };
-        if context.platform.install_kind == super::types::InstallKind::WindowsPortable {
-            return Err(errors::portable_manual_only());
+        if let Err(error) = context.platform.ensure_in_app_updates_supported() {
+            if !manual {
+                persist_last_auto_check_at(paths, &settings)?;
+            }
+            state::save(paths, &failed_state(&context, &settings, &error))?;
+            return Err(error);
         }
 
         let outcome = self.evaluate(&settings, &context);
@@ -220,7 +226,30 @@ impl UpdateCheckService {
 
     #[cfg(test)]
     fn with_providers(mirror: MirrorProvider, github: GithubProvider) -> Self {
-        Self { mirror, github }
+        Self {
+            mirror,
+            github,
+            platform_override: None,
+        }
+    }
+
+    #[cfg(test)]
+    fn with_providers_and_platform(
+        mirror: MirrorProvider,
+        github: GithubProvider,
+        platform: PlatformInfo,
+    ) -> Self {
+        Self {
+            mirror,
+            github,
+            platform_override: Some(platform),
+        }
+    }
+
+    fn current_platform(&self, current_version: &str) -> PlatformInfo {
+        self.platform_override
+            .clone()
+            .unwrap_or_else(|| platform::current_platform_with_version(current_version.to_string()))
     }
 
     fn evaluate(
@@ -680,7 +709,7 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
             Some("configureUpdateSource")
         }
         "updateProviderFixtureUnreadable" => Some("fixFixturePath"),
-        "updatePlatformUnsupported" => Some("useSupportedInstall"),
+        "updatePlatformUnsupported" | "updatePortableManualOnly" => Some("useSupportedInstall"),
         "updateGithubApi" | "updateGithubRateLimited" | "updateGithubNoAssets" => Some("retry"),
         _ => Some("retry"),
     }
@@ -709,17 +738,21 @@ mod tests {
 
     fn test_context(install_kind: InstallKind) -> UpdateCheckContext {
         UpdateCheckContext {
-            platform: PlatformInfo {
-                os: Os::Macos,
-                arch: Arch::Aarch64,
-                app_version: "1.0.3".into(),
-                app_id: super::super::APP_ID.into(),
-                install_kind,
-                current_exe: None,
-                current_app_bundle: None,
-            },
+            platform: test_platform(Os::Macos, Arch::Aarch64, install_kind),
             current_version: Version::new(1, 0, 3),
             allow_prerelease: false,
+        }
+    }
+
+    fn test_platform(os: Os, arch: Arch, install_kind: InstallKind) -> PlatformInfo {
+        PlatformInfo {
+            os,
+            arch,
+            app_version: "1.0.3".into(),
+            app_id: super::super::APP_ID.into(),
+            install_kind,
+            current_exe: None,
+            current_app_bundle: None,
         }
     }
 
@@ -829,5 +862,55 @@ mod tests {
 
         assert!(result.asset_url.is_some());
         assert!(next_state.asset_url.is_some());
+    }
+
+    #[test]
+    fn run_rejects_unknown_install_kind() {
+        let paths = test_paths("check-run-unknown-platform");
+        let service = UpdateCheckService::with_providers_and_platform(
+            MirrorProvider::default(),
+            GithubProvider::offline(),
+            test_platform(Os::Macos, Arch::Aarch64, InstallKind::Unknown),
+        );
+
+        let error = service
+            .run(&paths, true, "1.0.3")
+            .expect_err("unknown install kind should be rejected");
+
+        assert_eq!(error.code, "updatePlatformUnsupported");
+        let saved_state = state::load(&paths).expect("load failed state");
+        assert_eq!(saved_state.status, UpdateStatus::Failed);
+        assert_eq!(
+            saved_state
+                .last_error
+                .as_ref()
+                .and_then(|error| error.action.as_deref()),
+            Some("useSupportedInstall")
+        );
+    }
+
+    #[test]
+    fn run_rejects_windows_portable_install_kind() {
+        let paths = test_paths("check-run-portable-platform");
+        let service = UpdateCheckService::with_providers_and_platform(
+            MirrorProvider::default(),
+            GithubProvider::offline(),
+            test_platform(Os::Windows, Arch::X86_64, InstallKind::WindowsPortable),
+        );
+
+        let error = service
+            .run(&paths, true, "1.0.3")
+            .expect_err("portable install kind should be rejected");
+
+        assert_eq!(error.code, "updatePortableManualOnly");
+        let saved_state = state::load(&paths).expect("load failed state");
+        assert_eq!(saved_state.status, UpdateStatus::Failed);
+        assert_eq!(
+            saved_state
+                .last_error
+                .as_ref()
+                .and_then(|error| error.action.as_deref()),
+            Some("useSupportedInstall")
+        );
     }
 }
