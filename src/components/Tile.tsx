@@ -120,7 +120,7 @@ export function Tile({
         {content ? (
           renderMarkdown ? (
             <div style={{ color: contentColor }}>
-              <MarkdownPreview content={content} fontSize={fontSize} />
+              <MarkdownPreview content={content} fontSize={fontSize} renderHtml={false} />
             </div>
           ) : (
             <div

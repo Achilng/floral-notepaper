@@ -47,7 +47,7 @@ import {
   getNoteContextMenuItems,
   type NoteContextMenuAction,
 } from "../features/notes/noteContextMenu";
-import { openNotepadWindow, toggleTileWindow } from "../features/windows/api";
+import { openNotepadWindow, takeStartupFile, toggleTileWindow } from "../features/windows/api";
 import {
   closeCurrentWindow,
   minimizeCurrentWindow,
@@ -559,6 +559,13 @@ export function MainWindow({
           if (!cancelled) applyNote(note);
         } else {
           clearCurrentNote();
+        }
+
+        if (!cancelled) {
+          const startupFile = await takeStartupFile();
+          if (!cancelled && startupFile) {
+            await loadExternalFile(startupFile);
+          }
         }
       } catch (error) {
         if (!cancelled) setErrorMessage(getErrorMessage(error));
@@ -2201,6 +2208,7 @@ export function MainWindow({
                         <MarkdownPreview
                           content={content}
                           fontSize={settingsConfig?.fontSize ?? 14}
+                          renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                         />
                       </div>
                     </div>

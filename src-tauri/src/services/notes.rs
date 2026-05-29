@@ -68,6 +68,8 @@ pub struct AppConfig {
     pub tile_ctrl_close: bool,
     #[serde(default)]
     pub tile_render_markdown: bool,
+    #[serde(default)]
+    pub render_html_markdown: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub surface_width: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -685,6 +687,7 @@ impl NoteStore {
             remember_surface_size: default_remember_surface_size(),
             tile_ctrl_close: default_tile_ctrl_close(),
             tile_render_markdown: false,
+            render_html_markdown: false,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
@@ -1197,6 +1200,7 @@ mod tests {
             remember_surface_size: true,
             tile_ctrl_close: true,
             tile_render_markdown: false,
+            render_html_markdown: false,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),

@@ -253,6 +253,11 @@ async fn open_note_in_editor(app: AppHandle, note_id: String) -> Result<(), AppE
     Ok(())
 }
 
+#[tauri::command]
+fn take_startup_file() -> Option<String> {
+    desktop::take_startup_file()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -294,7 +299,8 @@ pub fn run() {
             recycle_notepad_window,
             open_tile_window,
             toggle_tile_window,
-            open_note_in_editor
+            open_note_in_editor,
+            take_startup_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
