@@ -189,7 +189,8 @@
       "enUS": "English",
       "label": "語言",
       "zhCN": "簡體中文",
-      "zhHK": "繁體中文"
+      "zhHK": "繁體中文",
+      "ptBR": "Português (Brasil)"
     },
     "notesDir": "筆記目錄",
     "openAtCursor": "快捷鍵開啟時跟隨滑鼠位置",

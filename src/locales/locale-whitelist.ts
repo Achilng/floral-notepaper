@@ -1,4 +1,4 @@
-export const SUPPORTED_LOCALES = ["zh-CN", "en-US", "zh-HK"] as const;
+export const SUPPORTED_LOCALES = ["zh-CN", "en-US", "zh-HK", ] as const;
 
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
@@ -17,6 +17,8 @@ const LOCALE_ALIASES: Record<string, SupportedLocale> = {
   "zh-hk": "zh-HK",
   "zh-mo": "zh-HK",
   "zh-tw": "zh-HK",
+  pt: "en-US",
+  "pt-br": "en-US",
 };
 
 function canonicalizeLocale(locale: string): string {

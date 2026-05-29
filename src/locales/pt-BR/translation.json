@@ -1,0 +1,256 @@
+{
+  "common": {
+    "back": "Voltar",
+    "blankNote": "Nota em Branco",
+    "cancel": "Cancelar",
+    "default": "Padrão",
+    "delete": "Deletar",
+    "externalFileCount": "{{count}} arquivos externos",
+    "noteCount": "{{count}} notas",
+    "operationFailed": "Operação falhou",
+    "save": "Salvar",
+    "untitledNote": "Nota Sem Título",
+    "untitledFile": "Arquivo Sem Título",
+    "wordCount": "{{count}} caracteres",
+    "wordCountUnit": "caracteres"
+  },
+  "contextMenu": {
+    "edit": {
+      "copy": "Copiar",
+      "cut": "Recortar",
+      "paste": "Colar",
+      "selectAll": "Selecionar Tudo"
+    },
+    "tile": {
+      "close": "Desafixar",
+      "copy": "Copiar",
+      "save": "Salvar",
+      "switchToPad": "Trocar de Janela"
+    }
+  },
+  "errors": {
+    "categoryAlreadyExists": "Categoria \"{{category}}\" already exists",
+    "categoryNameEmpty": "Nome da categoria não pode ser vazio",
+    "categoryNameInvalidChars": "Nome da categoria não pode conter caracteres especiais",
+    "categoryNotFound": "Categoria \"{{category}}\" not found",
+    "desktopConfig": "Falha ao atualizar a configuração do desktop",
+    "duplicateShortcut": "Mostrar/Ocultar atalho não pode ser o mesmo que o atalho da Nota Rápida",
+    "noPool": "Piscina de janelas do Bloco de Notas ainda não inicializada",
+    "noteNotFound": "Nota não encontrada",
+    "unsupportedFile": "Apenas arquivos .md são suportados",
+    "unsupportedShortcut": "Configuração de {{field}} é inválida",
+    "unsupportedShortcutGeneric": "Configuração de atalho é inválida"
+  },
+  "markdown": {
+    "copied": "Copiado",
+    "copy": "Copiar",
+    "emptyHint": "Visualização da nota atual"
+  },
+  "main": {
+    "category": {
+      "confirmDelete": "Deletar \"{{category}}\"?",
+      "confirmDeleteAction": "Confirm Delete",
+      "delete": "Deletar Categoria",
+      "emptyFolder": "Pasta Vazia",
+      "new": "Nova Categoria",
+      "placeholder": "Digite o nome da categoria…",
+      "rename": "Renomear Categoria",
+      "uncategorized": "Sem categoria"
+    },
+    "confirm": {
+      "unsavedExternalFile": "\"{{title}}\" sem alterações. Salvar para o arquivo original?"
+    },
+    "editor": {
+      "confirmDelete": "Confirm delete?",
+      "contentPlaceholder": "Escrevendo…",
+      "emptyHint": "Selecionar ou criar uma nota",
+      "pinToTile": "Pin to Tile",
+      "previewLabel": "Preview",
+      "undo": "Voltar (Ctrl+Z)",
+      "undoLabel": "Voltar"
+    },
+    "externalFile": {
+      "label": "Arquivo Externo · {{path}}"
+    },
+    "externalFiles": {
+      "remove": "Remover da lista",
+      "title": "Arquivos Externos"
+    },
+    "formatSample": {
+      "boldText": "Bold text",
+      "codeText": "Code",
+      "headingText": "Heading",
+      "italicText": "Italic text",
+      "listItem": "List item",
+      "quoteText": "Blockquote"
+    },
+    "search": {
+      "empty": "No notes yet",
+      "noResults": "No matching notes"
+    },
+    "sidebar": {
+      "clearSearch": "limpar pesquisa",
+      "importMarkdown": "Importar Markdown",
+      "newNote": "Nova Nota",
+      "searchPlaceholder": "Pesquisar notas…"
+    },
+    "statusBar": {
+      "byteSize": "{{size}} KB",
+      "encoding": "UTF-8",
+      "format": "Markdown + LaTeX",
+      "lineNumber": "Ln {{count}}",
+      "saveState": {
+        "dirty": "Não salvo",
+        "error": "Falha ao salvar",
+        "idle": "Nenhuma seleção",
+        "saved": "Salvo",
+        "saving": "Salvando"
+      }
+    },
+    "toolbar": {
+      "blockMath": "Block math",
+      "bold": "Bold",
+      "code": "Code",
+      "heading": "Heading",
+      "hr": "Horizontal rule",
+      "inlineMath": "Inline math",
+      "italic": "Italic",
+      "ol": "Ordered list",
+      "quote": "Blockquote",
+      "ul": "Unordered list"
+    },
+    "window": {
+      "close": "Fechar",
+      "collapseSidebar": "Recolher barra lateral",
+      "expandSidebar": "Expandir barra lateral",
+      "maximize": "Maximizar",
+      "minimize": "Minimizar",
+      "quickNotepad": "Nota Rápida",
+      "restore": "Restaurar",
+      "settings": "Configurações"
+    }
+  },
+  "noteMenu": {
+    "delete": "Deletar Nota",
+    "export": "Exportar Markdown",
+    "moveToCategory": "Mover para categoria…"
+  },
+  "notepad": {
+    "button": {
+      "clear": "Limpar imagem de fundo"
+    },
+    "emptyState": "Nenhuma nota disponível",
+    "error": {
+      "copyUnsupported": "A cópia não é suportada neste ambiente"
+    },
+    "placeholder": {
+      "content": "Escreva algo…",
+      "title": "Título (opcional)"
+    },
+    "status": {
+      "copied": "Copiado",
+      "empty": "Vazia",
+      "opened": "Aberto",
+      "saveFailed": "Falha ao salvar",
+      "saved": "Salvo",
+      "unsaved": "Não salvo"
+    },
+    "tab": {
+      "edit": "Editar",
+      "new": "Nova",
+      "open": "Abrir"
+    },
+    "tooltip": {
+      "close": "Fechar",
+      "openInEditor": "Abrir no Editor",
+      "pinToTile": "Fixar no Tile"
+    }
+  },
+  "settings": {
+    "autoSave": {
+      "externalFile": "Auto Salvar Arquivos Externos",
+      "note": "Auto Salvar Notas",
+      "surface": "Auto Salvar Notas da Superfície"
+    },
+    "autostart": "Iniciar com o sistema",
+    "closeTitle": "Fechar Configurações",
+    "closeToTray": "Fechar para a Bandeja",
+    "defaultView": {
+      "edit": "Editar",
+      "label": "Visualização padrão",
+      "preview": "Preview",
+      "split": "Dividir"
+    },
+    "fontSize": {
+      "editor": "Editar tamanho da fonte",
+      "surface": "Tamanho da fonte da Superfície"
+    },
+    "locale": {
+      "enUS": "English",
+      "label": "Language",
+      "zhCN": "简体中文",
+      "zhHK": "繁體中文",
+      "ptBR": "Português (Brasil)"
+    },
+    "notesDir": "Diretório das Notas",
+    "openAtCursor": "Abrir perto do cursor com atalho",
+    "quickNoteShortcut": "Atalho para Nota Rápida",
+    "rememberSurfaceSize": "Lembrar tamanho da superfície",
+    "tabIndentSize": "Largura da indentação da aba",
+    "selectFolder": "Selecionar Pasta",
+    "shortcut": {
+      "cancelHint": "Esc para voltar",
+      "checkFailed": "Falha na verificação do atalho",
+      "checking": "Verificando atalho...",
+      "cleared": "Atalho limpo",
+      "clickToRecord": "Clique para gravar atalho",
+      "conflict": {
+        "current": "Atalho {{shortcut}} está atualmente em uso",
+        "invalid": "Atalho {{shortcut}} não é suportado",
+        "none": "Sem conflito detectado para {{shortcut}}",
+        "registered": "Atalho {{shortcut}} pode estar ocupado pelo sistema ou outro aplicativo",
+        "system": "Atalho {{shortcut}} conflita com um atalho do sistema",
+        "unknown": "Verificação concluída, mas falha ao liberar atalho temporário"
+      },
+      "forQuickNote": "Abre a janela de Nota Rápida",
+      "needsModifier": "Shortcut must include Ctrl, Option/Alt, or Command/Meta",
+      "notSet": "Não definido",
+      "pressHint": "Pressione o atalho...; pressione deletar para limpar."
+    },
+    "theme": {
+      "dark": "Dark",
+      "label": "Tema",
+      "light": "Light",
+      "system": "System"
+    },
+    "tileColor": {
+      "custom": "Personalizado",
+      "followTheme": "Follow theme",
+      "label": "Tile color"
+    },
+    "tileCtrlClose": "Ctrl+Right-click para fechar tile",
+    "tileRenderMarkdown": "Renderizar Markdown em tile",
+    "renderHtmlMarkdown": "Renderizar tags HTML em Markdown",
+    "title": "Configurações",
+    "visibilityShortcut": "Exibir/Ocultar atalho da janela",
+    "background": {
+      "label": "Imagem de fundo",
+      "default": "Imagem de fundo padrão",
+      "choose": "Choose",
+      "clear": "Limpar imagem de fundo",
+      "dim": "Overlay",
+      "scale": "Scale",
+      "positionX": "Horizontal",
+      "positionY": "Vertical",
+      "blur": "Blur",
+      "fit": {
+        "cover": "Cover",
+        "contain": "Contain",
+        "repeat": "Repeat"
+      }
+    }
+  },
+  "tile": {
+    "empty": "Vazia"
+  }
+}

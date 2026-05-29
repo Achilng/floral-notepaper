@@ -189,7 +189,8 @@
       "enUS": "English",
       "label": "Language",
       "zhCN": "简体中文",
-      "zhHK": "繁體中文"
+      "zhHK": "繁體中文",
+      "ptBR": "Português (Brasil)"
     },
     "notesDir": "Notes directory",
     "openAtCursor": "Open near cursor with shortcut",

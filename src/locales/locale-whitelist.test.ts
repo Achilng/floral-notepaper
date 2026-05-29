@@ -7,6 +7,7 @@ describe("locale whitelist", () => {
     expect(normalizeLocale("zh-cn")).toBe("zh-CN");
     expect(normalizeLocale("zh-TW")).toBe("zh-HK");
     expect(normalizeLocale("en-GB")).toBe("en-US");
+    expect(normalizeLocale("pt-BR")).toBe("pt-BR");
   });
 
   test("returns null for unsupported locales", () => {
