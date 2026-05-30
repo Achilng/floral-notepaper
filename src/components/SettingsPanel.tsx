@@ -87,7 +87,9 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             ? t("settings.locale.zhCN", { defaultValue: "简体中文" })
             : locale === "en-US"
               ? t("settings.locale.enUS", { defaultValue: "English" })
-              : t("settings.locale.zhHK", { defaultValue: "繁體中文" }),
+              : locale === "pt-BR"
+                ? t("settings.locale.ptBR", { defaultValue: "Português (Brasil)" })
+                : t("settings.locale.zhHK", { defaultValue: "繁體中文" }),
       })),
     [t],
   );

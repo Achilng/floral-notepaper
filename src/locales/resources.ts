@@ -1,6 +1,7 @@
 import enUS from "./en-US/translation.json";
 import zhCN from "./zh-CN/translation.json";
 import zhHK from "./zh-HK/translation.json";
+import ptBR from "./pt-BR/translation.json";
 
 export interface TranslationTree {
   [key: string]: string | TranslationTree;
@@ -31,16 +32,19 @@ export const translationOverrides = {
   "zh-CN": zhCN,
   "en-US": enUS,
   "zh-HK": zhHK,
+  "pt-BR": ptBR,
 } as const satisfies Record<string, TranslationTree>;
 
 export const resolvedTranslations = {
   "zh-CN": translationOverrides["zh-CN"],
   "en-US": mergeTranslations(translationOverrides["zh-CN"], translationOverrides["en-US"]),
   "zh-HK": mergeTranslations(translationOverrides["zh-CN"], translationOverrides["zh-HK"]),
+  "pt-BR": mergeTranslations(translationOverrides["zh-CN"], translationOverrides["pt-BR"]),
 } as const;
 
 export const resources = {
   "zh-CN": { translation: resolvedTranslations["zh-CN"] },
   "en-US": { translation: resolvedTranslations["en-US"] },
   "zh-HK": { translation: resolvedTranslations["zh-HK"] },
+  "pt-BR": { translation: resolvedTranslations["pt-BR"] },
 } as const;
