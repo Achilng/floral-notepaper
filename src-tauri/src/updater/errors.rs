@@ -101,8 +101,32 @@ pub fn mirror_api_error(message: impl Into<String>) -> AppError {
 }
 
 pub fn mirror_cdk_error(code: i32, message: impl Into<String>) -> AppError {
+    let error_code = match code {
+        7001 => "updateMirrorCdkExpired",
+        7002 => "updateMirrorCdkInvalid",
+        7003 => "updateMirrorCdkQuotaExhausted",
+        7004 => "updateMirrorCdkMismatched",
+        7005 => "updateMirrorCdkBlocked",
+        _ => "updateMirrorCdk",
+    };
     with_detail(
-        app_error("updateMirrorCdk", message.into()),
+        app_error(error_code, message.into()),
+        "mirrorCode",
+        code.to_string(),
+    )
+}
+
+pub fn mirror_resource_error(code: i32, message: impl Into<String>) -> AppError {
+    let error_code = match code {
+        1001 => "updateMirrorInvalidParams",
+        8001 => "updateMirrorResourceNotFound",
+        8002 => "updateMirrorInvalidOs",
+        8003 => "updateMirrorInvalidArch",
+        8004 => "updateMirrorInvalidChannel",
+        _ => "updateMirrorBusiness",
+    };
+    with_detail(
+        app_error(error_code, message.into()),
         "mirrorCode",
         code.to_string(),
     )

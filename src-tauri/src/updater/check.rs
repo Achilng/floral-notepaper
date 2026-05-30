@@ -493,10 +493,11 @@ fn check_mirror_api(
     }
 
     if api_response.code > 0 {
-        return Err(errors::mirror_cdk_error(
-            api_response.code,
-            api_response.msg,
-        ));
+        let code = api_response.code;
+        return Err(match code {
+            7001..=7005 => errors::mirror_cdk_error(code, api_response.msg),
+            _ => errors::mirror_resource_error(code, api_response.msg),
+        });
     }
 
     let data = api_response
@@ -887,7 +888,18 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
         "updatePlatformUnsupported" | "updatePortableManualOnly" => Some("useSupportedInstall"),
         "updateGithubApi" | "updateGithubRateLimited" | "updateGithubNoAssets" => Some("retry"),
         "updateMirrorApi" => Some("retry"),
-        "updateMirrorCdk" => Some("checkCdk"),
+        "updateMirrorCdkExpired"
+        | "updateMirrorCdkInvalid"
+        | "updateMirrorCdkMismatched"
+        | "updateMirrorCdkBlocked"
+        | "updateMirrorCdk" => Some("checkCdk"),
+        "updateMirrorCdkQuotaExhausted" => Some("waitOrUpgrade"),
+        "updateMirrorInvalidParams"
+        | "updateMirrorInvalidOs"
+        | "updateMirrorInvalidArch"
+        | "updateMirrorInvalidChannel" => Some("reportBug"),
+        "updateMirrorResourceNotFound" => Some("retry"),
+        "updateMirrorBusiness" => Some("retry"),
         _ => Some("retry"),
     }
 }
