@@ -602,11 +602,17 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     setup_autostart_plugin(app.handle())?;
     setup_global_shortcut_plugin(app.handle())?;
     sync_autostart_to_config(app.handle());
-    register_configured_global_shortcut(app.handle());
 
-    // Start polling for portal shortcut signals on Wayland
+    // On Wayland, initialize portal once at startup
     if portal::is_wayland_session() {
-        start_portal_signal_poller(app.handle().clone());
+        eprintln!("[shortcut] Wayland detected, initializing portal for global shortcuts");
+        if let Err(e) = init_portal_shortcuts(app.handle()) {
+            eprintln!("[shortcut] portal initialization failed: {e}");
+        } else {
+            start_portal_signal_poller(app.handle().clone());
+        }
+    } else {
+        register_configured_global_shortcut(app.handle());
     }
 
     setup_tray(app)?;
@@ -622,6 +628,25 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     if let Some(file_path) = extract_file_arg(&args) {
         if let Ok(mut guard) = STARTUP_FILE.lock() {
             *guard = Some(file_path);
+        }
+    }
+
+    Ok(())
+}
+
+/// Initialize portal shortcuts at startup (Wayland only).
+/// This creates the portal session once; subsequent shortcut changes reuse it.
+#[cfg(desktop)]
+fn init_portal_shortcuts(app: &AppHandle) -> Result<(), Box<dyn Error>> {
+    let Ok(config) = load_config() else {
+        return Ok(());
+    };
+
+    let portal_instance = create_portal_with_shortcuts(&config)?;
+
+    if let Some(state) = app.try_state::<RuntimeState>() {
+        if let Ok(mut guard) = state.portal_shortcuts.lock() {
+            *guard = Some(portal_instance);
         }
     }
 
@@ -1681,25 +1706,63 @@ fn install_global_shortcut_bindings(
 
 #[cfg(desktop)]
 fn apply_global_shortcut_config(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
-    // On Wayland, prefer the portal
+    // On Wayland, reuse the existing portal session
     if portal::is_wayland_session() {
         // Clear any existing X11 bindings
         let _ = install_global_shortcut_bindings(app, config, true);
 
-        // Clear any existing portal shortcuts
+        // Reuse existing portal - just re-register shortcuts
         if let Some(state) = app.try_state::<RuntimeState>() {
-            if let Ok(mut guard) = state.portal_shortcuts.lock() {
-                if let Some(portal) = guard.take() {
-                    let _ = portal.unregister_all();
+            if let Ok(guard) = state.portal_shortcuts.lock() {
+                if let Some(existing_portal) = guard.as_ref() {
+                    let _ = existing_portal.unregister_all();
+                    let shortcuts = build_portal_shortcuts(config);
+                    if let Err(e) = existing_portal.register(shortcuts) {
+                        eprintln!("[shortcut] failed to re-register portal shortcuts: {e}");
+                    }
+                    return Ok(());
                 }
             }
         }
 
+        // No portal exists (shouldn't happen on Wayland after startup)
         return setup_portal_shortcuts(app, config);
     }
 
     // On X11, use the standard global-shortcut plugin
     install_global_shortcut_bindings(app, config, true)
+}
+
+#[cfg(desktop)]
+fn build_portal_shortcuts(config: &AppConfig) -> Vec<portal::PortalShortcut> {
+    let mut shortcuts = Vec::new();
+    shortcuts.push(portal::PortalShortcut {
+        id: "open-notepad".to_string(),
+        name: "Open Quick Note".to_string(),
+        accelerators: vec![shortcut_to_portal_accelerator(&config.global_shortcut)],
+    });
+
+    if !config.toggle_visibility_shortcut.is_empty() {
+        shortcuts.push(portal::PortalShortcut {
+            id: "toggle-visibility".to_string(),
+            name: "Toggle Visibility".to_string(),
+            accelerators: vec![shortcut_to_portal_accelerator(
+                &config.toggle_visibility_shortcut,
+            )],
+        });
+    }
+
+    shortcuts
+}
+
+#[cfg(desktop)]
+fn create_portal_with_shortcuts(
+    config: &AppConfig,
+) -> Result<portal::GlobalShortcutsPortal, Box<dyn Error>> {
+    let portal_instance = portal::GlobalShortcutsPortal::new();
+    let shortcuts = build_portal_shortcuts(config);
+    portal_instance.register(shortcuts)?;
+    Ok(portal_instance)
 }
 
 #[cfg(not(desktop))]
