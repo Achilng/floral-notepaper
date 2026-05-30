@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::sync::{Arc, Mutex};
 
 use futures_util::StreamExt;
 use zbus::connection::Connection;
@@ -53,9 +54,10 @@ pub enum PortalMessage {
 ///
 /// Uses `org.freedesktop.portal.GlobalShortcuts` to register and listen
 /// for global keyboard shortcuts when X11 key grabs are unavailable.
+#[derive(Clone)]
 pub struct GlobalShortcutsPortal {
     tx: std::sync::mpsc::Sender<PortalCommand>,
-    signal_tx: std::sync::mpsc::Receiver<PortalMessage>,
+    signal_rx: Arc<Mutex<std::sync::mpsc::Receiver<PortalMessage>>>,
 }
 
 enum PortalCommand {
@@ -81,7 +83,7 @@ impl GlobalShortcutsPortal {
 
         Self {
             tx,
-            signal_tx: signal_rx,
+            signal_rx: Arc::new(Mutex::new(signal_rx)),
         }
     }
 
@@ -101,7 +103,7 @@ impl GlobalShortcutsPortal {
 
     /// Check if a shortcut was activated (non-blocking).
     pub fn try_recv_signal(&self) -> Option<PortalMessage> {
-        self.signal_tx.try_recv().ok()
+        self.signal_rx.lock().ok().and_then(|rx| rx.try_recv().ok())
     }
 
     /// Shut down the portal event loop.
@@ -130,30 +132,106 @@ async fn portal_event_loop_async(
         .build()
         .await?;
 
-    // Create a session
-    let options: HashMap<String, OwnedValue> = HashMap::new();
-    let session_handle = proxy.create_session(options).await?;
-    eprintln!("[portal] session created: {session_handle}");
+    // Step 1: Create a session (returns request handle, not session handle)
+    let mut options: HashMap<String, OwnedValue> = HashMap::new();
+    options.insert(
+        "handle_token".to_string(),
+        owned_str("floral_notepad_shortcuts"),
+    );
+    options.insert(
+        "session_handle_token".to_string(),
+        owned_str("floral_notepad_session"),
+    );
+    let request_handle = proxy.create_session(options).await?;
+    eprintln!("[portal] create_session request: {request_handle}");
 
-    // Build match rules for signals on the session object path
+    // Step 2: Wait for Response signal on the request handle to get session handle
+    let request_path = zbus::zvariant::ObjectPath::try_from(request_handle.as_str())?;
+    let mut create_response_stream = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .interface("org.freedesktop.portal.Request")?
+            .member("Response")?
+            .path(request_path.clone())?
+            .build(),
+        &conn,
+        None,
+    )
+    .await?;
+
+    // Wait for the CreateSession response
+    let mut session_handle: Option<zbus::zvariant::OwnedObjectPath> = None;
+    let response = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        create_response_stream.next(),
+    )
+    .await;
+
+    match response {
+        Ok(Some(Ok(msg))) => {
+            let body = msg.body();
+            if let Ok((response_code, results)) =
+                body.deserialize::<(u32, HashMap<String, OwnedValue>)>()
+            {
+                eprintln!("[portal] CreateSession response: code={response_code}");
+                if response_code == 0 {
+                    // Extract session_handle from the response
+                    if let Some(val) = results.get("session_handle") {
+                        if let Ok(handle_str) = <&str>::try_from(val) {
+                            session_handle =
+                                Some(zbus::zvariant::OwnedObjectPath::try_from(handle_str)?);
+                            eprintln!(
+                                "[portal] session established: {:?}",
+                                session_handle.as_ref().map(|p| p.as_str())
+                            );
+                        }
+                    }
+                } else {
+                    eprintln!("[portal] CreateSession denied (response={response_code})");
+                }
+            }
+        }
+        Ok(None) => {
+            eprintln!("[portal] Response stream ended");
+        }
+        Err(_) => {
+            eprintln!("[portal] CreateSession response timeout");
+        }
+        _ => {}
+    }
+
+    let Some(session_handle) = session_handle else {
+        eprintln!("[portal] failed to obtain session handle, exiting");
+        return Ok(());
+    };
+
+    // Step 3: Subscribe to signals on the session object path
     let session_path = zbus::zvariant::ObjectPath::try_from(session_handle.as_str())?;
 
-    let shortcuts_rule = MatchRule::builder()
-        .msg_type(Type::Signal)
-        .interface("org.freedesktop.portal.GlobalShortcuts")?
-        .member("ShortcutsChanged")?
-        .path(session_path.clone())?
-        .build();
+    let mut signal_stream = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .interface("org.freedesktop.portal.GlobalShortcuts")?
+            .member("ShortcutsChanged")?
+            .path(session_path.clone())?
+            .build(),
+        &conn,
+        None,
+    )
+    .await?;
 
-    let response_rule = MatchRule::builder()
-        .msg_type(Type::Signal)
-        .interface("org.freedesktop.portal.Request")?
-        .member("Response")?
-        .path(session_path.clone())?
-        .build();
-
-    let mut signal_stream = MessageStream::for_match_rule(shortcuts_rule, &conn, None).await?;
-    let mut response_stream = MessageStream::for_match_rule(response_rule, &conn, None).await?;
+    // Also subscribe to Activated signal (shortcut was pressed)
+    let mut activated_stream = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .interface("org.freedesktop.portal.GlobalShortcuts")?
+            .member("Activated")?
+            .path(session_path.clone())?
+            .build(),
+        &conn,
+        None,
+    )
+    .await?;
 
     let mut registered_shortcuts: Vec<PortalShortcut> = Vec::new();
 
@@ -188,6 +266,8 @@ async fn portal_event_loop_async(
 
         // Poll for signals with a timeout
         use std::time::Duration;
+
+        // Check for ShortcutsChanged signals
         match tokio::time::timeout(Duration::from_millis(100), signal_stream.next()).await {
             Ok(Some(Ok(msg))) => {
                 handle_shortcuts_changed_signal(&msg, &registered_shortcuts, &signal_tx);
@@ -195,9 +275,10 @@ async fn portal_event_loop_async(
             _ => {}
         }
 
-        match tokio::time::timeout(Duration::from_millis(10), response_stream.next()).await {
+        // Check for Activated signals (shortcut was pressed)
+        match tokio::time::timeout(Duration::from_millis(10), activated_stream.next()).await {
             Ok(Some(Ok(msg))) => {
-                handle_response_signal(&msg);
+                handle_activated_signal(&msg, &registered_shortcuts, &signal_tx);
             }
             _ => {}
         }
@@ -239,7 +320,8 @@ async fn bind_shortcuts_on_portal(
         })
         .collect();
 
-    let options: HashMap<String, OwnedValue> = HashMap::new();
+    let mut options: HashMap<String, OwnedValue> = HashMap::new();
+    options.insert("handle_token".to_string(), owned_str("floral_notepad_bind"));
     let _request_path = proxy
         .bind_shortcuts(&session_path, portal_shortcuts, "", options)
         .await?;
@@ -265,9 +347,31 @@ fn handle_shortcuts_changed_signal(
 
     for (id, _props) in &shortcuts {
         if registered.iter().any(|s| &s.id == id) {
-            eprintln!("[portal] shortcut activated: {id}");
-            let _ = signal_tx.send(PortalMessage::ShortcutActivated(id.clone()));
+            eprintln!("[portal] shortcut changed: {id}");
         }
+    }
+}
+
+fn handle_activated_signal(
+    msg: &zbus::message::Message,
+    registered: &[PortalShortcut],
+    signal_tx: &std::sync::mpsc::Sender<PortalMessage>,
+) {
+    // Activated signal signature: o session_handle, s shortcut_id, a{sv} arguments
+    let body = msg.body();
+
+    let Ok((_session, shortcut_id, _args)) = body.deserialize::<(
+        zbus::zvariant::ObjectPath<'_>,
+        String,
+        HashMap<String, OwnedValue>,
+    )>() else {
+        eprintln!("[portal] failed to deserialize Activated signal");
+        return;
+    };
+
+    if registered.iter().any(|s| s.id == shortcut_id) {
+        eprintln!("[portal] shortcut activated: {shortcut_id}");
+        let _ = signal_tx.send(PortalMessage::ShortcutActivated(shortcut_id));
     }
 }
 

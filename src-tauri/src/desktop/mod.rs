@@ -603,6 +603,12 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     setup_global_shortcut_plugin(app.handle())?;
     sync_autostart_to_config(app.handle());
     register_configured_global_shortcut(app.handle());
+
+    // Start polling for portal shortcut signals on Wayland
+    if portal::is_wayland_session() {
+        start_portal_signal_poller(app.handle().clone());
+    }
+
     setup_tray(app)?;
     schedule_notepad_prewarm(app.handle());
 
@@ -620,6 +626,73 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     }
 
     Ok(())
+}
+
+/// Start a background thread that polls for portal shortcut signals and
+/// triggers the appropriate actions when shortcuts are activated.
+fn start_portal_signal_poller(app: AppHandle) {
+    std::thread::spawn(move || {
+        loop {
+            // Check for portal signals every 50ms
+            std::thread::sleep(std::time::Duration::from_millis(50));
+
+            let Some(state) = app.try_state::<RuntimeState>() else {
+                continue;
+            };
+
+            let portal = match state.portal_shortcuts.lock() {
+                Ok(guard) => guard.clone(),
+                Err(_) => continue,
+            };
+
+            let Some(portal) = portal else {
+                continue;
+            };
+
+            while let Some(signal) = portal.try_recv_signal() {
+                match signal {
+                    portal::PortalMessage::ShortcutActivated(id) => {
+                        eprintln!("[shortcut] portal signal received for: {id}");
+                        let app_for_closure = app.clone();
+                        match id.as_str() {
+                            "open-notepad" => {
+                                let bounds =
+                                    if load_config().map(|c| c.open_at_cursor).unwrap_or(true) {
+                                        let specs = saved_surface_specs(&app);
+                                        cursor_centered_bounds(&specs)
+                                    } else {
+                                        None
+                                    };
+                                if let Err(error) = app.run_on_main_thread(move || {
+                                    if let Err(error) =
+                                        open_notepad_window_now(&app_for_closure, None, bounds)
+                                    {
+                                        eprintln!("[shortcut] failed to open notepad from portal shortcut: {error}");
+                                    }
+                                }) {
+                                    eprintln!("[shortcut] failed to dispatch portal shortcut action: {error}");
+                                }
+                            }
+                            "toggle-visibility" => {
+                                if let Err(error) = app.run_on_main_thread(move || {
+                                    toggle_app_visibility(&app_for_closure);
+                                }) {
+                                    eprintln!("[shortcut] failed to dispatch visibility toggle from portal: {error}");
+                                }
+                            }
+                            _ => {
+                                eprintln!("[shortcut] unknown portal shortcut ID: {id}");
+                            }
+                        }
+                    }
+                    portal::PortalMessage::Shutdown => {
+                        eprintln!("[shortcut] portal signal poller shutting down");
+                        return;
+                    }
+                }
+            }
+        }
+    });
 }
 
 pub fn handle_window_event(window: &Window, event: &WindowEvent) {
@@ -1309,31 +1382,35 @@ fn register_configured_global_shortcut(app: &AppHandle) {
         return;
     };
 
-    let x11_result = install_global_shortcut_bindings(app, &config, false);
-
-    if let Err(error) = x11_result {
-        eprintln!("[shortcut] X11 registration failed: {error}");
-
-        // On Wayland, try portal fallback
-        if portal::is_wayland_session() {
-            eprintln!("[shortcut] Wayland detected, attempting portal fallback");
-            match setup_portal_shortcuts(app, &config) {
-                Ok(()) => {
-                    eprintln!("[shortcut] portal fallback succeeded");
-                }
-                Err(portal_err) => {
+    // On Wayland, always prefer the portal — X11 key grabs via XWayland are
+    // unreliable because compositors like niri may not forward them.
+    if portal::is_wayland_session() {
+        eprintln!("[shortcut] Wayland detected, using portal for global shortcuts");
+        match setup_portal_shortcuts(app, &config) {
+            Ok(()) => {
+                eprintln!("[shortcut] portal shortcut registration succeeded");
+            }
+            Err(portal_err) => {
+                eprintln!(
+                    "[shortcut] portal registration failed: {portal_err}, trying X11 fallback"
+                );
+                if let Err(x11_err) = install_global_shortcut_bindings(app, &config, false) {
                     let msg = format!(
-                        "快捷键注册失败（X11 和 Portal 均失败）：X11: {error}；Portal: {portal_err}"
+                        "快捷键注册失败（Portal 和 X11 均失败）：Portal: {portal_err}；X11: {x11_err}"
                     );
                     eprintln!("[shortcut] {msg}");
                     let _ = app.emit("shortcut-register-failed", &msg);
                 }
             }
-        } else {
-            let msg = format!("快捷键注册失败：{error}");
-            eprintln!("[shortcut] {msg}");
-            let _ = app.emit("shortcut-register-failed", &msg);
         }
+        return;
+    }
+
+    // On X11, use the standard global-shortcut plugin
+    if let Err(error) = install_global_shortcut_bindings(app, &config, false) {
+        let msg = format!("快捷键注册失败：{error}");
+        eprintln!("[shortcut] {msg}");
+        let _ = app.emit("shortcut-register-failed", &msg);
     }
 }
 
@@ -1604,11 +1681,11 @@ fn install_global_shortcut_bindings(
 
 #[cfg(desktop)]
 fn apply_global_shortcut_config(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
-    // Try X11 first
-    let x11_result = install_global_shortcut_bindings(app, config, true);
+    // On Wayland, prefer the portal
+    if portal::is_wayland_session() {
+        // Clear any existing X11 bindings
+        let _ = install_global_shortcut_bindings(app, config, true);
 
-    // If X11 fails on Wayland, try portal
-    if x11_result.is_err() && portal::is_wayland_session() {
         // Clear any existing portal shortcuts
         if let Some(state) = app.try_state::<RuntimeState>() {
             if let Ok(mut guard) = state.portal_shortcuts.lock() {
@@ -1621,7 +1698,8 @@ fn apply_global_shortcut_config(app: &AppHandle, config: &AppConfig) -> Result<(
         return setup_portal_shortcuts(app, config);
     }
 
-    x11_result
+    // On X11, use the standard global-shortcut plugin
+    install_global_shortcut_bindings(app, config, true)
 }
 
 #[cfg(not(desktop))]
