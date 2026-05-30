@@ -11,8 +11,8 @@
     "save": "Salvar",
     "untitledNote": "Nota Sem Título",
     "untitledFile": "Arquivo Sem Título",
-    "wordCount": "{{count}} caracteres",
-    "wordCountUnit": "caracteres"
+    "wordCount": "{{count}} Caracteres",
+    "wordCountUnit": "Caracteres"
   },
   "contextMenu": {
     "edit": {
@@ -64,7 +64,7 @@
       "confirmDelete": "Confirm delete?",
       "contentPlaceholder": "Escrevendo…",
       "emptyHint": "Selecionar ou criar uma nota",
-      "pinToTile": "Pin to Tile",
+      "pinToTile": "Fixar no Bloco",
       "previewLabel": "Preview",
       "undo": "Voltar (Ctrl+Z)",
       "undoLabel": "Voltar"
@@ -77,16 +77,16 @@
       "title": "Arquivos Externos"
     },
     "formatSample": {
-      "boldText": "Bold text",
-      "codeText": "Code",
-      "headingText": "Heading",
-      "italicText": "Italic text",
-      "listItem": "List item",
-      "quoteText": "Blockquote"
+      "boldText": "Texto em Negrito",
+      "codeText": "Código",
+      "headingText": "Título",
+      "italicText": "Texto em Itálico",
+      "listItem": "Item da Lista",
+      "quoteText": "Citação"
     },
     "search": {
-      "empty": "No notes yet",
-      "noResults": "No matching notes"
+      "empty": "Ainda não há notas",
+      "noResults": "Nenhuma nota correspondente"
     },
     "sidebar": {
       "clearSearch": "limpar pesquisa",
@@ -163,7 +163,7 @@
     "tooltip": {
       "close": "Fechar",
       "openInEditor": "Abrir no Editor",
-      "pinToTile": "Fixar no Tile"
+      "pinToTile": "Fixar no Bloco"
     }
   },
   "settings": {
@@ -236,7 +236,7 @@
     "background": {
       "label": "Imagem de fundo",
       "default": "Imagem de fundo padrão",
-      "choose": "Choose",
+      "choose": "Escolher",
       "clear": "Limpar imagem de fundo",
       "dim": "Overlay",
       "scale": "Scale",
