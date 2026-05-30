@@ -1,0 +1,12 @@
+{
+  "code": 7002,
+  "msg": "Please confirm that you have entered the correct cdkey",
+  "data": {
+    "version_name": "v1.0.5",
+    "version_number": 105,
+    "channel": "stable",
+    "os": "",
+    "arch": "",
+    "release_note": "修复若干问题。"
+  }
+}

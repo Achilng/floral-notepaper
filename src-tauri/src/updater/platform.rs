@@ -148,7 +148,12 @@ fn registry_reports_windows_nsis(current_exe: &Path) -> bool {
         .unwrap_or_default();
 
     ROOTS.iter().any(|root| {
-        let query = format!(r"chcp 65001 >nul & reg query {root} /s /f {exe_name}");
+        let query = format!(
+            r#"chcp 65001 >nul & "{}" query {} /s /f "{}""#,
+            reg_exe_path().display(),
+            root,
+            exe_name
+        );
         Command::new("cmd")
             .args(["/c", &query])
             .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
@@ -169,6 +174,15 @@ fn registry_reports_windows_nsis(current_exe: &Path) -> bool {
 #[cfg(not(target_os = "windows"))]
 fn registry_reports_windows_nsis(_current_exe: &Path) -> bool {
     false
+}
+
+#[cfg(target_os = "windows")]
+fn reg_exe_path() -> PathBuf {
+    env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .map(|root| root.join("System32").join("reg.exe"))
+        .filter(|path| path.exists())
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\reg.exe"))
 }
 
 #[cfg(target_os = "windows")]

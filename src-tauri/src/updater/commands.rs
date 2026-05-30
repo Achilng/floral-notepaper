@@ -14,15 +14,13 @@ use crate::desktop;
 use crate::services::notes::AppError;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
-use std::{
-    thread,
-    time::{Duration, Instant},
-};
+use std::time::{Duration, Instant};
 use tauri::{async_runtime, Emitter, Manager, State};
 
 const INSTALL_PREPARE_EVENT: &str = "update://prepare-install";
-const INSTALL_PREPARE_TIMEOUT: Duration = Duration::from_secs(10);
+const INSTALL_PREPARE_TIMEOUT: Duration = Duration::from_secs(30);
 const INSTALL_PREPARE_POLL_INTERVAL: Duration = Duration::from_millis(100);
+const INSTALL_TERMINATE_DELAY: Duration = Duration::from_millis(500);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -77,10 +75,11 @@ pub async fn update_check(
     let result_paths = paths.clone();
     let current_version = state.current_version().to_string();
     let emit_version = current_version.clone();
+    let cdk = state.get_mirror_cdk();
 
     let result = async_runtime::spawn_blocking(move || {
         let _task = task;
-        run_update_check_blocking(&paths, manual, &current_version)
+        run_update_check_blocking(&paths, manual, &current_version, cdk)
     })
     .await
     .map_err(|error| {
@@ -100,8 +99,8 @@ pub async fn update_download(
     source: Option<String>,
 ) -> Result<UpdateDownloadResult, AppError> {
     let source = source.as_deref().map(parse_download_source).transpose()?;
-    let current_state = state.load_state()?;
     let task = state.begin_task(UpdateTaskKind::Download)?;
+    let current_state = state.load_state()?;
     let cancel_flag = task
         .cancel_flag()
         .ok_or_else(|| errors::app_error("updateCancelUnavailable", "当前没有可取消的更新任务"))?;
@@ -113,7 +112,9 @@ pub async fn update_download(
         let _task = task;
         let service = UpdateDownloadService::from_env();
         service.run(&paths, current_state, source, cancel_flag, |progress| {
-            let _ = app_handle.emit("update://download-progress", &progress);
+            if let Err(error) = app_handle.emit("update://download-progress", &progress) {
+                eprintln!("failed to emit update://download-progress: {error}");
+            }
         })
     })
     .await
@@ -127,7 +128,9 @@ pub async fn update_download(
     match result {
         Ok(download_result) => {
             if let Ok(next_state) = state.load_state() {
-                let _ = app.emit("update://download-finished", &next_state);
+                if let Err(error) = app.emit("update://download-finished", &next_state) {
+                    eprintln!("failed to emit update://download-finished: {error}");
+                }
             }
             Ok(download_result)
         }
@@ -138,7 +141,9 @@ pub async fn update_download(
                 "retryDownload",
                 state.current_version(),
             );
-            let _ = app.emit("update://error", &error_payload);
+            if let Err(emit_error) = app.emit("update://error", &error_payload) {
+                eprintln!("failed to emit update://error: {emit_error}");
+            }
             Err(error)
         }
     }
@@ -149,8 +154,8 @@ pub async fn update_install(
     app: tauri::AppHandle,
     state: State<'_, UpdaterState>,
 ) -> Result<UpdateInstallResult, AppError> {
-    let current_state = state.load_state()?;
     let task = state.begin_task(UpdateTaskKind::Install)?;
+    let current_state = state.load_state()?;
     let request_id = begin_install_prepare(&app, &state);
     if let Err(error) = wait_for_install_prepare(&state, &request_id).await {
         state.clear_install_prepare(&request_id);
@@ -160,7 +165,9 @@ pub async fn update_install(
             "retryInstall",
             state.current_version(),
         );
-        let _ = app.emit("update://error", &error_payload);
+        if let Err(emit_error) = app.emit("update://error", &error_payload) {
+            eprintln!("failed to emit update://error: {emit_error}");
+        }
         return Err(error);
     }
     state.clear_install_prepare(&request_id);
@@ -181,12 +188,15 @@ pub async fn update_install(
     })?;
 
     match result {
-        Ok(_install_result) => {
+        Ok(install_result) => {
             if let Ok(next_state) = state.load_state() {
-                let _ = app.emit("update://install-finished", &next_state);
+                if let Err(error) = app.emit("update://install-finished", &next_state) {
+                    eprintln!("failed to emit update://install-finished: {error}");
+                }
             }
             desktop::mark_app_exiting(&app);
-            force_terminate_self();
+            schedule_force_terminate_self();
+            Ok(install_result)
         }
         Err(error) => {
             let error_payload = load_saved_error_payload(
@@ -195,7 +205,9 @@ pub async fn update_install(
                 "retryInstall",
                 state.current_version(),
             );
-            let _ = app.emit("update://error", &error_payload);
+            if let Err(emit_error) = app.emit("update://error", &error_payload) {
+                eprintln!("failed to emit update://error: {emit_error}");
+            }
             Err(error)
         }
     }
@@ -230,7 +242,8 @@ pub(crate) fn run_automatic_update_check(
 ) -> Result<UpdateCheckResult, AppError> {
     let (task, paths) = prepare_update_check(&app, state)?;
     let _task = task;
-    let result = run_update_check_blocking(&paths, false, state.current_version());
+    let cdk = state.get_mirror_cdk();
+    let result = run_update_check_blocking(&paths, false, state.current_version(), cdk);
     finalize_update_check(&app, &paths, false, state.current_version(), result)
 }
 
@@ -272,15 +285,21 @@ trait UpdateCheckEmitter {
 
 impl UpdateCheckEmitter for tauri::AppHandle {
     fn emit_checking(&self, state: &UpdateStateDto) {
-        let _ = self.emit("update://checking", state);
+        if let Err(error) = self.emit("update://checking", state) {
+            eprintln!("failed to emit update://checking: {error}");
+        }
     }
 
     fn emit_checked(&self, state: &UpdateStateDto) {
-        let _ = self.emit("update://checked", state);
+        if let Err(error) = self.emit("update://checked", state) {
+            eprintln!("failed to emit update://checked: {error}");
+        }
     }
 
     fn emit_error(&self, error: &UpdateErrorDto) {
-        let _ = self.emit("update://error", error);
+        if let Err(emit_error) = self.emit("update://error", error) {
+            eprintln!("failed to emit update://error: {emit_error}");
+        }
     }
 }
 
@@ -289,7 +308,7 @@ fn prepare_update_check<E: UpdateCheckEmitter>(
     state: &UpdaterState,
 ) -> Result<(ActiveTaskGuard, UpdatePaths), AppError> {
     let task = state.begin_task(UpdateTaskKind::Check)?;
-    let mut checking_state = state.load_state().unwrap_or_default();
+    let mut checking_state = state.load_state()?;
     checking_state.status = UpdateStatus::Checking;
     checking_state.checked_at = Some(Utc::now());
     checking_state.last_error = None;
@@ -355,7 +374,7 @@ async fn wait_for_install_prepare(state: &UpdaterState, request_id: &str) -> Res
                         request_id,
                     ));
                 }
-                thread::sleep(INSTALL_PREPARE_POLL_INTERVAL);
+                tokio::time::sleep(INSTALL_PREPARE_POLL_INTERVAL).await;
             }
             InstallPrepareState::Unknown => {
                 return Err(errors::with_detail(
@@ -375,8 +394,9 @@ fn run_update_check_blocking(
     paths: &UpdatePaths,
     manual: bool,
     current_version: &str,
+    cdk: Option<String>,
 ) -> Result<UpdateCheckResult, AppError> {
-    let service = UpdateCheckService::from_env();
+    let service = UpdateCheckService::from_env().with_cdk(cdk);
     service.run(paths, manual, current_version)
 }
 
@@ -410,6 +430,13 @@ fn finalize_update_check<E: UpdateCheckEmitter>(
             Err(error)
         }
     }
+}
+
+fn schedule_force_terminate_self() {
+    std::thread::spawn(|| {
+        std::thread::sleep(INSTALL_TERMINATE_DELAY);
+        force_terminate_self();
+    });
 }
 
 // std::process::exit runs atexit handlers which deadlock with WebView2 on Windows.

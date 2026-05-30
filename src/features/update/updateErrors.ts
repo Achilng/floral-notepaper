@@ -9,9 +9,37 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+export function getUpdateErrorCode(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined;
+  if (typeof error.code === "string") return error.code;
+
+  for (const key of ["payload", "error", "data"]) {
+    const nested = error[key];
+    if (isRecord(nested) && typeof nested.code === "string") {
+      return nested.code;
+    }
+  }
+
+  return undefined;
+}
+
+function getUpdateErrorText(error: unknown): string | undefined {
+  if (!isRecord(error)) return undefined;
+  if (typeof error.message === "string") return error.message;
+
+  for (const key of ["payload", "error", "data"]) {
+    const nested = error[key];
+    if (isRecord(nested) && typeof nested.message === "string") {
+      return nested.message;
+    }
+  }
+
+  return undefined;
+}
+
 export function getUpdateErrorMessage(error: unknown, translate: TFunction = t): string {
-  const code = isRecord(error) && typeof error.code === "string" ? error.code : undefined;
-  const message = isRecord(error) && typeof error.message === "string" ? error.message : undefined;
+  const code = getUpdateErrorCode(error);
+  const message = getUpdateErrorText(error);
 
   switch (code) {
     case "mirrorCdkEmpty":
@@ -77,6 +105,14 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
     case "updateMirrorDownloadUnavailable":
       return translate("settings.update.error.mirrorDownloadUnavailable", {
         defaultValue: "Mirror 下载源尚未配置，当前阶段请改用 GitHub 下载",
+      });
+    case "updateMirrorApi":
+      return translate("settings.update.error.mirrorApi", {
+        defaultValue: message ?? "Mirror 酱 API 请求失败",
+      });
+    case "updateMirrorCdk":
+      return translate("settings.update.error.mirrorCdk", {
+        defaultValue: message ?? "Mirror 酱 CDK 验证失败，请检查 CDK 是否正确",
       });
     case "updateDownloadCancelled":
       return translate("settings.update.cancelled", {

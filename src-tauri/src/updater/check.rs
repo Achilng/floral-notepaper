@@ -24,12 +24,16 @@ const MIRROR_MANIFEST_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_MIRROR_MANIFEST_
 const GITHUB_MANIFEST_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_GITHUB_MANIFEST_PATH";
 const GITHUB_REPO_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_GITHUB_REPO";
 const DEFAULT_GITHUB_REPO: &str = "Achilng/floral-notepaper";
+const MIRROR_API_BASE: &str = "https://mirrorchyan.com/api/resources";
+const MIRROR_RES_ID: &str = "floral";
+const MIRROR_USER_AGENT: &str = "floral_notepaper";
 
 #[derive(Debug, Clone)]
 struct UpdateCheckContext {
     platform: PlatformInfo,
     current_version: Version,
     allow_prerelease: bool,
+    previous_state: UpdateStateDto,
 }
 
 impl UpdateCheckContext {
@@ -71,19 +75,39 @@ trait UpdateCheckProvider {
 #[derive(Debug, Clone, Default)]
 struct MirrorProvider {
     manifest_path: Option<PathBuf>,
+    cdk: Option<String>,
+    offline: bool,
 }
 
 impl MirrorProvider {
     pub fn from_env() -> Self {
         Self {
             manifest_path: env_manifest_path(MIRROR_MANIFEST_PATH_ENV),
+            cdk: None,
+            offline: env::var("FLORAL_NOTEPAPER_UPDATE_OFFLINE").is_ok(),
         }
+    }
+
+    pub fn with_cdk(mut self, cdk: Option<String>) -> Self {
+        self.cdk = cdk;
+        self
     }
 
     #[cfg(test)]
     fn with_manifest_path(path: PathBuf) -> Self {
         Self {
             manifest_path: Some(path),
+            cdk: None,
+            offline: false,
+        }
+    }
+
+    #[cfg(test)]
+    fn offline() -> Self {
+        Self {
+            manifest_path: None,
+            cdk: None,
+            offline: true,
         }
     }
 }
@@ -98,11 +122,13 @@ impl UpdateCheckProvider for MirrorProvider {
         context: &UpdateCheckContext,
         priority: usize,
     ) -> Result<ProviderCheck, AppError> {
-        let manifest_path = self
-            .manifest_path
-            .as_deref()
-            .ok_or_else(|| errors::provider_not_configured(self.label()))?;
-        load_manifest_candidate(self.label(), manifest_path, context, priority, false, true)
+        if let Some(manifest_path) = &self.manifest_path {
+            return load_manifest_candidate(self.label(), manifest_path, context, priority, true);
+        }
+        if self.offline {
+            return Err(errors::provider_not_configured(self.label()));
+        }
+        check_mirror_api(context, priority, self.cdk.as_deref())
     }
 }
 
@@ -148,14 +174,7 @@ impl UpdateCheckProvider for GithubProvider {
         priority: usize,
     ) -> Result<ProviderCheck, AppError> {
         if let Some(manifest_path) = &self.manifest_path {
-            return load_manifest_candidate(
-                self.label(),
-                manifest_path,
-                context,
-                priority,
-                false,
-                true,
-            );
+            return load_manifest_candidate(self.label(), manifest_path, context, priority, false);
         }
 
         if self.offline {
@@ -182,6 +201,11 @@ impl UpdateCheckService {
         }
     }
 
+    pub(crate) fn with_cdk(mut self, cdk: Option<String>) -> Self {
+        self.mirror = self.mirror.with_cdk(cdk);
+        self
+    }
+
     pub(crate) fn run(
         &self,
         paths: &UpdatePaths,
@@ -189,6 +213,7 @@ impl UpdateCheckService {
         current_version: &str,
     ) -> Result<UpdateCheckResult, AppError> {
         let settings = settings::load(paths)?;
+        let previous_state = state::load_with_current_version(paths, current_version)?;
         let context = UpdateCheckContext {
             platform: self.current_platform(current_version),
             current_version: version::normalize_version(current_version)?,
@@ -196,6 +221,7 @@ impl UpdateCheckService {
                 &settings.channel,
                 settings.allow_prerelease,
             ),
+            previous_state,
         };
         if let Err(error) = context.platform.ensure_in_app_updates_supported() {
             if !manual {
@@ -367,6 +393,146 @@ fn github_repo() -> String {
         .unwrap_or_else(|| DEFAULT_GITHUB_REPO.to_string())
 }
 
+// --- Mirror 酱 API ---
+
+#[derive(Debug, Deserialize)]
+struct MirrorApiResponse {
+    code: i32,
+    msg: String,
+    data: Option<MirrorApiData>,
+}
+
+#[derive(Debug, Deserialize)]
+struct MirrorApiData {
+    version_name: String,
+    #[allow(dead_code)]
+    version_number: Option<u64>,
+    #[allow(dead_code)]
+    channel: Option<String>,
+    #[allow(dead_code)]
+    os: Option<String>,
+    #[allow(dead_code)]
+    arch: Option<String>,
+    release_note: Option<String>,
+    url: Option<String>,
+}
+
+fn mirror_os_param(os: &platform::Os) -> &'static str {
+    match os {
+        platform::Os::Windows => "windows",
+        platform::Os::Macos => "darwin",
+        platform::Os::Unsupported => "unknown",
+    }
+}
+
+fn mirror_arch_param(arch: &platform::Arch) -> &'static str {
+    match arch {
+        platform::Arch::X86_64 => "amd64",
+        platform::Arch::Aarch64 => "arm64",
+        platform::Arch::Unsupported => "unknown",
+    }
+}
+
+fn build_mirror_api_client() -> Result<Client, AppError> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
+        .user_agent("floral-notepaper-updater")
+        .build()
+        .map_err(|error| errors::mirror_api_error(format!("无法创建 HTTP 客户端：{error}")))
+}
+
+fn check_mirror_api(
+    context: &UpdateCheckContext,
+    priority: usize,
+    cdk: Option<&str>,
+) -> Result<ProviderCheck, AppError> {
+    let os = mirror_os_param(&context.platform.os);
+    let arch = mirror_arch_param(&context.platform.arch);
+    let current_version = format!("v{}", context.current_version_text());
+
+    let mut url = reqwest::Url::parse(&format!("{MIRROR_API_BASE}/{MIRROR_RES_ID}/latest"))
+        .map_err(|e| errors::mirror_api_error(format!("URL 构建失败：{e}")))?;
+    url.query_pairs_mut()
+        .append_pair("current_version", &current_version)
+        .append_pair("os", os)
+        .append_pair("arch", arch)
+        .append_pair("user_agent", MIRROR_USER_AGENT);
+    if let Some(cdk) = cdk.filter(|s| !s.trim().is_empty()) {
+        url.query_pairs_mut().append_pair("cdk", cdk);
+    }
+
+    let client = build_mirror_api_client()?;
+    let response = client.get(url).send().map_err(|error| {
+        if error.is_timeout() {
+            errors::mirror_api_error("请求超时")
+        } else {
+            errors::mirror_api_error(error.to_string())
+        }
+    })?;
+
+    let status = response.status();
+    if !status.is_success() && status.as_u16() != 403 {
+        return Err(errors::mirror_api_error(format!(
+            "HTTP {}",
+            status.as_u16()
+        )));
+    }
+
+    let body = response
+        .text()
+        .map_err(|error| errors::mirror_api_error(format!("响应读取失败：{error}")))?;
+    let api_response: MirrorApiResponse = serde_json::from_str(&body)
+        .map_err(|error| errors::mirror_api_error(format!("响应解析失败：{error}")))?;
+
+    if api_response.code < 0 {
+        return Err(errors::mirror_api_error(format!(
+            "服务端错误 (code={})：{}",
+            api_response.code, api_response.msg
+        )));
+    }
+
+    if api_response.code > 0 {
+        return Err(errors::mirror_cdk_error(
+            api_response.code,
+            api_response.msg,
+        ));
+    }
+
+    let data = api_response
+        .data
+        .ok_or_else(|| errors::mirror_api_error("响应缺少 data 字段"))?;
+
+    let version_str = data
+        .version_name
+        .trim_start_matches('v')
+        .trim_start_matches('V');
+    let normalized_version = version::normalize_version(version_str)?;
+
+    if !version::is_newer_version(
+        &context.current_version,
+        &normalized_version,
+        context.allow_prerelease,
+    ) {
+        return Ok(ProviderCheck::NotAvailable);
+    }
+
+    let has_url = data.url.is_some();
+    Ok(ProviderCheck::Available(UpdateCandidate {
+        priority,
+        version: version_str.to_string(),
+        normalized_version,
+        release_notes: data.release_note.filter(|s| !s.trim().is_empty()),
+        mandatory: false,
+        asset_name: format!("floral-notepaper_{version_str}_{os}_{arch}.zip"),
+        asset_sha256: None,
+        asset_size: 0,
+        asset_url: data.url,
+        can_download_from_mirror: has_url,
+        can_download_from_github: false,
+    }))
+}
+
 fn build_github_api_client() -> Result<Client, AppError> {
     Client::builder()
         .connect_timeout(Duration::from_secs(10))
@@ -515,8 +681,7 @@ fn load_manifest_candidate(
     manifest_path: &Path,
     context: &UpdateCheckContext,
     priority: usize,
-    can_download_from_mirror: bool,
-    can_download_from_github: bool,
+    is_mirror_provider: bool,
 ) -> Result<ProviderCheck, AppError> {
     let manifest_bytes = fs::read(manifest_path).map_err(|error| {
         let error = errors::with_detail(
@@ -544,7 +709,17 @@ fn load_manifest_candidate(
         return Ok(ProviderCheck::NotAvailable);
     }
 
-    let github_url = asset.github_url.clone();
+    let has_mirror_url = asset.mirror_url.is_some();
+    let has_github_url = !asset.github_url.trim().is_empty();
+    let asset_url = if is_mirror_provider {
+        asset
+            .mirror_url
+            .clone()
+            .or_else(|| Some(asset.github_url.clone()))
+    } else {
+        Some(asset.github_url.clone())
+    };
+
     Ok(ProviderCheck::Available(UpdateCandidate {
         priority,
         version: manifest.version.clone(),
@@ -554,9 +729,9 @@ fn load_manifest_candidate(
         asset_name: asset.name.clone(),
         asset_sha256: Some(asset.sha256),
         asset_size: asset.size,
-        asset_url: Some(github_url.clone()),
-        can_download_from_mirror,
-        can_download_from_github: can_download_from_github && !github_url.trim().is_empty(),
+        asset_url,
+        can_download_from_mirror: has_mirror_url,
+        can_download_from_github: has_github_url,
     }))
 }
 
@@ -681,20 +856,20 @@ fn failed_state(
     UpdateStateDto {
         status: UpdateStatus::Failed,
         current_version: context.current_version_text(),
-        latest_version: None,
+        latest_version: context.previous_state.latest_version.clone(),
         channel: settings.channel.clone(),
-        asset_name: None,
-        asset_path: None,
-        asset_sha256: None,
-        asset_size: None,
-        asset_url: None,
-        source: None,
+        asset_name: context.previous_state.asset_name.clone(),
+        asset_path: context.previous_state.asset_path.clone(),
+        asset_sha256: context.previous_state.asset_sha256.clone(),
+        asset_size: context.previous_state.asset_size,
+        asset_url: context.previous_state.asset_url.clone(),
+        source: context.previous_state.source.clone(),
         checked_at: Some(Utc::now()),
-        downloaded_at: None,
-        install_log_path: None,
-        install_mode: None,
-        install_started_at: None,
-        install_scheduled_at: None,
+        downloaded_at: context.previous_state.downloaded_at,
+        install_log_path: context.previous_state.install_log_path.clone(),
+        install_mode: context.previous_state.install_mode.clone(),
+        install_started_at: context.previous_state.install_started_at,
+        install_scheduled_at: context.previous_state.install_scheduled_at,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),
@@ -711,6 +886,8 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
         "updateProviderFixtureUnreadable" => Some("fixFixturePath"),
         "updatePlatformUnsupported" | "updatePortableManualOnly" => Some("useSupportedInstall"),
         "updateGithubApi" | "updateGithubRateLimited" | "updateGithubNoAssets" => Some("retry"),
+        "updateMirrorApi" => Some("retry"),
+        "updateMirrorCdk" => Some("checkCdk"),
         _ => Some("retry"),
     }
 }
@@ -741,6 +918,7 @@ mod tests {
             platform: test_platform(Os::Macos, Arch::Aarch64, install_kind),
             current_version: Version::new(1, 0, 3),
             allow_prerelease: false,
+            previous_state: UpdateStateDto::idle_with_version("1.0.3"),
         }
     }
 
@@ -777,9 +955,10 @@ mod tests {
 
     #[test]
     fn returns_source_not_configured_when_no_provider_fixture_exists_and_github_only() {
-        let service = UpdateCheckService::with_providers(
-            MirrorProvider::default(),
+        let service = UpdateCheckService::with_providers_and_platform(
+            MirrorProvider::offline(),
             GithubProvider::offline(),
+            test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
         );
         let settings = test_settings(CheckSourcePreference::GithubFirst);
 
@@ -832,7 +1011,7 @@ mod tests {
         let paths = test_paths("check-not-available");
         let github_manifest = write_manifest(&paths, "github.json", "1.0.3");
         let service = UpdateCheckService::with_providers(
-            MirrorProvider::default(),
+            MirrorProvider::offline(),
             GithubProvider::with_manifest_path(github_manifest),
         );
         let settings = test_settings(CheckSourcePreference::GithubFirst);
@@ -851,7 +1030,7 @@ mod tests {
         let paths = test_paths("check-asset-url");
         let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
         let service = UpdateCheckService::with_providers(
-            MirrorProvider::default(),
+            MirrorProvider::offline(),
             GithubProvider::with_manifest_path(github_manifest),
         );
         let settings = test_settings(CheckSourcePreference::GithubFirst);
@@ -868,7 +1047,7 @@ mod tests {
     fn run_rejects_unknown_install_kind() {
         let paths = test_paths("check-run-unknown-platform");
         let service = UpdateCheckService::with_providers_and_platform(
-            MirrorProvider::default(),
+            MirrorProvider::offline(),
             GithubProvider::offline(),
             test_platform(Os::Macos, Arch::Aarch64, InstallKind::Unknown),
         );
@@ -893,7 +1072,7 @@ mod tests {
     fn run_rejects_windows_portable_install_kind() {
         let paths = test_paths("check-run-portable-platform");
         let service = UpdateCheckService::with_providers_and_platform(
-            MirrorProvider::default(),
+            MirrorProvider::offline(),
             GithubProvider::offline(),
             test_platform(Os::Windows, Arch::X86_64, InstallKind::WindowsPortable),
         );
@@ -912,5 +1091,39 @@ mod tests {
                 .and_then(|error| error.action.as_deref()),
             Some("useSupportedInstall")
         );
+    }
+
+    #[test]
+    fn run_preserves_previous_available_update_when_check_fails() {
+        let paths = test_paths("check-preserve-available-on-failure");
+        let mut previous = UpdateStateDto::idle_with_version("1.0.3");
+        previous.status = UpdateStatus::Available;
+        previous.latest_version = Some("1.0.5".into());
+        previous.asset_name = Some("floral-notepaper_1.0.5_macos_aarch64_app.zip".into());
+        previous.asset_sha256 =
+            Some("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into());
+        previous.asset_size = Some(42);
+        previous.source = Some(DownloadSourceUsed::Github);
+        state::save(&paths, &previous).expect("seed available state");
+
+        let service = UpdateCheckService::with_providers_and_platform(
+            MirrorProvider::offline(),
+            GithubProvider::offline(),
+            test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
+        );
+
+        let error = service
+            .run(&paths, false, "1.0.3")
+            .expect_err("unconfigured providers should fail");
+
+        assert_eq!(error.code, "updateSourceNotConfigured");
+        let saved_state = state::load(&paths).expect("load failed state");
+        assert_eq!(saved_state.status, UpdateStatus::Failed);
+        assert_eq!(saved_state.latest_version.as_deref(), Some("1.0.5"));
+        assert_eq!(
+            saved_state.asset_name.as_deref(),
+            Some("floral-notepaper_1.0.5_macos_aarch64_app.zip")
+        );
+        assert_eq!(saved_state.asset_size, Some(42));
     }
 }

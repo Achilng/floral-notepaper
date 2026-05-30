@@ -229,6 +229,39 @@ fn default_base_dir() -> Result<PathBuf, AppError> {
     Ok(env::current_dir()?.join("data"))
 }
 
+fn known_data_migration_candidates() -> Vec<PathBuf> {
+    known_data_migration_candidates_for(env::var("HOME").ok(), env::var("USERPROFILE").ok())
+}
+
+fn known_data_migration_candidates_for(
+    home: Option<String>,
+    userprofile: Option<String>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(home) = home {
+        let home = PathBuf::from(home);
+        candidates.push(home.join("Documents").join(".floral"));
+        candidates.push(home.join("Documents").join("花笺"));
+        candidates.push(
+            home.join("Library")
+                .join("Application Support")
+                .join(".floral"),
+        );
+        candidates.push(
+            home.join("Library")
+                .join("Application Support")
+                .join("花笺"),
+        );
+    }
+    if let Some(profile) = userprofile {
+        let profile = PathBuf::from(profile);
+        candidates.push(profile.join("Documents").join(".floral"));
+        candidates.push(profile.join("Documents").join("花笺"));
+    }
+
+    candidates
+}
+
 fn move_or_copy_dir(from: &Path, to: &Path) -> Result<(), AppError> {
     if fs::rename(from, to).is_ok() {
         return Ok(());
@@ -732,31 +765,14 @@ impl NoteStore {
         if current.join("config.json").exists() {
             return Ok(());
         }
-        let candidates: &[fn() -> Option<PathBuf>] = &[
-            || {
-                std::env::var("HOME")
-                    .ok()
-                    .map(|h| PathBuf::from(h).join("Documents").join(".floral"))
-            },
-            || {
-                std::env::var("HOME").ok().map(|h| {
-                    PathBuf::from(h)
-                        .join("Library")
-                        .join("Application Support")
-                        .join(".floral")
-                })
-            },
-        ];
-        for candidate_fn in candidates {
-            if let Some(old_dir) = candidate_fn() {
-                if old_dir != *current && old_dir.join("config.json").exists() {
-                    eprintln!(
-                        "migrating data from {} to {}",
-                        old_dir.display(),
-                        current.display()
-                    );
-                    return move_or_copy_dir(&old_dir, current);
-                }
+        for old_dir in known_data_migration_candidates() {
+            if old_dir != *current && old_dir.join("config.json").exists() {
+                eprintln!(
+                    "migrating data from {} to {}",
+                    old_dir.display(),
+                    current.display()
+                );
+                return move_or_copy_dir(&old_dir, current);
             }
         }
         Ok(())
@@ -1302,6 +1318,27 @@ mod tests {
         saved.last_known_base_dir = Some(store.base_dir().to_string_lossy().to_string());
         assert_eq!(loaded, saved);
         assert!(custom_notes_dir.exists());
+    }
+
+    #[test]
+    fn data_migration_candidates_include_legacy_chinese_dirs() {
+        let candidates = known_data_migration_candidates_for(
+            Some("/Users/alice".into()),
+            Some(r"C:\Users\Alice".into()),
+        );
+
+        assert!(candidates.contains(&PathBuf::from("/Users/alice").join("Documents").join("花笺")));
+        assert!(candidates.contains(
+            &PathBuf::from("/Users/alice")
+                .join("Library")
+                .join("Application Support")
+                .join("花笺")
+        ));
+        assert!(candidates.contains(
+            &PathBuf::from(r"C:\Users\Alice")
+                .join("Documents")
+                .join("花笺")
+        ));
     }
 
     #[test]

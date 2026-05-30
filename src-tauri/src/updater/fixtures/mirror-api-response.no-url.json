@@ -1,0 +1,12 @@
+{
+  "code": 0,
+  "msg": "current resource latest version is v1.0.5",
+  "data": {
+    "version_name": "v1.0.5",
+    "version_number": 105,
+    "channel": "stable",
+    "os": "darwin",
+    "arch": "aarch64",
+    "release_note": "修复若干问题。"
+  }
+}

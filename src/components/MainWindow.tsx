@@ -676,11 +676,22 @@ export function MainWindow({
         },
       );
 
+      const unlistenError = await listen("update://error", () => {
+        if (!active) return;
+        void getUpdateStatus()
+          .then((status) => {
+            if (!active) return;
+            syncUpdateStatus(status);
+          })
+          .catch(() => undefined);
+      });
+
       return () => {
         unlistenChecking();
         unlistenChecked();
         unlistenDownloadFinished();
         unlistenInstallFinished();
+        unlistenError();
       };
     };
 

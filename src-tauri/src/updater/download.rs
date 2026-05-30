@@ -695,10 +695,11 @@ fn progress_speed(downloaded_bytes: u64, started_at: Instant) -> u64 {
 }
 
 fn remove_file_if_exists(path: &Path) -> Result<(), AppError> {
-    if path.exists() {
-        fs::remove_file(path)?;
+    match fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error.into()),
     }
-    Ok(())
 }
 
 fn download_request_error(error: reqwest::Error) -> AppError {

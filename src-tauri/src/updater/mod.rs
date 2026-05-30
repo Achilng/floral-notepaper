@@ -190,7 +190,7 @@ impl UpdaterState {
 
     pub fn settings(&self) -> Result<types::UpdateSettingsDto, AppError> {
         let settings = settings::load(&self.paths)?;
-        let has_mirror_cdk = self.cdk_store.has_cdk().unwrap_or(false);
+        let has_mirror_cdk = self.cdk_store.has_cdk()?;
         Ok(settings.into_dto(has_mirror_cdk))
     }
 
@@ -201,7 +201,7 @@ impl UpdaterState {
         let existing = settings::load(&self.paths)?;
         let stored = settings::StoredUpdateSettings::from_user_settings(&existing, settings);
         settings::save(&self.paths, &stored)?;
-        let has_mirror_cdk = self.cdk_store.has_cdk().unwrap_or(false);
+        let has_mirror_cdk = self.cdk_store.has_cdk()?;
         Ok(stored.into_dto(has_mirror_cdk))
     }
 
@@ -217,14 +217,16 @@ impl UpdaterState {
         self.cdk_store.has_cdk().unwrap_or(false)
     }
 
+    pub fn get_mirror_cdk(&self) -> Option<String> {
+        self.cdk_store.get_cdk()
+    }
+
     pub fn load_state(&self) -> Result<types::UpdateStateDto, AppError> {
         state::load_with_current_version(&self.paths, &self.current_version)
     }
 
     pub fn save_state(&self, update_state: &types::UpdateStateDto) -> Result<(), AppError> {
-        let mut normalized = update_state.clone();
-        normalized.current_version = self.current_version.clone();
-        state::save(&self.paths, &normalized)
+        state::save_with_current_version(&self.paths, update_state, &self.current_version)
     }
 
     pub fn begin_task(&self, kind: UpdateTaskKind) -> Result<ActiveTaskGuard, AppError> {

@@ -1030,6 +1030,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tokio",
  "trash",
  "uuid",
  "windows-sys 0.59.0",

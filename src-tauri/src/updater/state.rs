@@ -6,10 +6,16 @@ use super::{
 use crate::services::notes::AppError;
 use sha2::{Digest, Sha256};
 use std::{
-    fs::{self, File},
-    io::{BufReader, Read},
+    fs::{self, File, OpenOptions},
+    io::{BufReader, Read, Write},
     path::Path,
+    thread,
+    time::{Duration, Instant},
 };
+
+const STATE_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
+const STATE_LOCK_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const STALE_STATE_LOCK_AGE: Duration = Duration::from_secs(5 * 60);
 
 pub fn load(paths: &UpdatePaths) -> Result<UpdateStateDto, AppError> {
     load_with_current_version(paths, env!("CARGO_PKG_VERSION"))
@@ -19,18 +25,26 @@ pub fn load_with_current_version(
     paths: &UpdatePaths,
     current_version: &str,
 ) -> Result<UpdateStateDto, AppError> {
+    let _lock = acquire_state_file_lock(&paths.state_path())?;
+    load_with_current_version_unlocked(paths, current_version)
+}
+
+fn load_with_current_version_unlocked(
+    paths: &UpdatePaths,
+    current_version: &str,
+) -> Result<UpdateStateDto, AppError> {
     paths.ensure_dirs()?;
     let path = paths.state_path();
     if !path.exists() {
         let state = UpdateStateDto::idle_with_version(current_version);
-        save(paths, &state)?;
+        save_unlocked(paths, &state)?;
         return Ok(state);
     }
 
     match serde_json::from_str::<UpdateStateDto>(&fs::read_to_string(&path)?) {
         Ok(state) => {
             let normalized = normalize_state(state, current_version);
-            save(paths, &normalized)?;
+            save_unlocked(paths, &normalized)?;
             Ok(normalized)
         }
         Err(_error) => {
@@ -41,7 +55,7 @@ pub fn load_with_current_version(
                 Some("retry".into()),
             ));
             state.current_version = current_version.to_string();
-            save(paths, &state)?;
+            save_unlocked(paths, &state)?;
             Ok(state)
         }
     }
@@ -73,8 +87,22 @@ fn normalize_state(mut state: UpdateStateDto, current_version: &str) -> UpdateSt
 }
 
 pub fn save(paths: &UpdatePaths, state: &UpdateStateDto) -> Result<(), AppError> {
+    let _lock = acquire_state_file_lock(&paths.state_path())?;
+    save_unlocked(paths, state)
+}
+
+fn save_unlocked(paths: &UpdatePaths, state: &UpdateStateDto) -> Result<(), AppError> {
     paths.ensure_dirs()?;
     write_json_atomic(&paths.state_path(), state)
+}
+
+pub fn save_with_current_version(
+    paths: &UpdatePaths,
+    state: &UpdateStateDto,
+    current_version: &str,
+) -> Result<(), AppError> {
+    let normalized = normalize_state(state.clone(), current_version);
+    save(paths, &normalized)
 }
 
 pub fn recover(paths: &UpdatePaths) -> Result<UpdateStateDto, AppError> {
@@ -85,9 +113,20 @@ pub fn recover_with_current_version(
     paths: &UpdatePaths,
     current_version: &str,
 ) -> Result<UpdateStateDto, AppError> {
-    let mut state = load_with_current_version(paths, current_version)?;
+    let _lock = acquire_state_file_lock(&paths.state_path())?;
+    let mut state = load_with_current_version_unlocked(paths, current_version)?;
 
     match state.status {
+        UpdateStatus::Checking => {
+            state.status = UpdateStatus::Idle;
+            state.current_version = current_version.to_string();
+            state.last_error = Some(UpdateErrorDto::recoverable(
+                "updateCheckInterrupted",
+                "上次检查更新被中断，已恢复为空闲状态",
+                Some("retry".into()),
+            ));
+            save_unlocked(paths, &state)?;
+        }
         UpdateStatus::Downloading => {
             state.status = UpdateStatus::Failed;
             state.last_error = Some(UpdateErrorDto::recoverable(
@@ -95,7 +134,7 @@ pub fn recover_with_current_version(
                 "上次下载被中断，已清理为可重试状态",
                 Some("retryDownload".into()),
             ));
-            save(paths, &state)?;
+            save_unlocked(paths, &state)?;
         }
         UpdateStatus::Installing | UpdateStatus::InstallScheduled => {
             if state.status == UpdateStatus::Installing
@@ -103,7 +142,7 @@ pub fn recover_with_current_version(
             {
                 let asset_path = state.asset_path.clone();
                 state = verified_install_state(state, current_version);
-                save(paths, &state)?;
+                save_unlocked(paths, &state)?;
                 remove_download_dir(asset_path);
                 return Ok(state);
             }
@@ -136,12 +175,75 @@ pub fn recover_with_current_version(
                     Some("retryDownload".into()),
                 ),
             });
-            save(paths, &state)?;
+            save_unlocked(paths, &state)?;
         }
         _ => {}
     }
 
     Ok(state)
+}
+
+struct StateFileLock {
+    path: std::path::PathBuf,
+}
+
+impl Drop for StateFileLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn acquire_state_file_lock(state_path: &Path) -> Result<StateFileLock, AppError> {
+    let lock_path = state_path.with_extension("lock");
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    let deadline = Instant::now() + STATE_LOCK_TIMEOUT;
+    loop {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(mut file) => {
+                writeln!(
+                    file,
+                    "{} {}",
+                    std::process::id(),
+                    chrono::Utc::now().to_rfc3339()
+                )?;
+                return Ok(StateFileLock { path: lock_path });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                remove_stale_state_lock(&lock_path);
+                if Instant::now() >= deadline {
+                    return Err(AppError {
+                        code: "updateStateLockTimeout".into(),
+                        message: "等待更新状态文件锁超时".into(),
+                        details: Default::default(),
+                    });
+                }
+                thread::sleep(STATE_LOCK_POLL_INTERVAL);
+            }
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+fn remove_stale_state_lock(lock_path: &Path) {
+    let Ok(metadata) = fs::metadata(lock_path) else {
+        return;
+    };
+    let Ok(modified) = metadata.modified() else {
+        return;
+    };
+    let Ok(age) = std::time::SystemTime::now().duration_since(modified) else {
+        return;
+    };
+    if age >= STALE_STATE_LOCK_AGE {
+        let _ = fs::remove_file(lock_path);
+    }
 }
 
 fn installed_version_matches_target(state: &UpdateStateDto, current_version: &str) -> bool {
@@ -189,6 +291,10 @@ fn verify_asset(path: &Path, expected_size: Option<u64>, expected_hash: Option<&
         return false;
     }
     if let Some(expected_hash) = expected_hash {
+        let expected_hash = expected_hash.trim();
+        if !is_valid_sha256_hex(expected_hash) {
+            return false;
+        }
         let Ok(actual_hash) = sha256_hex(path) else {
             return false;
         };
@@ -197,6 +303,10 @@ fn verify_asset(path: &Path, expected_size: Option<u64>, expected_hash: Option<&
         }
     }
     true
+}
+
+fn is_valid_sha256_hex(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
 fn sha256_hex(path: &Path) -> Result<String, std::io::Error> {
@@ -266,6 +376,22 @@ mod tests {
     }
 
     #[test]
+    fn recovers_interrupted_check() {
+        let paths = test_paths("state-recover-check");
+        let mut state = UpdateStateDto::idle();
+        state.status = UpdateStatus::Checking;
+        save(&paths, &state).expect("save checking state");
+
+        let recovered = recover_with_current_version(&paths, "1.0.3").expect("recover state");
+
+        assert_eq!(recovered.status, UpdateStatus::Idle);
+        assert_eq!(
+            recovered.last_error.expect("last error").code,
+            "updateCheckInterrupted"
+        );
+    }
+
+    #[test]
     fn marks_version_mismatch_as_retry_install_when_asset_is_still_usable() {
         let paths = test_paths("state-recover-install-retry");
         let asset_path = paths.downloads_dir().join("1.0.5").join("asset.zip");
@@ -330,6 +456,29 @@ mod tests {
         save(&paths, &state).expect("save installing state");
 
         let recovered = recover(&paths).expect("recover state");
+
+        assert_eq!(recovered.status, UpdateStatus::Failed);
+        assert_eq!(
+            recovered.last_error.expect("last error").action,
+            Some("retryDownload".into())
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_expected_hash_when_recovering_install_asset() {
+        let paths = test_paths("state-recover-install-invalid-hash");
+        let asset_path = paths.downloads_dir().join("1.0.5").join("asset.zip");
+        fs::create_dir_all(asset_path.parent().expect("asset parent")).expect("create asset dir");
+        fs::write(&asset_path, b"installable asset").expect("write asset");
+        let mut state = UpdateStateDto::idle();
+        state.status = UpdateStatus::InstallScheduled;
+        state.latest_version = Some("1.0.5".into());
+        state.asset_path = Some(asset_path.to_string_lossy().to_string());
+        state.asset_size = Some(fs::metadata(&asset_path).expect("asset metadata").len());
+        state.asset_sha256 = Some("not-a-sha256".into());
+        save(&paths, &state).expect("save scheduled state");
+
+        let recovered = recover_with_current_version(&paths, "1.0.3").expect("recover state");
 
         assert_eq!(recovered.status, UpdateStatus::Failed);
         assert_eq!(

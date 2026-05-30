@@ -24,8 +24,12 @@ pub const HELPER_BINARY_NAME: &str = "floral-notepaper-update-helper";
 
 const WAIT_FOR_EXIT_TIMEOUT: Duration = Duration::from_secs(30);
 const WAIT_FOR_REPLACEMENT_TIMEOUT: Duration = Duration::from_secs(30);
+const WATCHDOG_HELPER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
 const INSTALLER_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+const STATE_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
+const STATE_LOCK_POLL_INTERVAL: Duration = Duration::from_millis(50);
+const STALE_STATE_LOCK_AGE: Duration = Duration::from_secs(5 * 60);
 const UPDATE_STAGE_PREFIX: &str = ".floral-notepaper-update-stage-";
 #[cfg(target_os = "macos")]
 const MOUNT_STAGE_PREFIX: &str = ".floral-notepaper-mounted-dmg-";
@@ -34,6 +38,7 @@ const MOUNT_STAGE_PREFIX: &str = ".floral-notepaper-mounted-dmg-";
 pub enum UpdateHelperMode {
     Apply,
     Test,
+    Watchdog,
 }
 
 impl UpdateHelperMode {
@@ -41,13 +46,15 @@ impl UpdateHelperMode {
         match self {
             Self::Apply => "apply",
             Self::Test => "test",
+            Self::Watchdog => "watchdog",
         }
     }
 
-    fn parse(value: &str) -> Option<Self> {
+    pub(crate) fn parse(value: &str) -> Option<Self> {
         match value.trim() {
             "apply" => Some(Self::Apply),
             "test" => Some(Self::Test),
+            "watchdog" => Some(Self::Watchdog),
             _ => None,
         }
     }
@@ -67,6 +74,28 @@ pub struct UpdateHelperCommand {
     pub ready_path: PathBuf,
     pub current_version: String,
     pub target_version: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct AppliedUpdate {
+    launch_target: PathBuf,
+    rollback: Option<MacosRollbackPlan>,
+}
+
+impl AppliedUpdate {
+    fn without_rollback(launch_target: PathBuf) -> Self {
+        Self {
+            launch_target,
+            rollback: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct MacosRollbackPlan {
+    target_path: PathBuf,
+    backup_path: PathBuf,
+    stage_root: PathBuf,
 }
 
 impl UpdateHelperCommand {
@@ -242,6 +271,10 @@ where
 pub fn execute(command: &UpdateHelperCommand) -> Result<(), UpdateHelperExitCode> {
     let mut log = open_log(&command.log_path)?;
     write_log_header(&mut log, command)?;
+    if command.mode == UpdateHelperMode::Watchdog {
+        return execute_watchdog(command, &mut log);
+    }
+
     validate_request(command, &mut log)?;
     ensure_sufficient_disk_space(command, &mut log)?;
     write_ready_marker(command, &mut log)?;
@@ -258,6 +291,7 @@ pub fn execute(command: &UpdateHelperCommand) -> Result<(), UpdateHelperExitCode
             Ok(())
         }
         UpdateHelperMode::Apply => execute_apply(command, &mut log),
+        UpdateHelperMode::Watchdog => unreachable!("watchdog mode is handled before validation"),
     }
 }
 
@@ -272,31 +306,69 @@ fn execute_apply(
             command.wait_pid
         ),
     )?;
-    match wait_for_process_exit(command.wait_pid, log) {
-        Ok(()) => {}
-        Err(UpdateHelperExitCode::WaitTimedOut) => {
-            write_log_line(
-                log,
-                "main process did not exit within timeout; proceeding with install anyway",
-            )?;
-        }
-        Err(code) => return Err(code),
+    if let Err(code) = wait_for_process_exit(command.wait_pid, log) {
+        let persist_result = persist_failed_state(command, code, log);
+        let _ = cleanup_after_install(command, log, false);
+        persist_result?;
+        return Err(code);
     }
     persist_installing_state(command, log)?;
 
-    let launch_target = match apply_update(command, log) {
-        Ok(path) => path,
+    let applied_update = match apply_update(command, log) {
+        Ok(update) => update,
         Err(code) => {
-            let _ = persist_failed_state(command, code, log);
-            let _ = cleanup_after_install(command, log, should_remove_download_dir(code));
-            let _ = relaunch_existing_target(command, log);
+            let persist_result = persist_failed_state(command, code, log);
+            let cleanup_result =
+                cleanup_after_install(command, log, should_remove_download_dir(code));
+            let relaunch_result = relaunch_existing_target(command, log);
+            persist_result?;
+            cleanup_result?;
+            relaunch_result?;
             return Err(code);
         }
     };
 
     persist_pending_verification_state(command, log)?;
     cleanup_after_install(command, log, false)?;
-    relaunch_target(&launch_target, log)
+    if let Err(code) = relaunch_target(&applied_update.launch_target, log) {
+        if let Some(rollback) = applied_update.rollback.as_ref() {
+            let _ = rollback_macos_update(rollback, log);
+        }
+        let _ = persist_failed_state(command, code, log);
+        return Err(code);
+    }
+    cleanup_applied_update(&applied_update, log)?;
+    write_completion_marker(command, log)
+}
+
+fn execute_watchdog(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    write_log_line(
+        log,
+        &format!("watching update helper process {}", command.wait_pid),
+    )?;
+    wait_for_process_exit_with_timeout(command.wait_pid, WATCHDOG_HELPER_TIMEOUT, log)?;
+
+    let completion_path = completion_marker_path(command);
+    if completion_path.exists() {
+        write_log_line(
+            log,
+            &format!(
+                "update helper completed successfully; watchdog marker found at {}",
+                completion_path.display()
+            ),
+        )?;
+        return Ok(());
+    }
+
+    write_log_line(
+        log,
+        "update helper exited without completion marker; persisting failure and relaunching existing target",
+    )?;
+    let _ = persist_failed_state(command, UpdateHelperExitCode::InstallerFailed, log);
+    relaunch_existing_target(command, log)
 }
 
 fn validate_request(
@@ -381,6 +453,35 @@ fn write_ready_marker(
     Ok(())
 }
 
+pub(crate) fn completion_marker_path(command: &UpdateHelperCommand) -> PathBuf {
+    let mut path = command.ready_path.clone();
+    path.set_extension("done");
+    path
+}
+
+fn write_completion_marker(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    let completion_path = completion_marker_path(command);
+    if let Some(parent) = completion_path.parent() {
+        fs::create_dir_all(parent).map_err(|_| UpdateHelperExitCode::StateWriteFailed)?;
+    }
+    fs::write(
+        &completion_path,
+        format!("completed {}\n", Utc::now().to_rfc3339()),
+    )
+    .map_err(|_| UpdateHelperExitCode::StateWriteFailed)?;
+    write_log_line(
+        log,
+        &format!(
+            "wrote helper completion marker {}",
+            completion_path.display()
+        ),
+    )?;
+    Ok(())
+}
+
 fn ensure_sufficient_disk_space(
     command: &UpdateHelperCommand,
     log: &mut File,
@@ -409,7 +510,7 @@ fn ensure_sufficient_disk_space(
 fn apply_update(
     command: &UpdateHelperCommand,
     log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
+) -> Result<AppliedUpdate, UpdateHelperExitCode> {
     match command.install_kind {
         InstallKind::MacosAppBundle => install_macos_bundle(command, log),
         InstallKind::WindowsPortable => install_windows_portable(command, log),
@@ -424,7 +525,7 @@ fn apply_update(
 fn install_macos_bundle(
     command: &UpdateHelperCommand,
     log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
+) -> Result<AppliedUpdate, UpdateHelperExitCode> {
     let target_parent = command
         .target_path
         .parent()
@@ -463,10 +564,19 @@ fn install_macos_bundle(
 
         verify_macos_bundle(&staged_bundle, log)?;
         swap_macos_bundles(&command.target_path, &staged_bundle, log)?;
-        Ok(())
+        Ok(MacosRollbackPlan {
+            target_path: command.target_path.clone(),
+            backup_path: staged_bundle,
+            stage_root: stage_root.clone(),
+        })
     })();
-    cleanup_stage_root(&stage_root, log)?;
-    result?;
+    let rollback = match result {
+        Ok(rollback) => rollback,
+        Err(code) => {
+            cleanup_stage_root(&stage_root, log)?;
+            return Err(code);
+        }
+    };
     write_log_line(
         log,
         &format!(
@@ -474,13 +584,16 @@ fn install_macos_bundle(
             command.target_version
         ),
     )?;
-    Ok(command.target_path.clone())
+    Ok(AppliedUpdate {
+        launch_target: command.target_path.clone(),
+        rollback: Some(rollback),
+    })
 }
 
 fn install_windows_portable(
     command: &UpdateHelperCommand,
     log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
+) -> Result<AppliedUpdate, UpdateHelperExitCode> {
     write_log_line(log, "windows portable install is manual-only")?;
     let _ = command;
     Err(UpdateHelperExitCode::UnsupportedInstallKind)
@@ -489,7 +602,7 @@ fn install_windows_portable(
 fn install_windows_installer(
     command: &UpdateHelperCommand,
     log: &mut File,
-) -> Result<PathBuf, UpdateHelperExitCode> {
+) -> Result<AppliedUpdate, UpdateHelperExitCode> {
     let extension = command
         .asset_path
         .extension()
@@ -497,33 +610,46 @@ fn install_windows_installer(
         .unwrap_or_default()
         .to_ascii_lowercase();
 
-    if extension == "msi" {
-        write_log_line(log, "launching Windows MSI installer")?;
-        let mut child = Command::new("msiexec.exe")
-            .args([
-                "/i",
-                &command.asset_path.to_string_lossy(),
-                "/passive",
-                "/norestart",
-            ])
-            .spawn()
-            .map_err(|_| UpdateHelperExitCode::InstallerFailed)?;
+    match extension.as_str() {
+        "msi" => {
+            write_log_line(log, "launching Windows MSI installer")?;
+            let mut child = Command::new("msiexec.exe")
+                .args([
+                    "/i",
+                    &command.asset_path.to_string_lossy(),
+                    "/passive",
+                    "/norestart",
+                ])
+                .spawn()
+                .map_err(|_| UpdateHelperExitCode::InstallerFailed)?;
 
-        let status = wait_for_installer_completion(&mut child, log)?;
+            let status = wait_for_installer_completion(&mut child, log)?;
 
-        if !status.success() {
+            if !status.success() {
+                write_log_line(
+                    log,
+                    &format!("installer exited with status {:?}", status.code()),
+                )?;
+                return Err(map_installer_exit(status.code()));
+            }
+        }
+        "exe" => {
+            write_log_line(log, "launching Windows NSIS installer")?;
+            let exit_code = shell_execute_installer(&command.asset_path, "/S", log)?;
+            if exit_code != 0 {
+                write_log_line(log, &format!("installer exited with code {exit_code}"))?;
+                return Err(map_installer_exit(Some(exit_code)));
+            }
+        }
+        _ => {
             write_log_line(
                 log,
-                &format!("installer exited with status {:?}", status.code()),
+                &format!(
+                    "unsupported Windows installer asset format: {}",
+                    command.asset_path.display()
+                ),
             )?;
-            return Err(map_installer_exit(status.code()));
-        }
-    } else {
-        write_log_line(log, "launching Windows NSIS installer")?;
-        let exit_code = shell_execute_installer(&command.asset_path, "/S", log)?;
-        if exit_code != 0 {
-            write_log_line(log, &format!("installer exited with code {exit_code}"))?;
-            return Err(map_installer_exit(Some(exit_code)));
+            return Err(UpdateHelperExitCode::AssetExtractFailed);
         }
     }
 
@@ -533,7 +659,7 @@ fn install_windows_installer(
         log,
         &format!("installer completed for version {}", command.target_version),
     )?;
-    Ok(launch_target)
+    Ok(AppliedUpdate::without_rollback(launch_target))
 }
 
 #[cfg(target_os = "windows")]
@@ -662,7 +788,11 @@ fn stage_app_bundle_from_dmg(
         .arg(&mount_point)
         .arg(asset_path)
         .status()
-        .map_err(|_| UpdateHelperExitCode::AssetExtractFailed)?;
+        .map_err(|error| {
+            let _ = write_log_line(log, &format!("failed to run hdiutil attach: {error}"));
+            let _ = fs::remove_dir_all(&mount_point);
+            UpdateHelperExitCode::AssetExtractFailed
+        })?;
 
     if !attach_status.success() {
         write_log_line(
@@ -672,6 +802,7 @@ fn stage_app_bundle_from_dmg(
                 attach_status.code()
             ),
         )?;
+        let _ = fs::remove_dir_all(&mount_point);
         return Err(UpdateHelperExitCode::AssetExtractFailed);
     }
 
@@ -708,12 +839,61 @@ fn stage_app_bundle_from_dmg(
         Ok(staged_bundle)
     })();
 
-    let _ = Command::new("/usr/bin/hdiutil")
-        .args(["detach"])
-        .arg(&mount_point)
-        .status();
-    let _ = fs::remove_dir_all(&mount_point);
+    cleanup_macos_mount(&mount_point, log)?;
     result
+}
+
+fn cleanup_macos_mount(mount_point: &Path, log: &mut File) -> Result<(), UpdateHelperExitCode> {
+    let detach_status = Command::new("/usr/bin/hdiutil")
+        .args(["detach"])
+        .arg(mount_point)
+        .status();
+    match detach_status {
+        Ok(status) if status.success() => {}
+        Ok(status) => {
+            write_log_line(
+                log,
+                &format!(
+                    "hdiutil detach exited with status {:?}; retrying with -force",
+                    status.code()
+                ),
+            )?;
+            let force_status = Command::new("/usr/bin/hdiutil")
+                .args(["detach", "-force"])
+                .arg(mount_point)
+                .status()
+                .map_err(|_| UpdateHelperExitCode::AssetExtractFailed)?;
+            if !force_status.success() {
+                write_log_line(
+                    log,
+                    &format!(
+                        "hdiutil detach -force exited with status {:?}",
+                        force_status.code()
+                    ),
+                )?;
+                return Err(UpdateHelperExitCode::AssetExtractFailed);
+            }
+        }
+        Err(error) => {
+            write_log_line(log, &format!("failed to run hdiutil detach: {error}"))?;
+            return Err(UpdateHelperExitCode::AssetExtractFailed);
+        }
+    }
+
+    match fs::remove_dir_all(mount_point) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => {
+            write_log_line(
+                log,
+                &format!(
+                    "failed to remove macOS dmg mount directory {} ({error})",
+                    mount_point.display()
+                ),
+            )?;
+            Err(UpdateHelperExitCode::AssetExtractFailed)
+        }
+    }
 }
 
 fn wait_for_installer_completion(
@@ -747,7 +927,15 @@ fn map_installer_exit(code: Option<i32>) -> UpdateHelperExitCode {
 }
 
 fn wait_for_process_exit(pid: u32, log: &mut File) -> Result<(), UpdateHelperExitCode> {
-    let deadline = Instant::now() + WAIT_FOR_EXIT_TIMEOUT;
+    wait_for_process_exit_with_timeout(pid, WAIT_FOR_EXIT_TIMEOUT, log)
+}
+
+fn wait_for_process_exit_with_timeout(
+    pid: u32,
+    timeout: Duration,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
         if !process_is_running(pid) {
             write_log_line(log, "application process has exited")?;
@@ -819,7 +1007,7 @@ fn query_windows_install_target_from_registry(exe_name: &str) -> Option<PathBuf>
     ];
 
     ROOTS.iter().find_map(|root| {
-        Command::new("reg")
+        Command::new(reg_exe_path())
             .args(["query", root, "/s", "/f", exe_name])
             .output()
             .ok()
@@ -827,6 +1015,15 @@ fn query_windows_install_target_from_registry(exe_name: &str) -> Option<PathBuf>
             .and_then(|output| String::from_utf8(output.stdout).ok())
             .and_then(|output| parse_windows_install_target_from_registry_output(&output, exe_name))
     })
+}
+
+#[cfg(target_os = "windows")]
+fn reg_exe_path() -> PathBuf {
+    std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .map(|root| root.join("System32").join("reg.exe"))
+        .filter(|path| path.exists())
+        .unwrap_or_else(|| PathBuf::from(r"C:\Windows\System32\reg.exe"))
 }
 
 #[cfg(target_os = "windows")]
@@ -839,12 +1036,7 @@ fn parse_windows_install_target_from_registry_output(
         if normalized.is_empty() {
             continue;
         }
-        if let Some(value) = normalized
-            .split("REG_SZ")
-            .nth(1)
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
+        if let Some(value) = registry_value_from_line(normalized) {
             let candidate = PathBuf::from(value.trim_matches('"'));
             if candidate
                 .file_name()
@@ -863,6 +1055,42 @@ fn parse_windows_install_target_from_registry_output(
         }
     }
     None
+}
+
+#[cfg(target_os = "windows")]
+fn registry_value_from_line(line: &str) -> Option<String> {
+    let value = line
+        .split_once("REG_EXPAND_SZ")
+        .or_else(|| line.split_once("REG_SZ"))
+        .map(|(_, value)| value.trim())
+        .filter(|value| !value.is_empty())?;
+    Some(expand_windows_env_vars(value))
+}
+
+#[cfg(target_os = "windows")]
+fn expand_windows_env_vars(value: &str) -> String {
+    let mut expanded = String::with_capacity(value.len());
+    let mut rest = value;
+    while let Some(start) = rest.find('%') {
+        expanded.push_str(&rest[..start]);
+        let after_start = &rest[start + 1..];
+        let Some(end) = after_start.find('%') else {
+            expanded.push('%');
+            expanded.push_str(after_start);
+            return expanded;
+        };
+        let key = &after_start[..end];
+        if let Ok(replacement) = std::env::var(key) {
+            expanded.push_str(&replacement);
+        } else {
+            expanded.push('%');
+            expanded.push_str(key);
+            expanded.push('%');
+        }
+        rest = &after_start[end + 1..];
+    }
+    expanded.push_str(rest);
+    expanded
 }
 
 #[cfg(target_os = "windows")]
@@ -976,27 +1204,17 @@ fn persist_pending_verification_state(
     command: &UpdateHelperCommand,
     log: &mut File,
 ) -> Result<(), UpdateHelperExitCode> {
-    let mut state = load_state_snapshot(command);
-    state.status = UpdateStatus::Installing;
-    state.current_version = command.current_version.clone();
-    if state.latest_version.is_none() {
-        state.latest_version = Some(command.target_version.clone());
-    }
-    state.install_log_path = Some(command.log_path.to_string_lossy().to_string());
-    state.install_mode = Some(UpdateInstallMode::Apply);
-    state.install_started_at = Some(Utc::now());
-    state.install_scheduled_at = None;
-    state.last_error = None;
-
-    write_state_snapshot(&command.state_path, &state).map_err(|_| {
-        let _ = write_log_line(
-            log,
-            &format!(
-                "failed to persist pending verification state to {}",
-                command.state_path.display()
-            ),
-        );
-        UpdateHelperExitCode::StateWriteFailed
+    mutate_state_snapshot(command, log, "pending verification", |state| {
+        state.status = UpdateStatus::Installing;
+        state.current_version = command.current_version.clone();
+        if state.latest_version.is_none() {
+            state.latest_version = Some(command.target_version.clone());
+        }
+        state.install_log_path = Some(command.log_path.to_string_lossy().to_string());
+        state.install_mode = Some(UpdateInstallMode::Apply);
+        state.install_started_at = Some(Utc::now());
+        state.install_scheduled_at = None;
+        state.last_error = None;
     })?;
     write_log_line(log, "persisted install state pending relaunch verification")?;
     Ok(())
@@ -1006,27 +1224,17 @@ fn persist_installing_state(
     command: &UpdateHelperCommand,
     log: &mut File,
 ) -> Result<(), UpdateHelperExitCode> {
-    let mut state = load_state_snapshot(command);
-    state.status = UpdateStatus::Installing;
-    state.current_version = command.current_version.clone();
-    if state.latest_version.is_none() {
-        state.latest_version = Some(command.target_version.clone());
-    }
-    state.install_log_path = Some(command.log_path.to_string_lossy().to_string());
-    state.install_mode = Some(UpdateInstallMode::Apply);
-    state.install_started_at = Some(Utc::now());
-    state.install_scheduled_at = None;
-    state.last_error = None;
-
-    write_state_snapshot(&command.state_path, &state).map_err(|_| {
-        let _ = write_log_line(
-            log,
-            &format!(
-                "failed to persist installing state to {}",
-                command.state_path.display()
-            ),
-        );
-        UpdateHelperExitCode::StateWriteFailed
+    mutate_state_snapshot(command, log, "installing", |state| {
+        state.status = UpdateStatus::Installing;
+        state.current_version = command.current_version.clone();
+        if state.latest_version.is_none() {
+            state.latest_version = Some(command.target_version.clone());
+        }
+        state.install_log_path = Some(command.log_path.to_string_lossy().to_string());
+        state.install_mode = Some(UpdateInstallMode::Apply);
+        state.install_started_at = Some(Utc::now());
+        state.install_scheduled_at = None;
+        state.last_error = None;
     })?;
     write_log_line(log, "persisted installing state")?;
     Ok(())
@@ -1037,31 +1245,21 @@ fn persist_failed_state(
     code: UpdateHelperExitCode,
     log: &mut File,
 ) -> Result<(), UpdateHelperExitCode> {
-    let mut state = load_state_snapshot(command);
-    state.status = UpdateStatus::Failed;
-    state.current_version = command.current_version.clone();
-    if state.latest_version.is_none() {
-        state.latest_version = Some(command.target_version.clone());
-    }
-    state.install_log_path = Some(command.log_path.to_string_lossy().to_string());
-    state.install_mode = Some(UpdateInstallMode::Apply);
-    state.install_started_at = Some(Utc::now());
-    state.install_scheduled_at = None;
-    state.last_error = Some(UpdateErrorDto::recoverable(
-        install_error_code(code),
-        install_error_message(code),
-        Some(install_error_action(code).into()),
-    ));
-
-    write_state_snapshot(&command.state_path, &state).map_err(|_| {
-        let _ = write_log_line(
-            log,
-            &format!(
-                "failed to persist failed install state to {}",
-                command.state_path.display()
-            ),
-        );
-        UpdateHelperExitCode::StateWriteFailed
+    mutate_state_snapshot(command, log, "failed install", |state| {
+        state.status = UpdateStatus::Failed;
+        state.current_version = command.current_version.clone();
+        if state.latest_version.is_none() {
+            state.latest_version = Some(command.target_version.clone());
+        }
+        state.install_log_path = Some(command.log_path.to_string_lossy().to_string());
+        state.install_mode = Some(UpdateInstallMode::Apply);
+        state.install_started_at = Some(Utc::now());
+        state.install_scheduled_at = None;
+        state.last_error = Some(UpdateErrorDto::recoverable(
+            install_error_code(code),
+            install_error_message(code),
+            Some(install_error_action(code).into()),
+        ));
     })?;
     write_log_line(log, "persisted failed install state")?;
     Ok(())
@@ -1115,6 +1313,33 @@ fn cleanup_stage_root(stage_root: &Path, log: &mut File) -> Result<(), UpdateHel
             ),
         )?;
     }
+    Ok(())
+}
+
+fn cleanup_applied_update(
+    applied_update: &AppliedUpdate,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    if let Some(rollback) = applied_update.rollback.as_ref() {
+        cleanup_stage_root(&rollback.stage_root, log)?;
+    }
+    Ok(())
+}
+
+fn rollback_macos_update(
+    rollback: &MacosRollbackPlan,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    write_log_line(
+        log,
+        &format!(
+            "relaunch failed after macOS bundle swap; rolling back {} from {}",
+            rollback.target_path.display(),
+            rollback.backup_path.display()
+        ),
+    )?;
+    swap_macos_bundles(&rollback.target_path, &rollback.backup_path, log)?;
+    cleanup_stage_root(&rollback.stage_root, log)?;
     Ok(())
 }
 
@@ -1281,7 +1506,102 @@ fn find_app_bundles(root: &Path) -> Vec<PathBuf> {
     results
 }
 
-fn load_state_snapshot(command: &UpdateHelperCommand) -> UpdateStateDto {
+struct HelperStateLock {
+    path: PathBuf,
+}
+
+impl Drop for HelperStateLock {
+    fn drop(&mut self) {
+        let _ = fs::remove_file(&self.path);
+    }
+}
+
+fn mutate_state_snapshot<F>(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+    label: &str,
+    mutate: F,
+) -> Result<(), UpdateHelperExitCode>
+where
+    F: FnOnce(&mut UpdateStateDto),
+{
+    let _lock = acquire_helper_state_lock(&command.state_path, log)?;
+    let mut state = load_state_snapshot_unlocked(command);
+    mutate(&mut state);
+    write_state_snapshot_unlocked(&command.state_path, &state).map_err(|_| {
+        let _ = write_log_line(
+            log,
+            &format!(
+                "failed to persist {label} state to {}",
+                command.state_path.display()
+            ),
+        );
+        UpdateHelperExitCode::StateWriteFailed
+    })
+}
+
+fn acquire_helper_state_lock(
+    state_path: &Path,
+    log: &mut File,
+) -> Result<HelperStateLock, UpdateHelperExitCode> {
+    let lock_path = state_path.with_extension("lock");
+    if let Some(parent) = lock_path.parent() {
+        fs::create_dir_all(parent).map_err(|_| UpdateHelperExitCode::StateWriteFailed)?;
+    }
+
+    let deadline = Instant::now() + STATE_LOCK_TIMEOUT;
+    loop {
+        match OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&lock_path)
+        {
+            Ok(mut file) => {
+                writeln!(file, "{} {}", std::process::id(), Utc::now().to_rfc3339())
+                    .map_err(|_| UpdateHelperExitCode::StateWriteFailed)?;
+                return Ok(HelperStateLock { path: lock_path });
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                remove_stale_helper_state_lock(&lock_path);
+                if Instant::now() >= deadline {
+                    let _ = write_log_line(
+                        log,
+                        &format!("timed out waiting for state lock {}", lock_path.display()),
+                    );
+                    return Err(UpdateHelperExitCode::StateWriteFailed);
+                }
+                thread::sleep(STATE_LOCK_POLL_INTERVAL);
+            }
+            Err(error) => {
+                let _ = write_log_line(
+                    log,
+                    &format!(
+                        "failed to acquire state lock {} ({error})",
+                        lock_path.display()
+                    ),
+                );
+                return Err(UpdateHelperExitCode::StateWriteFailed);
+            }
+        }
+    }
+}
+
+fn remove_stale_helper_state_lock(lock_path: &Path) {
+    let Ok(metadata) = fs::metadata(lock_path) else {
+        return;
+    };
+    let Ok(modified) = metadata.modified() else {
+        return;
+    };
+    let Ok(age) = SystemTime::now().duration_since(modified) else {
+        return;
+    };
+    if age >= STALE_STATE_LOCK_AGE {
+        let _ = fs::remove_file(lock_path);
+    }
+}
+
+fn load_state_snapshot_unlocked(command: &UpdateHelperCommand) -> UpdateStateDto {
     match fs::read_to_string(&command.state_path)
         .ok()
         .and_then(|raw| serde_json::from_str::<UpdateStateDto>(&raw).ok())
@@ -1301,7 +1621,10 @@ fn load_state_snapshot(command: &UpdateHelperCommand) -> UpdateStateDto {
     }
 }
 
-fn write_state_snapshot(path: &Path, state: &UpdateStateDto) -> Result<(), std::io::Error> {
+fn write_state_snapshot_unlocked(
+    path: &Path,
+    state: &UpdateStateDto,
+) -> Result<(), std::io::Error> {
     write_json_atomic(path, state).map_err(|error| std::io::Error::other(error.message))
 }
 
@@ -1753,6 +2076,33 @@ mod tests {
         let exit_code = execute(&command).expect_err("missing target should fail");
 
         assert_eq!(exit_code, UpdateHelperExitCode::TargetMissing);
+    }
+
+    #[test]
+    fn rejects_windows_installer_without_extension() {
+        let root = temp_dir("helper-windows-installer-no-extension");
+        let mut command = helper_command(&root);
+        command.install_kind = InstallKind::WindowsNsis;
+        command.asset_path = root.join("installer");
+        fs::write(&command.asset_path, b"installer").expect("write installer");
+        command.asset_size = fs::metadata(&command.asset_path)
+            .expect("installer metadata")
+            .len();
+        command.asset_sha256 = sha256_hex(&command.asset_path).expect("hash installer");
+        let mut log = open_log(&root.join("windows-installer.log")).expect("open log");
+
+        let exit_code =
+            install_windows_installer(&command, &mut log).expect_err("extension is required");
+
+        assert_eq!(exit_code, UpdateHelperExitCode::AssetExtractFailed);
+    }
+
+    #[test]
+    fn completion_marker_uses_ready_marker_stem() {
+        let root = temp_dir("helper-completion-marker");
+        let command = helper_command(&root);
+
+        assert_eq!(completion_marker_path(&command), root.join("helper.done"));
     }
 
     #[test]

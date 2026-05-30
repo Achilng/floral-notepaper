@@ -18,7 +18,8 @@
       "name": "floral-notepaper_1.0.5_windows_x64_nsis.exe",
       "sha256": "1111111111111111111111111111111111111111111111111111111111111111",
       "size": 12345678,
-      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_windows_x64_nsis.exe"
+      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_windows_x64_nsis.exe",
+      "mirrorUrl": "https://mirrorchyan.com/resources/download/floral-notepaper-1.0.5-windows-x64-nsis"
     },
     {
       "os": "windows",
@@ -27,7 +28,8 @@
       "name": "floral-notepaper_1.0.5_windows_x64_portable.exe",
       "sha256": "2222222222222222222222222222222222222222222222222222222222222222",
       "size": 12345679,
-      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_windows_x64_portable.exe"
+      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_windows_x64_portable.exe",
+      "mirrorUrl": "https://mirrorchyan.com/resources/download/floral-notepaper-1.0.5-windows-x64-portable"
     },
     {
       "os": "macos",
@@ -36,7 +38,8 @@
       "name": "floral-notepaper_1.0.5_macos_aarch64_app.zip",
       "sha256": "3333333333333333333333333333333333333333333333333333333333333333",
       "size": 22345678,
-      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_macos_aarch64_app.zip"
+      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_macos_aarch64_app.zip",
+      "mirrorUrl": "https://mirrorchyan.com/resources/download/floral-notepaper-1.0.5-macos-aarch64"
     },
     {
       "os": "macos",
@@ -45,7 +48,8 @@
       "name": "floral-notepaper_1.0.5_macos_x64_app.zip",
       "sha256": "4444444444444444444444444444444444444444444444444444444444444444",
       "size": 22345679,
-      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_macos_x64_app.zip"
+      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_macos_x64_app.zip",
+      "mirrorUrl": "https://mirrorchyan.com/resources/download/floral-notepaper-1.0.5-macos-x64"
     }
   ]
 }

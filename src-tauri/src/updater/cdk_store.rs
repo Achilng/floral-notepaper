@@ -29,6 +29,14 @@ impl CdkStore {
         }
     }
 
+    pub fn get_cdk(&self) -> Option<String> {
+        self.entry()
+            .ok()
+            .and_then(|entry| entry.get_password().ok())
+            .map(|cdk| cdk.trim().to_string())
+            .filter(|cdk| !cdk.is_empty())
+    }
+
     pub fn set_cdk(&self, cdk: &str) -> Result<(), AppError> {
         let cdk = cdk.trim();
         if cdk.is_empty() {

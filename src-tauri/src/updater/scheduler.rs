@@ -1,8 +1,8 @@
-use super::{commands, settings, UpdatePaths, UpdaterState};
+use super::{commands, settings, types::UpdateErrorDto, UpdatePaths, UpdaterState};
 use crate::services::notes::AppError;
 use chrono::{DateTime, Duration as ChronoDuration, Utc};
 use std::{thread, time::Duration};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 
 const INITIAL_DELAY: Duration = Duration::from_secs(3);
 const POLL_INTERVAL: Duration = Duration::from_secs(60);
@@ -14,6 +14,11 @@ pub fn start_auto_check_scheduler(app: AppHandle) {
         loop {
             if let Err(error) = poll_auto_check(&app, Utc::now()) {
                 eprintln!("failed to run automatic update check: {error}");
+                let payload =
+                    UpdateErrorDto::recoverable(error.code, error.message, Some("retry".into()));
+                if let Err(emit_error) = app.emit("update://auto-check-error", payload) {
+                    eprintln!("failed to emit update://auto-check-error: {emit_error}");
+                }
             }
 
             thread::sleep(POLL_INTERVAL);

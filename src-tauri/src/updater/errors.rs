@@ -92,3 +92,18 @@ pub fn portable_manual_only() -> AppError {
         "当前便携版仅支持手动下载更新包后覆盖升级",
     )
 }
+
+pub fn mirror_api_error(message: impl Into<String>) -> AppError {
+    app_error(
+        "updateMirrorApi",
+        format!("Mirror 酱 API 请求失败：{}", message.into()),
+    )
+}
+
+pub fn mirror_cdk_error(code: i32, message: impl Into<String>) -> AppError {
+    with_detail(
+        app_error("updateMirrorCdk", message.into()),
+        "mirrorCode",
+        code.to_string(),
+    )
+}

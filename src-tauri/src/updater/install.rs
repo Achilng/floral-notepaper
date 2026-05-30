@@ -19,7 +19,8 @@ use std::{
 };
 
 const UPDATE_HELPER_PATH_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_HELPER_PATH";
-const HELPER_READY_TIMEOUT: Duration = Duration::from_secs(5);
+const UPDATE_HELPER_MODE_ENV: &str = "FLORAL_NOTEPAPER_UPDATE_HELPER_MODE";
+const HELPER_READY_TIMEOUT: Duration = Duration::from_secs(30);
 const HELPER_READY_POLL_INTERVAL: Duration = Duration::from_millis(100);
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -40,15 +41,16 @@ pub(crate) struct ProcessInstallExecutor;
 
 impl InstallExecutor for ProcessInstallExecutor {
     fn execute(&self, request: &HelperLaunchRequest) -> Result<HelperLaunchOutcome, AppError> {
-        let mut args = vec![OsString::from("--update-helper")];
-        args.extend(request.command.to_args());
-
         if request.command.ready_path.exists() {
             let _ = fs::remove_file(&request.command.ready_path);
         }
+        let completion_path = helper::completion_marker_path(&request.command);
+        if completion_path.exists() {
+            let _ = fs::remove_file(completion_path);
+        }
 
         let mut child = Command::new(&request.helper_path)
-            .args(args)
+            .args(helper_process_args(&request.command))
             .stdin(Stdio::null())
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -65,6 +67,10 @@ impl InstallExecutor for ProcessInstallExecutor {
             })?;
 
         wait_for_helper_ready(&mut child, request)?;
+        if let Err(error) = spawn_helper_watchdog(request, child.id()) {
+            let _ = child.kill();
+            return Err(error);
+        }
 
         Ok(HelperLaunchOutcome)
     }
@@ -90,10 +96,24 @@ impl UpdateInstallService<ProcessInstallExecutor> {
                 .filter(|value| !value.is_empty())
                 .map(PathBuf::from),
             platform_override: None,
-            helper_mode: helper::UpdateHelperMode::Apply,
+            helper_mode: helper_mode_from_env(),
             executor: ProcessInstallExecutor,
         }
     }
+}
+
+fn helper_mode_from_env() -> helper::UpdateHelperMode {
+    env::var(UPDATE_HELPER_MODE_ENV)
+        .ok()
+        .as_deref()
+        .and_then(helper::UpdateHelperMode::parse)
+        .filter(|mode| {
+            matches!(
+                mode,
+                helper::UpdateHelperMode::Apply | helper::UpdateHelperMode::Test
+            )
+        })
+        .unwrap_or(helper::UpdateHelperMode::Apply)
 }
 
 impl<E> UpdateInstallService<E>
@@ -278,6 +298,36 @@ fn wait_for_helper_ready(child: &mut Child, request: &HelperLaunchRequest) -> Re
     }
 }
 
+fn helper_process_args(command: &helper::UpdateHelperCommand) -> Vec<OsString> {
+    let mut args = vec![OsString::from("--update-helper")];
+    args.extend(command.to_args());
+    args
+}
+
+fn spawn_helper_watchdog(request: &HelperLaunchRequest, helper_pid: u32) -> Result<(), AppError> {
+    let mut watchdog_command = request.command.clone();
+    watchdog_command.mode = helper::UpdateHelperMode::Watchdog;
+    watchdog_command.wait_pid = helper_pid;
+
+    Command::new(&request.helper_path)
+        .args(helper_process_args(&watchdog_command))
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|error| {
+            errors::with_detail(
+                errors::app_error(
+                    "updateInstallSpawnFailed",
+                    format!("启动更新安装助手监控进程失败：{error}"),
+                ),
+                "helperPath",
+                request.helper_path.display().to_string(),
+            )
+        })
+}
+
 fn resolve_install_target(platform: &PlatformInfo) -> Result<PathBuf, AppError> {
     match platform.install_kind {
         super::types::InstallKind::MacosAppBundle => {
@@ -435,6 +485,9 @@ fn stage_helper_copy(
     {
         return stage_helper_bundle_copy(platform, source_path, paths);
     }
+    if platform.install_kind == super::types::InstallKind::WindowsNsis {
+        return stage_windows_helper_copy(paths, source_path);
+    }
 
     let extension = source_path.extension().and_then(|ext| ext.to_str());
     let staged_path = unique_helper_path(paths, extension);
@@ -450,6 +503,65 @@ fn stage_helper_copy(
         errors::with_detail(error, "helperPath", staged_path.display().to_string())
     })?;
     Ok(staged_path)
+}
+
+fn stage_windows_helper_copy(paths: &UpdatePaths, source_path: &Path) -> Result<PathBuf, AppError> {
+    let staged_dir = unique_helper_path(paths, Some("dir"));
+    fs::create_dir_all(&staged_dir).map_err(|error| {
+        errors::with_detail(
+            errors::app_error(
+                "updateInstallSpawnFailed",
+                format!("准备更新安装助手目录失败：{error}"),
+            ),
+            "helperPath",
+            staged_dir.display().to_string(),
+        )
+    })?;
+
+    let source_name = source_path.file_name().ok_or_else(|| {
+        errors::with_detail(
+            errors::app_error("updateInstallSpawnFailed", "更新安装助手路径无效"),
+            "helperSourcePath",
+            source_path.display().to_string(),
+        )
+    })?;
+    let staged_exe = staged_dir.join(source_name);
+    copy_helper_file(source_path, &staged_exe)?;
+
+    if let Some(source_dir) = source_path.parent() {
+        for entry in fs::read_dir(source_dir)? {
+            let entry = entry?;
+            let path = entry.path();
+            if path == source_path || !is_windows_runtime_dependency(&path) {
+                continue;
+            }
+            copy_helper_file(&path, &staged_dir.join(entry.file_name()))?;
+        }
+    }
+
+    Ok(staged_exe)
+}
+
+fn copy_helper_file(source_path: &Path, staged_path: &Path) -> Result<(), AppError> {
+    fs::copy(source_path, staged_path)
+        .map(|_| ())
+        .map_err(|error| {
+            let error = errors::with_detail(
+                errors::app_error(
+                    "updateInstallSpawnFailed",
+                    format!("准备更新安装助手失败：{error}"),
+                ),
+                "helperSourcePath",
+                source_path.display().to_string(),
+            );
+            errors::with_detail(error, "helperPath", staged_path.display().to_string())
+        })
+}
+
+fn is_windows_runtime_dependency(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("dll"))
 }
 
 fn stage_helper_bundle_copy(
@@ -552,6 +664,7 @@ fn install_mode(mode: helper::UpdateHelperMode) -> UpdateInstallMode {
     match mode {
         helper::UpdateHelperMode::Apply => UpdateInstallMode::Apply,
         helper::UpdateHelperMode::Test => UpdateInstallMode::Test,
+        helper::UpdateHelperMode::Watchdog => UpdateInstallMode::Apply,
     }
 }
 
@@ -930,5 +1043,43 @@ mod tests {
             fs::read(&staged).expect("read staged helper"),
             b"helper copy source"
         );
+    }
+
+    #[test]
+    fn stages_windows_helper_with_adjacent_dll_dependencies() {
+        let paths = test_paths("install-stage-windows-helper");
+        paths.ensure_dirs().expect("ensure dirs");
+        let source_dir = paths.root_dir().join("installed");
+        fs::create_dir_all(&source_dir).expect("create source dir");
+        let source = source_dir.join("floral-notepaper.exe");
+        let dll = source_dir.join("WebView2Loader.dll");
+        let ignored = source_dir.join("notes.txt");
+        fs::write(&source, b"helper exe").expect("write helper source");
+        fs::write(&dll, b"dll dependency").expect("write dll");
+        fs::write(&ignored, b"not needed").expect("write ignored file");
+
+        let staged = stage_helper_copy(
+            &paths,
+            &PlatformInfo {
+                os: platform::Os::Windows,
+                arch: platform::Arch::X86_64,
+                app_version: "1.0.3".into(),
+                app_id: super::super::APP_ID.into(),
+                install_kind: super::super::types::InstallKind::WindowsNsis,
+                current_exe: Some(source.to_string_lossy().to_string()),
+                current_app_bundle: None,
+            },
+            &source,
+        )
+        .expect("stage helper");
+
+        let staged_dir = staged.parent().expect("staged helper parent");
+        assert_eq!(staged.file_name(), source.file_name());
+        assert_eq!(fs::read(&staged).expect("read staged exe"), b"helper exe");
+        assert_eq!(
+            fs::read(staged_dir.join("WebView2Loader.dll")).expect("read staged dll"),
+            b"dll dependency"
+        );
+        assert!(!staged_dir.join("notes.txt").exists());
     }
 }

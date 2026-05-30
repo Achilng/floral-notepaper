@@ -19,7 +19,7 @@ import {
   getUpdateCheckCompletionNotice,
   type UpdateInlineNotice,
 } from "./presentation";
-import { getUpdateErrorMessage } from "./updateErrors";
+import { getUpdateErrorCode, getUpdateErrorMessage } from "./updateErrors";
 import type {
   CheckSourcePreference,
   DownloadSourcePreference,
@@ -216,6 +216,17 @@ export function UpdateSettingsSection({
         });
       });
 
+      const unlistenAutoCheckError = await listen<UpdateErrorPayload>(
+        "update://auto-check-error",
+        (event) => {
+          if (!active) return;
+          setNotice({
+            tone: "error",
+            text: getUpdateErrorMessage(event.payload, t),
+          });
+        },
+      );
+
       return () => {
         unlistenChecking();
         unlistenChecked();
@@ -223,6 +234,7 @@ export function UpdateSettingsSection({
         unlistenFinished();
         unlistenInstallFinished();
         unlistenError();
+        unlistenAutoCheckError();
       };
     };
 
@@ -378,8 +390,8 @@ export function UpdateSettingsSection({
     } finally {
       try {
         setStatus(await getUpdateStatus());
-      } catch {
-        // Keeping the previous status is less disruptive than clearing the update context.
+      } catch (refreshError) {
+        console.warn("Failed to refresh update status after check", refreshError);
       }
       setBusyAction(null);
     }
@@ -399,10 +411,7 @@ export function UpdateSettingsSection({
       });
     } catch (error) {
       const message = getUpdateErrorMessage(error, t);
-      const cancelled =
-        typeof error === "object" && error !== null && "code" in error
-          ? (error as { code?: string }).code === "updateDownloadCancelled"
-          : false;
+      const cancelled = getUpdateErrorCode(error) === "updateDownloadCancelled";
       setNotice({
         tone: cancelled ? "idle" : "error",
         text: cancelled ? t("settings.update.cancelled", { defaultValue: "下载已取消" }) : message,
@@ -411,8 +420,8 @@ export function UpdateSettingsSection({
       setDownloadProgress(null);
       try {
         setStatus(await getUpdateStatus());
-      } catch {
-        // Preserve the last known status if the refresh fails.
+      } catch (refreshError) {
+        console.warn("Failed to refresh update status after download", refreshError);
       }
       setBusyAction(null);
     }
@@ -458,8 +467,8 @@ export function UpdateSettingsSection({
     } finally {
       try {
         setStatus(await getUpdateStatus());
-      } catch {
-        // Preserve the last known status if the refresh fails.
+      } catch (refreshError) {
+        console.warn("Failed to refresh update status after install", refreshError);
       }
       setBusyAction(null);
     }
