@@ -1,6 +1,6 @@
 {
   "name": "floral-notepaper",
-  "version": "1.0.4",
+  "version": "1.0.3",
   "private": true,
   "type": "module",
   "scripts": {
@@ -11,6 +11,7 @@
     "fmt": "oxfmt",
     "preview": "vite preview",
     "tauri": "tauri",
+    "version:sync": "node scripts/set-version.mjs",
     "prepare": "husky"
   },
   "dependencies": {

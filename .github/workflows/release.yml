@@ -90,17 +90,7 @@ jobs:
         shell: pwsh
         run: |
           $ver = "${{ github.event.inputs.version }}" -replace '^v', ''
-          @'
-          const fs = require("fs");
-          const ver = process.argv[2];
-          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
-          conf.version = ver;
-          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
-          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
-          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
-          fs.writeFileSync("src-tauri/Cargo.toml", toml);
-          '@ | Out-File -Encoding utf8 set-version.cjs
-          node set-version.cjs $ver
+          node scripts/set-version.mjs $ver
 
       - name: Preload Tauri NSIS toolchain
         shell: pwsh
@@ -344,19 +334,7 @@ jobs:
       - name: Set version & disable signing
         run: |
           ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
-          cat > set-version.cjs << 'SCRIPT'
-          const fs = require("fs");
-          const ver = process.argv[2];
-          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
-          conf.version = ver;
-          conf.bundle.macOS = conf.bundle.macOS || {};
-          conf.bundle.macOS.signingIdentity = null;
-          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
-          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
-          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
-          fs.writeFileSync("src-tauri/Cargo.toml", toml);
-          SCRIPT
-          node set-version.cjs "$ver"
+          node scripts/set-version.mjs "$ver" --disable-macos-signing
 
       - name: Build
         run: npm run tauri build -- --target x86_64-apple-darwin
@@ -401,19 +379,7 @@ jobs:
       - name: Set version & disable signing
         run: |
           ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
-          cat > set-version.cjs << 'SCRIPT'
-          const fs = require("fs");
-          const ver = process.argv[2];
-          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
-          conf.version = ver;
-          conf.bundle.macOS = conf.bundle.macOS || {};
-          conf.bundle.macOS.signingIdentity = null;
-          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
-          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
-          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
-          fs.writeFileSync("src-tauri/Cargo.toml", toml);
-          SCRIPT
-          node set-version.cjs "$ver"
+          node scripts/set-version.mjs "$ver" --disable-macos-signing
 
       - name: Build
         run: npm run tauri build -- --target aarch64-apple-darwin

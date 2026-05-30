@@ -3,6 +3,8 @@ import type { MouseEvent } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { createNote, getErrorMessage, getNote, listNotes, updateNote } from "../features/notes/api";
+import { reportInstallPreparation } from "../features/update/api";
+import type { UpdateInstallPrepareRequest } from "../features/update/types";
 import type { Note, NoteMetadata } from "../features/notes/types";
 import {
   countNoteChars,
@@ -132,6 +134,8 @@ export function NotePad({
   const [isExiting, setIsExiting] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const windowLabelRef = useRef("");
+  const statusRef = useRef<NotePadStatus>("empty");
   const isStandby = useRef(
     typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("standby") === "1",
@@ -156,6 +160,7 @@ export function NotePad({
     }),
     [t],
   );
+  statusRef.current = status;
 
   const refreshNotes = useCallback(async () => {
     const loadedNotes = await listNotes();
@@ -266,6 +271,7 @@ export function NotePad({
     let myLabel = "";
     try {
       myLabel = getCurrentWindow().label;
+      windowLabelRef.current = myLabel;
     } catch {
       // not in Tauri environment (tests)
     }
@@ -312,6 +318,44 @@ export function NotePad({
     setStatus("saved");
     return note;
   }, [content, editingNoteId, title]);
+
+  useEffect(() => {
+    const unlisten = listen<UpdateInstallPrepareRequest>("update://prepare-install", (event) => {
+      const respond = async () => {
+        const windowLabel = windowLabelRef.current || "notepad";
+        if (statusRef.current !== "dirty") {
+          await reportInstallPreparation(event.payload.requestId, windowLabel, "ready");
+          return;
+        }
+
+        try {
+          await saveNote();
+          await reportInstallPreparation(event.payload.requestId, windowLabel, "ready");
+        } catch (error) {
+          setStatus("saveFailed");
+          setErrorMessage(getErrorMessage(error));
+          await reportInstallPreparation(
+            event.payload.requestId,
+            windowLabel,
+            "failed",
+            getErrorMessage(error),
+          );
+        }
+      };
+
+      void respond().catch(async (error) => {
+        await reportInstallPreparation(
+          event.payload.requestId,
+          windowLabelRef.current || "notepad",
+          "failed",
+          getErrorMessage(error),
+        ).catch(() => undefined);
+      });
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [saveNote]);
 
   const hasDraftContent = useCallback(
     () => Boolean(editingNoteId || title.trim() || content.trim()),
