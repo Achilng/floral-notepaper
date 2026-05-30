@@ -208,6 +208,22 @@ async fn portal_event_loop_async(
                 }
                 _ => {}
             }
+
+            // Catch-all: log any GlobalShortcuts signal we haven't handled
+            match tokio::time::timeout(Duration::from_millis(10), session.all_signals_stream.next())
+                .await
+            {
+                Ok(Some(Ok(msg))) => {
+                    let header = msg.header();
+                    let member = header.member().map(|m| m.to_string()).unwrap_or_default();
+                    let path = header.path().map(|p| p.to_string()).unwrap_or_default();
+                    eprintln!(
+                        "[portal] catch-all signal: member={member}, path={path}, signature={}",
+                        msg.body().signature()
+                    );
+                }
+                _ => {}
+            }
         } else {
             // No session, just sleep briefly
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -222,6 +238,7 @@ struct SessionState {
     signal_stream: MessageStream,
     activated_stream_session: MessageStream,
     activated_stream_portal: MessageStream,
+    all_signals_stream: MessageStream,
 }
 
 async fn create_and_bind_session(
@@ -310,7 +327,7 @@ async fn create_and_bind_session(
 
     // Step 3: Bind shortcuts
     let session_path = zbus::zvariant::ObjectPath::try_from(session_handle.as_str())?;
-    bind_shortcuts_on_portal(proxy, &session_handle, shortcuts).await?;
+    bind_shortcuts_on_portal(proxy, conn, &session_handle, shortcuts).await?;
 
     // Step 4: Subscribe to signals on the session
     // Note: Activated signal may be sent on the portal path, not session path
@@ -357,12 +374,25 @@ async fn create_and_bind_session(
     .await?;
     eprintln!("[portal] subscribed to Activated on portal path: {portal_path}");
 
+    // Catch-all: subscribe to ALL signals from GlobalShortcuts interface (no path filter)
+    let all_signals_stream = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .interface("org.freedesktop.portal.GlobalShortcuts")?
+            .build(),
+        conn,
+        None,
+    )
+    .await?;
+    eprintln!("[portal] subscribed to ALL GlobalShortcuts signals (catch-all)");
+
     Ok(SessionState {
         session_handle,
         registered_shortcuts: shortcuts.to_vec(),
         signal_stream,
         activated_stream_session,
         activated_stream_portal,
+        all_signals_stream,
     })
 }
 
@@ -386,6 +416,7 @@ fn owned_str_array(items: &[String]) -> OwnedValue {
 
 async fn bind_shortcuts_on_portal(
     proxy: &GlobalShortcutsPortalDbusProxy<'_>,
+    conn: &Connection,
     session_handle: &zbus::zvariant::OwnedObjectPath,
     shortcuts: &[PortalShortcut],
 ) -> Result<(), Box<dyn std::error::Error>> {
@@ -403,9 +434,46 @@ async fn bind_shortcuts_on_portal(
 
     let mut options: HashMap<String, OwnedValue> = HashMap::new();
     options.insert("handle_token".to_string(), owned_str("floral_notepad_bind"));
-    let _request_path = proxy
+    let request_path = proxy
         .bind_shortcuts(&session_path, portal_shortcuts, "", options)
         .await?;
+    eprintln!("[portal] BindShortcuts request: {request_path}");
+
+    // Wait for the BindShortcuts Response signal
+    let req_path = zbus::zvariant::ObjectPath::try_from(request_path.as_str())?;
+    let mut response_stream = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .interface("org.freedesktop.portal.Request")?
+            .member("Response")?
+            .path(req_path)?
+            .build(),
+        conn,
+        None,
+    )
+    .await?;
+
+    match tokio::time::timeout(std::time::Duration::from_secs(30), response_stream.next()).await {
+        Ok(Some(Ok(msg))) => {
+            let body = msg.body();
+            if let Ok((response_code, results)) =
+                body.deserialize::<(u32, HashMap<String, OwnedValue>)>()
+            {
+                eprintln!(
+                    "[portal] BindShortcuts response: code={response_code}, results={results:?}"
+                );
+                if response_code != 0 {
+                    return Err(format!("BindShortcuts denied (response={response_code})").into());
+                }
+            }
+        }
+        Err(_) => {
+            eprintln!("[portal] BindShortcuts response timeout");
+        }
+        _ => {
+            eprintln!("[portal] BindShortcuts response stream ended");
+        }
+    }
 
     Ok(())
 }

@@ -885,7 +885,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     Ok(())
 }
 
-fn open_notepad_window_now(
+pub fn open_notepad_window_now(
     app: &AppHandle,
     note_id: Option<&str>,
     bounds: Option<WindowBounds>,

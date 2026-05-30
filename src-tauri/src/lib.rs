@@ -266,8 +266,17 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(file_path) = desktop::extract_file_arg(&args) {
                 let _ = app.emit("open-external-file", file_path);
+            } else if args.iter().any(|a| a == "--quick-note") {
+                // Open a quick note window when launched with --quick-note
+                let app_handle = app.clone();
+                let _ = app.run_on_main_thread(move || {
+                    if let Err(error) = desktop::open_notepad_window_now(&app_handle, None, None) {
+                        eprintln!("failed to open quick note from single instance: {error}");
+                    }
+                });
+            } else {
+                let _ = desktop::show_main_window(app);
             }
-            let _ = desktop::show_main_window(app);
         }))
         .setup(|app| {
             desktop::setup_desktop(app)?;
