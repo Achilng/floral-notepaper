@@ -169,9 +169,25 @@ async fn portal_event_loop_async(
         if let Some(session) = &mut current_session {
             use std::time::Duration;
 
-            // Check for Activated signals (shortcut was pressed)
-            match tokio::time::timeout(Duration::from_millis(50), session.activated_stream.next())
-                .await
+            // Check for Activated signals on session path
+            match tokio::time::timeout(
+                Duration::from_millis(50),
+                session.activated_stream_session.next(),
+            )
+            .await
+            {
+                Ok(Some(Ok(msg))) => {
+                    handle_activated_signal(&msg, &session.registered_shortcuts, &signal_tx);
+                }
+                _ => {}
+            }
+
+            // Check for Activated signals on portal path
+            match tokio::time::timeout(
+                Duration::from_millis(10),
+                session.activated_stream_portal.next(),
+            )
+            .await
             {
                 Ok(Some(Ok(msg))) => {
                     handle_activated_signal(&msg, &session.registered_shortcuts, &signal_tx);
@@ -204,7 +220,8 @@ struct SessionState {
     session_handle: zbus::zvariant::OwnedObjectPath,
     registered_shortcuts: Vec<PortalShortcut>,
     signal_stream: MessageStream,
-    activated_stream: MessageStream,
+    activated_stream_session: MessageStream,
+    activated_stream_portal: MessageStream,
 }
 
 async fn create_and_bind_session(
@@ -296,6 +313,8 @@ async fn create_and_bind_session(
     bind_shortcuts_on_portal(proxy, &session_handle, shortcuts).await?;
 
     // Step 4: Subscribe to signals on the session
+    // Note: Activated signal may be sent on the portal path, not session path
+    // So we subscribe to both
     let signal_stream = MessageStream::for_match_rule(
         MatchRule::builder()
             .msg_type(Type::Signal)
@@ -307,8 +326,10 @@ async fn create_and_bind_session(
         None,
     )
     .await?;
+    eprintln!("[portal] subscribed to ShortcutsChanged on session path: {session_path}");
 
-    let activated_stream = MessageStream::for_match_rule(
+    // Subscribe to Activated on session path
+    let activated_stream_session = MessageStream::for_match_rule(
         MatchRule::builder()
             .msg_type(Type::Signal)
             .interface("org.freedesktop.portal.GlobalShortcuts")?
@@ -319,12 +340,29 @@ async fn create_and_bind_session(
         None,
     )
     .await?;
+    eprintln!("[portal] subscribed to Activated on session path: {session_path}");
+
+    // Also subscribe to Activated on portal path (in case signal is sent there)
+    let portal_path = zbus::zvariant::ObjectPath::try_from(PORTAL_PATH)?;
+    let activated_stream_portal = MessageStream::for_match_rule(
+        MatchRule::builder()
+            .msg_type(Type::Signal)
+            .interface("org.freedesktop.portal.GlobalShortcuts")?
+            .member("Activated")?
+            .path(portal_path.clone())?
+            .build(),
+        conn,
+        None,
+    )
+    .await?;
+    eprintln!("[portal] subscribed to Activated on portal path: {portal_path}");
 
     Ok(SessionState {
         session_handle,
         registered_shortcuts: shortcuts.to_vec(),
         signal_stream,
-        activated_stream,
+        activated_stream_session,
+        activated_stream_portal,
     })
 }
 
