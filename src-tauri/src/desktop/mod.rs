@@ -1,3 +1,5 @@
+pub mod portal;
+
 use crate::{
     locales::{self, Locale},
     services::notes::{default_store, AppConfig, AppError},
@@ -146,6 +148,8 @@ struct RuntimeState {
     hidden_window_labels: Mutex<Vec<String>>,
     #[cfg(desktop)]
     shortcut_bindings: Mutex<ShortcutBindings>,
+    #[cfg(desktop)]
+    portal_shortcuts: Mutex<Option<portal::GlobalShortcutsPortal>>,
 }
 
 #[cfg(desktop)]
@@ -1305,11 +1309,110 @@ fn register_configured_global_shortcut(app: &AppHandle) {
         return;
     };
 
-    if let Err(error) = install_global_shortcut_bindings(app, &config, false) {
-        let msg = format!("快捷键注册失败：{error}");
-        eprintln!("{msg}");
-        let _ = app.emit("shortcut-register-failed", &msg);
+    let x11_result = install_global_shortcut_bindings(app, &config, false);
+
+    if let Err(error) = x11_result {
+        eprintln!("[shortcut] X11 registration failed: {error}");
+
+        // On Wayland, try portal fallback
+        if portal::is_wayland_session() {
+            eprintln!("[shortcut] Wayland detected, attempting portal fallback");
+            match setup_portal_shortcuts(app, &config) {
+                Ok(()) => {
+                    eprintln!("[shortcut] portal fallback succeeded");
+                }
+                Err(portal_err) => {
+                    let msg = format!(
+                        "快捷键注册失败（X11 和 Portal 均失败）：X11: {error}；Portal: {portal_err}"
+                    );
+                    eprintln!("[shortcut] {msg}");
+                    let _ = app.emit("shortcut-register-failed", &msg);
+                }
+            }
+        } else {
+            let msg = format!("快捷键注册失败：{error}");
+            eprintln!("[shortcut] {msg}");
+            let _ = app.emit("shortcut-register-failed", &msg);
+        }
     }
+}
+
+#[cfg(desktop)]
+fn setup_portal_shortcuts(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
+    let portal = portal::GlobalShortcutsPortal::new();
+
+    let mut shortcuts = Vec::new();
+    shortcuts.push(portal::PortalShortcut {
+        id: "open-notepad".to_string(),
+        name: "Open Quick Note".to_string(),
+        accelerators: vec![shortcut_to_portal_accelerator(&config.global_shortcut)],
+    });
+
+    if !config.toggle_visibility_shortcut.is_empty() {
+        shortcuts.push(portal::PortalShortcut {
+            id: "toggle-visibility".to_string(),
+            name: "Toggle Visibility".to_string(),
+            accelerators: vec![shortcut_to_portal_accelerator(
+                &config.toggle_visibility_shortcut,
+            )],
+        });
+    }
+
+    portal.register(shortcuts)?;
+
+    if let Some(state) = app.try_state::<RuntimeState>() {
+        if let Ok(mut guard) = state.portal_shortcuts.lock() {
+            *guard = Some(portal);
+        }
+    }
+
+    Ok(())
+}
+
+/// Convert a shortcut config string (e.g., "Ctrl+Space") to a portal accelerator
+/// string (e.g., "<Control>space").
+fn shortcut_to_portal_accelerator(config: &str) -> String {
+    let spec = match shortcut_from_config(config) {
+        Some(s) => s,
+        None => return config.to_string(),
+    };
+
+    let mut parts = Vec::new();
+    if spec.ctrl {
+        parts.push("<Control>");
+    }
+    if spec.alt {
+        parts.push("<Alt>");
+    }
+    if spec.shift {
+        parts.push("<Shift>");
+    }
+    if spec.meta {
+        parts.push("<Super>");
+    }
+
+    let key = match spec.key {
+        ShortcutKey::Letter(c) => c.to_ascii_lowercase().to_string(),
+        ShortcutKey::Digit(d) => d.to_string(),
+        ShortcutKey::Function(n) => format!("F{n}"),
+        ShortcutKey::Space => "space".to_string(),
+        ShortcutKey::Tab => "Tab".to_string(),
+        ShortcutKey::Enter => "Return".to_string(),
+        ShortcutKey::Backspace => "BackSpace".to_string(),
+        ShortcutKey::Delete => "Delete".to_string(),
+        ShortcutKey::Escape => "Escape".to_string(),
+        ShortcutKey::ArrowUp => "Up".to_string(),
+        ShortcutKey::ArrowDown => "Down".to_string(),
+        ShortcutKey::ArrowLeft => "Left".to_string(),
+        ShortcutKey::ArrowRight => "Right".to_string(),
+        ShortcutKey::Home => "Home".to_string(),
+        ShortcutKey::End => "End".to_string(),
+        ShortcutKey::PageUp => "Page_Up".to_string(),
+        ShortcutKey::PageDown => "Page_Down".to_string(),
+    };
+
+    parts.push(&key);
+    parts.concat()
 }
 
 pub fn check_global_shortcut(
@@ -1501,7 +1604,24 @@ fn install_global_shortcut_bindings(
 
 #[cfg(desktop)]
 fn apply_global_shortcut_config(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
-    install_global_shortcut_bindings(app, config, true)
+    // Try X11 first
+    let x11_result = install_global_shortcut_bindings(app, config, true);
+
+    // If X11 fails on Wayland, try portal
+    if x11_result.is_err() && portal::is_wayland_session() {
+        // Clear any existing portal shortcuts
+        if let Some(state) = app.try_state::<RuntimeState>() {
+            if let Ok(mut guard) = state.portal_shortcuts.lock() {
+                if let Some(portal) = guard.take() {
+                    let _ = portal.unregister_all();
+                }
+            }
+        }
+
+        return setup_portal_shortcuts(app, config);
+    }
+
+    x11_result
 }
 
 #[cfg(not(desktop))]
@@ -1991,7 +2111,7 @@ mod tests {
     #[test]
     fn capability_allows_frontend_window_focus_for_notepad_surfaces() {
         let capability: serde_json::Value =
-            serde_json::from_str(include_str!("../capabilities/default.json"))
+            serde_json::from_str(include_str!("../../capabilities/default.json"))
                 .expect("default capability should be valid json");
         let windows = capability["windows"]
             .as_array()

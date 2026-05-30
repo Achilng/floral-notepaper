@@ -49,3 +49,6 @@ src-tauri/icons/macOS
 
 ## Temp
 temp/
+
+## App data
+data/
