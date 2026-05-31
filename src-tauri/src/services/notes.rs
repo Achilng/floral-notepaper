@@ -17,7 +17,6 @@ const LEGACY_MACOS_GLOBAL_SHORTCUTS: [&str; 5] = [
     "Control+Option+Space",
     "Ctrl+Alt+Space",
 ];
-#[cfg(target_os = "macos")]
 const MACOS_SHORTCUT_MIGRATION_MARKER: &str = ".macos-shortcut-default-v3";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
