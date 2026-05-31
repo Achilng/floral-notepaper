@@ -515,3 +515,28 @@ input::placeholder {
   font-size: 0.85em;
   font-family: var(--font-mono);
 }
+
+/* PlantUML diagram styles */
+.plantuml-diagram {
+  margin: 1.5em 0;
+  text-align: center;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 1em;
+  background: var(--color-paper-warm);
+  border-radius: 8px;
+  border: 1px solid var(--color-paper-deep);
+}
+.plantuml-diagram svg {
+  max-width: 100%;
+  height: auto;
+  display: inline-block;
+}
+.plantuml-diagram .kroki-error {
+  color: var(--color-danger, #ef4444);
+  font-size: 0.85em;
+  font-family: var(--font-mono);
+  padding: 1em;
+  background: var(--color-danger-bg);
+  border-radius: 4px;
+}

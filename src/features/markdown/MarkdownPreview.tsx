@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -11,6 +11,78 @@ import type { Pluggable } from "unified";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
+
+interface PlantUmlDiagramProps {
+  code: string;
+}
+
+function PlantUmlDiagram({ code }: PlantUmlDiagramProps) {
+  const { t } = useTranslation();
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
+  const [svgContent, setSvgContent] = useState("");
+
+  useEffect(() => {
+    let cleanedCode = code
+      .replace(/```plantuml\s*/gi, "")
+      .replace(/```\s*$/g, "")
+      .replace(/^@startuml\s*/m, "")
+      .replace(/@enduml\s*$/m, "")
+      .trim();
+
+    if (!cleanedCode.startsWith("@startuml")) {
+      cleanedCode = "@startuml\n" + cleanedCode + "\n@enduml";
+    }
+
+    const blob = new Blob([cleanedCode], { type: "text/plain" });
+
+    fetch("https://kroki.io/plantuml/svg", {
+      method: "POST",
+      body: blob,
+      headers: {
+        "Content-Type": "text/plain",
+      },
+    })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.text();
+      })
+      .then((text) => {
+        setSvgContent(text);
+        setLoading(false);
+      })
+      .catch(() => {
+        setError(true);
+        setLoading(false);
+      });
+  }, [code]);
+
+  if (error) {
+    return (
+      <div className="my-4 p-4 bg-red-50 rounded border border-red-200 text-sm text-red-600">
+        {t("markdown.plantumlLoadError", {
+          defaultValue: "图表加载失败，请检查网络连接或 PlantUML 语法",
+        })}
+      </div>
+    );
+  }
+
+  return (
+    <div className="my-4 p-4 bg-white rounded-lg border border-gray-200 text-center overflow-x-auto shadow-sm">
+      {loading && (
+        <div className="text-gray-500 text-sm py-8">
+          {t("markdown.loadingDiagram", { defaultValue: "正在加载图表..." })}
+        </div>
+      )}
+      <div
+        className={`max-w-full h-auto ${loading ? "hidden" : "block mx-auto"}`}
+        dangerouslySetInnerHTML={{ __html: svgContent }}
+      />
+    </div>
+  );
+}
 
 function CodeBlock({ children }: { children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -134,7 +206,21 @@ const components: Components = {
       </code>
     );
   },
-  pre: ({ children }) => <CodeBlock>{children}</CodeBlock>,
+  pre: ({ children }) => {
+    const codeElement = children as React.ReactElement<{
+      className?: string;
+      children?: React.ReactNode;
+    }>;
+    const codeClassName = codeElement?.props?.className || "";
+    const isPlantUml = codeClassName.includes("language-plantuml");
+
+    if (isPlantUml) {
+      const code = extractText(codeElement?.props?.children);
+      return <PlantUmlDiagram code={code} />;
+    }
+
+    return <CodeBlock>{children}</CodeBlock>;
+  },
   a: ({ href, children }) => (
     <a
       href={href}
