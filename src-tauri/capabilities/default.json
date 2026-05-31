@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Capability for Floral Notepaper windows",
-  "windows": ["main", "notepad-*", "tile-*"],
+  "windows": ["main", "notepad-*", "tile-*", "about-debug"],
   "permissions": [
     "core:default",
     "core:window:allow-close",
@@ -19,6 +19,7 @@
     "core:window:allow-show",
     "core:window:allow-hide",
     "core:window:allow-set-focus",
+    "dialog:allow-message",
     "dialog:allow-open",
     "dialog:allow-save",
     "opener:default"

@@ -3,6 +3,10 @@ import { describe, expect, test, vi } from "vitest";
 import { UpdateSettingsSection } from "./UpdateSettingsSection";
 import type { UpdateSettings, UpdateState } from "./types";
 
+vi.mock("@tauri-apps/plugin-dialog", () => ({
+  message: vi.fn(),
+}));
+
 vi.mock("@tauri-apps/plugin-opener", () => ({
   openUrl: vi.fn(),
 }));

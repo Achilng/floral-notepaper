@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { message } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
 import { SlidingButtonGroup } from "../../components/SlidingButtonGroup";
@@ -210,10 +211,16 @@ export function UpdateSettingsSection({
 
       const unlistenError = await listen<UpdateErrorPayload>("update://error", (event) => {
         if (!active) return;
-        setNotice({
-          tone: "error",
-          text: getUpdateErrorMessage(event.payload, t),
-        });
+        const errorText = getUpdateErrorMessage(event.payload, t);
+        setNotice({ tone: "error", text: errorText });
+        if (event.payload.code.startsWith("updateInstall")) {
+          void message(errorText, {
+            title: t("settings.update.installFailedTitle", {
+              defaultValue: "安装更新失败",
+            }),
+            kind: "error",
+          });
+        }
       });
 
       const unlistenAutoCheckError = await listen<UpdateErrorPayload>(
@@ -478,13 +485,6 @@ export function UpdateSettingsSection({
     void openUrl(MIRROR_SETTINGS_URL);
   };
 
-  const noticeClass =
-    notice?.tone === "success"
-      ? "text-bamboo"
-      : notice?.tone === "error"
-        ? "text-red-400"
-        : "text-ink-ghost";
-
   return (
     <section className="space-y-3 pt-2 border-t border-paper-deep/25">
       {showCheckControls ? (
@@ -718,8 +718,6 @@ export function UpdateSettingsSection({
           </>
         )
       ) : null}
-
-      {notice && <p className={`min-h-4 text-[11px] ${noticeClass}`}>{notice.text}</p>}
     </section>
   );
 }
@@ -840,8 +838,8 @@ function renderDownloadCard({
       ) : null}
 
       {status?.status === "failed" && status.installLogPath ? (
-        <div className="space-y-1.5 rounded-xl bg-danger-bg px-2.5 py-2">
-          <p className="text-[10px] font-mono text-red-400">
+        <div className="space-y-1.5 rounded-xl bg-paper-warm/40 px-2.5 py-2">
+          <p className="text-[10px] font-mono text-ink-ghost">
             {t("settings.update.installFailed", {
               defaultValue: "最近一次安装失败，可查看日志后重试或重新下载",
             })}

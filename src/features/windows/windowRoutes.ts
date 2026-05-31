@@ -1,4 +1,4 @@
-export type AppView = "main" | "notepad" | "tile";
+export type AppView = "about" | "main" | "notepad" | "tile";
 
 export interface AppRoute {
   view: AppView;
@@ -14,6 +14,7 @@ export function routeFromSearch(search: string): AppRoute {
   const view = params.get("view");
   const noteId = params.get("noteId") ?? undefined;
 
+  if (view === "about") return { view };
   if (view === "notepad") return noteId ? { view, noteId } : { view };
   if (view === "tile") return noteId ? { view, noteId } : { view };
   return { view: "main" };
@@ -25,6 +26,10 @@ export function buildNotepadUrl(noteId?: string): string {
 
 export function buildTileUrl(noteId: string): string {
   return buildUrl("tile", noteId);
+}
+
+export function buildAboutDebugUrl(): string {
+  return buildUrl("about");
 }
 
 function buildUrl(view: AppView, noteId?: string): string {

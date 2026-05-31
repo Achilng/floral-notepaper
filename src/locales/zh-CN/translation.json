@@ -342,6 +342,7 @@
       },
       "install": "安装并重启",
       "installFailed": "最近一次安装失败，可查看日志后重试或重新下载",
+      "installFailedTitle": "安装更新失败",
       "installPreparing": "正在准备退出应用并安装更新...",
       "installRetry": "重新尝试安装",
       "installScheduled": "检测到旧版待安装状态，请重新点击“安装并重启”完成替换",

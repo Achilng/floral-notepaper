@@ -341,6 +341,7 @@
       },
       "install": "Install & Restart",
       "installFailed": "The latest install attempt failed. Review the log and retry or download again.",
+      "installFailedTitle": "Update Installation Failed",
       "installPreparing": "Preparing to exit the app and install the update...",
       "installRetry": "Retry Install",
       "installScheduled": "A legacy pending-install state was found. Click Install & Restart again to finish replacing the app.",
