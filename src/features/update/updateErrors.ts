@@ -158,6 +158,10 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
       return translate("settings.update.error.mirrorBusiness", {
         defaultValue: message ?? "Mirror 酱返回了业务错误，请稍后重试",
       });
+    case "updateMirrorDownloadNeedCdk":
+      return translate("settings.update.error.mirrorDownloadNeedCdk", {
+        defaultValue: "Mirror 酱未返回下载链接，请配置有效的 CDK 后重试",
+      });
     case "updateDownloadCancelled":
       return translate("settings.update.cancelled", {
         defaultValue: "下载已取消",

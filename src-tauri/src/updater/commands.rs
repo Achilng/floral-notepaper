@@ -107,10 +107,11 @@ pub async fn update_download(
     let paths = state.paths().clone();
     let result_paths = paths.clone();
     let app_handle = app.clone();
+    let cdk = state.get_mirror_cdk();
 
     let result = async_runtime::spawn_blocking(move || {
         let _task = task;
-        let service = UpdateDownloadService::from_env();
+        let service = UpdateDownloadService::from_env().with_cdk(cdk);
         service.run(&paths, current_state, source, cancel_flag, |progress| {
             if let Err(error) = app_handle.emit("update://download-progress", &progress) {
                 eprintln!("failed to emit update://download-progress: {error}");

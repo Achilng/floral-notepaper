@@ -48,6 +48,7 @@ pub(crate) struct UpdateDownloadService {
     github_manifest_path: Option<PathBuf>,
     allow_insecure_localhost: bool,
     platform_override: Option<platform::PlatformInfo>,
+    cdk: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -73,7 +74,13 @@ impl UpdateDownloadService {
             github_manifest_path: env_manifest_path(GITHUB_MANIFEST_PATH_ENV),
             allow_insecure_localhost: false,
             platform_override: None,
+            cdk: None,
         }
+    }
+
+    pub(crate) fn with_cdk(mut self, cdk: Option<String>) -> Self {
+        self.cdk = cdk;
+        self
     }
 
     #[cfg(test)]
@@ -82,6 +89,7 @@ impl UpdateDownloadService {
             github_manifest_path: None,
             allow_insecure_localhost: true,
             platform_override: None,
+            cdk: None,
         }
     }
 
@@ -217,10 +225,13 @@ impl UpdateDownloadService {
                 &current_state.asset_sha256.clone().unwrap_or_default(),
                 asset_size,
             ),
-            DownloadSourceUsed::Mirror => Err(errors::app_error(
-                "updateMirrorDownloadUnavailable",
-                "Mirror 下载源尚未配置，当前阶段请改用 GitHub 下载",
-            )),
+            DownloadSourceUsed::Mirror => self.resolve_mirror_plan(
+                paths,
+                &version,
+                &asset_name,
+                current_state.asset_sha256.clone(),
+                asset_size,
+            ),
         }
     }
 
@@ -338,6 +349,40 @@ impl UpdateDownloadService {
         })
     }
 
+    fn resolve_mirror_plan(
+        &self,
+        paths: &UpdatePaths,
+        version: &str,
+        asset_name: &str,
+        asset_sha256: Option<String>,
+        asset_size: u64,
+    ) -> Result<DownloadPlan, AppError> {
+        let platform = self.current_platform();
+        let info =
+            super::check::fetch_mirror_download_url(&platform, version, self.cdk.as_deref())?;
+
+        let url = validate_download_url(
+            &info.url,
+            DownloadValidationOptions {
+                allow_insecure_localhost: self.allow_insecure_localhost,
+            },
+        )?;
+        let version_dir = paths.downloads_dir().join(version);
+        let final_path = version_dir.join(asset_name);
+        let part_path = version_dir.join(format!("{asset_name}.part"));
+
+        Ok(DownloadPlan {
+            version: version.to_string(),
+            asset_name: asset_name.to_string(),
+            asset_sha256,
+            asset_size,
+            source: DownloadSourceUsed::Mirror,
+            url,
+            final_path,
+            part_path,
+        })
+    }
+
     fn download_with_plan<F>(
         &self,
         plan: &DownloadPlan,
@@ -406,13 +451,23 @@ impl UpdateDownloadService {
             },
         )?;
         let content_length = response.content_length();
-        if let Some(length) = content_length {
-            if length != plan.asset_size {
-                return Err(size_mismatch_error(plan.asset_size, length));
+        let expected_size = if plan.asset_size > 0 {
+            if let Some(length) = content_length {
+                if length != plan.asset_size {
+                    return Err(size_mismatch_error(plan.asset_size, length));
+                }
             }
-        }
+            plan.asset_size
+        } else {
+            content_length.unwrap_or(0)
+        };
+        let total_for_progress = if expected_size > 0 {
+            Some(expected_size)
+        } else {
+            None
+        };
 
-        emit_progress(progress_payload(plan, 0, Some(plan.asset_size), 0));
+        emit_progress(progress_payload(plan, 0, total_for_progress, 0));
 
         let part_file = fs::File::create(&plan.part_path)?;
         let mut writer = BufWriter::new(part_file);
@@ -442,7 +497,7 @@ impl UpdateDownloadService {
                 emit_progress(progress_payload(
                     plan,
                     downloaded_bytes,
-                    Some(plan.asset_size),
+                    total_for_progress,
                     progress_speed(downloaded_bytes, started_at),
                 ));
                 last_emit_at = Instant::now();
@@ -455,7 +510,7 @@ impl UpdateDownloadService {
             return Err(download_cancelled());
         }
 
-        if downloaded_bytes != plan.asset_size {
+        if plan.asset_size > 0 && downloaded_bytes != plan.asset_size {
             return Err(size_mismatch_error(plan.asset_size, downloaded_bytes));
         }
 
@@ -473,7 +528,7 @@ impl UpdateDownloadService {
         emit_progress(progress_payload(
             plan,
             downloaded_bytes,
-            Some(plan.asset_size),
+            total_for_progress.or(Some(downloaded_bytes)),
             progress_speed(downloaded_bytes, started_at),
         ));
 
@@ -637,7 +692,7 @@ fn fetch_response(
 
 fn verify_existing_file(plan: &DownloadPlan) -> Result<Option<Option<String>>, AppError> {
     let metadata = fs::metadata(&plan.final_path)?;
-    if metadata.len() != plan.asset_size {
+    if plan.asset_size > 0 && metadata.len() != plan.asset_size {
         return Ok(None);
     }
 
@@ -1061,6 +1116,7 @@ mod tests {
                 Arch::Aarch64,
                 InstallKind::MacosAppBundle,
             )),
+            cdk: None,
         };
         let current_state = available_state(asset_name, body);
 
@@ -1098,6 +1154,7 @@ mod tests {
                 Arch::Aarch64,
                 InstallKind::Unknown,
             )),
+            cdk: None,
         };
 
         let error = service
@@ -1133,6 +1190,7 @@ mod tests {
                 Arch::X86_64,
                 InstallKind::WindowsPortable,
             )),
+            cdk: None,
         };
 
         let error = service

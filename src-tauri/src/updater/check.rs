@@ -534,6 +534,82 @@ fn check_mirror_api(
     }))
 }
 
+#[derive(Debug, Clone)]
+pub(crate) struct MirrorDownloadInfo {
+    pub url: String,
+}
+
+pub(crate) fn fetch_mirror_download_url(
+    platform: &PlatformInfo,
+    current_version: &str,
+    cdk: Option<&str>,
+) -> Result<MirrorDownloadInfo, AppError> {
+    let os = mirror_os_param(&platform.os);
+    let arch = mirror_arch_param(&platform.arch);
+
+    let mut url = reqwest::Url::parse(&format!("{MIRROR_API_BASE}/{MIRROR_RES_ID}/latest"))
+        .map_err(|e| errors::mirror_api_error(format!("URL 构建失败：{e}")))?;
+    url.query_pairs_mut()
+        .append_pair("current_version", &format!("v{current_version}"))
+        .append_pair("os", os)
+        .append_pair("arch", arch)
+        .append_pair("user_agent", MIRROR_USER_AGENT);
+    if let Some(cdk) = cdk.filter(|s| !s.trim().is_empty()) {
+        url.query_pairs_mut().append_pair("cdk", cdk);
+    }
+
+    let client = build_mirror_api_client()?;
+    let response = client.get(url).send().map_err(|error| {
+        if error.is_timeout() {
+            errors::mirror_api_error("请求超时")
+        } else {
+            errors::mirror_api_error(error.to_string())
+        }
+    })?;
+
+    let status = response.status();
+    if !status.is_success() && status.as_u16() != 403 {
+        return Err(errors::mirror_api_error(format!(
+            "HTTP {}",
+            status.as_u16()
+        )));
+    }
+
+    let body = response
+        .text()
+        .map_err(|error| errors::mirror_api_error(format!("响应读取失败：{error}")))?;
+    let api_response: MirrorApiResponse = serde_json::from_str(&body)
+        .map_err(|error| errors::mirror_api_error(format!("响应解析失败：{error}")))?;
+
+    if api_response.code < 0 {
+        return Err(errors::mirror_api_error(format!(
+            "服务端错误 (code={})：{}",
+            api_response.code, api_response.msg
+        )));
+    }
+
+    if api_response.code > 0 {
+        let code = api_response.code;
+        return Err(match code {
+            7001..=7005 => errors::mirror_cdk_error(code, api_response.msg),
+            _ => errors::mirror_resource_error(code, api_response.msg),
+        });
+    }
+
+    let data = api_response
+        .data
+        .ok_or_else(|| errors::mirror_api_error("响应缺少 data 字段"))?;
+
+    let download_url = data.url.ok_or_else(|| {
+        errors::app_error(
+            "updateMirrorDownloadNeedCdk",
+            "Mirror 酱未返回下载链接，请配置有效的 CDK",
+        )
+    })?;
+
+    Ok(MirrorDownloadInfo { url: download_url })
+}
+
 fn build_github_api_client() -> Result<Client, AppError> {
     Client::builder()
         .connect_timeout(Duration::from_secs(10))
