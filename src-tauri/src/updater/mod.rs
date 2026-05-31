@@ -190,7 +190,7 @@ impl UpdaterState {
 
     pub fn settings(&self) -> Result<types::UpdateSettingsDto, AppError> {
         let settings = settings::load(&self.paths)?;
-        let has_mirror_cdk = self.cdk_store.has_cdk()?;
+        let has_mirror_cdk = self.has_mirror_cdk_for_settings();
         Ok(settings.into_dto(has_mirror_cdk))
     }
 
@@ -201,7 +201,7 @@ impl UpdaterState {
         let existing = settings::load(&self.paths)?;
         let stored = settings::StoredUpdateSettings::from_user_settings(&existing, settings);
         settings::save(&self.paths, &stored)?;
-        let has_mirror_cdk = self.cdk_store.has_cdk()?;
+        let has_mirror_cdk = self.has_mirror_cdk_for_settings();
         Ok(stored.into_dto(has_mirror_cdk))
     }
 
@@ -214,11 +214,21 @@ impl UpdaterState {
     }
 
     pub fn has_mirror_cdk(&self) -> bool {
-        self.cdk_store.has_cdk().unwrap_or(false)
+        self.has_mirror_cdk_for_settings()
     }
 
     pub fn get_mirror_cdk(&self) -> Option<String> {
         self.cdk_store.get_cdk()
+    }
+
+    fn has_mirror_cdk_for_settings(&self) -> bool {
+        match self.cdk_store.has_cdk() {
+            Ok(has_cdk) => has_cdk,
+            Err(error) => {
+                eprintln!("failed to read Mirror CDK from secure storage: {error}");
+                false
+            }
+        }
     }
 
     pub fn load_state(&self) -> Result<types::UpdateStateDto, AppError> {
@@ -305,6 +315,32 @@ impl UpdaterState {
         session.reports.insert(window_label.to_string(), status);
     }
 
+    pub fn sync_install_prepare_labels<I>(&self, request_id: &str, labels: I) -> Vec<String>
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let current_labels = labels.into_iter().collect::<BTreeSet<_>>();
+        let mut session = recover_mutex_guard(&self.install_prepare);
+        let Some(session) = session.as_mut() else {
+            return Vec::new();
+        };
+        if session.request_id != request_id {
+            return Vec::new();
+        }
+
+        session
+            .expected_labels
+            .retain(|label| current_labels.contains(label));
+        session
+            .reports
+            .retain(|label, _| current_labels.contains(label));
+
+        current_labels
+            .into_iter()
+            .filter(|label| session.expected_labels.insert(label.clone()))
+            .collect()
+    }
+
     pub fn poll_install_prepare(&self, request_id: &str) -> InstallPrepareState {
         let session = recover_mutex_guard(&self.install_prepare);
         let Some(session) = session.as_ref() else {
@@ -364,10 +400,22 @@ impl UpdaterState {
         paths: UpdatePaths,
         current_version: impl Into<String>,
     ) -> Self {
+        Self::with_paths_version_and_cdk_store(
+            paths,
+            current_version,
+            cdk_store::CdkStore::default(),
+        )
+    }
+
+    pub(crate) fn with_paths_version_and_cdk_store(
+        paths: UpdatePaths,
+        current_version: impl Into<String>,
+        cdk_store: cdk_store::CdkStore,
+    ) -> Self {
         Self {
             paths,
             current_version: current_version.into(),
-            cdk_store: cdk_store::CdkStore::default(),
+            cdk_store,
             active_task: Arc::new(Mutex::new(None)),
             install_prepare: Arc::new(Mutex::new(None)),
             next_task_id: AtomicU64::new(1),
@@ -544,6 +592,20 @@ mod tests {
     }
 
     #[test]
+    fn settings_tolerate_unavailable_secure_store() {
+        let paths = test_paths("updater-settings-keyring-unavailable");
+        let state = UpdaterState::with_paths_version_and_cdk_store(
+            paths,
+            version::CURRENT_APP_VERSION,
+            cdk_store::CdkStore::invalid_for_tests(),
+        );
+
+        let settings = state.settings().expect("settings should still load");
+
+        assert!(!settings.has_mirror_cdk);
+    }
+
+    #[test]
     fn install_prepare_session_tracks_pending_ready_and_failed_windows() {
         let state = UpdaterState::with_paths(test_paths("updater-install-prepare"));
         let request_id =
@@ -575,6 +637,33 @@ mod tests {
                 window_label: "notepad-1".into(),
                 message: "save failed".into()
             }
+        );
+    }
+
+    #[test]
+    fn install_prepare_session_syncs_new_and_closed_windows() {
+        let state = UpdaterState::with_paths(test_paths("updater-install-prepare-sync"));
+        let request_id =
+            state.begin_install_prepare(vec!["main".to_string(), "notepad-1".to_string()]);
+        state.report_install_prepare(&request_id, "main", InstallPrepareWindowStatus::Ready);
+
+        let added = state.sync_install_prepare_labels(
+            &request_id,
+            vec!["main".to_string(), "tile-1".to_string()],
+        );
+
+        assert_eq!(added, vec!["tile-1".to_string()]);
+        assert_eq!(
+            state.poll_install_prepare(&request_id),
+            InstallPrepareState::Pending {
+                pending_labels: vec!["tile-1".into()]
+            }
+        );
+
+        state.report_install_prepare(&request_id, "tile-1", InstallPrepareWindowStatus::Ready);
+        assert_eq!(
+            state.poll_install_prepare(&request_id),
+            InstallPrepareState::Ready
         );
     }
 }

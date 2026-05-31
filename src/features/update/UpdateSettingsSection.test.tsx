@@ -1,6 +1,6 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import { UpdateSettingsSection } from "./UpdateSettingsSection";
+import { deriveDownloadProgressState, UpdateSettingsSection } from "./UpdateSettingsSection";
 import type { UpdateSettings, UpdateState } from "./types";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -84,6 +84,18 @@ describe("UpdateSettingsSection", () => {
     expect(markup).not.toContain("待更新版本：1.0.5");
   });
 
+  test("preserves non-standard check interval values in the settings UI", () => {
+    const markup = renderToStaticMarkup(
+      <UpdateSettingsSection
+        initialSettings={{ ...settings, checkIntervalHours: 12 }}
+        initialStatus={status}
+        mode="settingsOnly"
+      />,
+    );
+
+    expect(markup).toContain("12 小时");
+  });
+
   test("renders install in-progress details after launching the helper", () => {
     const scheduledStatus: UpdateState = {
       ...status,
@@ -160,5 +172,26 @@ describe("UpdateSettingsSection", () => {
 
     expect(markup).toContain("安装后重新打开的仍是旧版本，请直接重试安装");
     expect(markup).toContain("/tmp/install-1.0.5.log");
+  });
+
+  test("uses the latest channel when deriving optimistic download state without prior status", () => {
+    const nextStatus = deriveDownloadProgressState(
+      null,
+      {
+        version: "1.0.6",
+        assetName: "floral-notepaper_1.0.6_macos_aarch64_app.zip",
+        downloadedBytes: 1024,
+        totalBytes: 2048,
+        percent: 50,
+        bytesPerSecond: 1024,
+        source: "mirror",
+      },
+      "beta",
+    );
+
+    expect(nextStatus.channel).toBe("beta");
+    expect(nextStatus.status).toBe("downloading");
+    expect(nextStatus.source).toBe("mirror");
+    expect(nextStatus.assetSize).toBe(2048);
   });
 });

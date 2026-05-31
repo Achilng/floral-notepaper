@@ -21,6 +21,14 @@ impl Default for CdkStore {
 }
 
 impl CdkStore {
+    #[cfg(test)]
+    pub(crate) fn invalid_for_tests() -> Self {
+        Self {
+            service: "",
+            account: "",
+        }
+    }
+
     pub fn has_cdk(&self) -> Result<bool, AppError> {
         match self.entry()?.get_password() {
             Ok(cdk) => Ok(!cdk.trim().is_empty()),

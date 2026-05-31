@@ -378,7 +378,7 @@ impl NoteStore {
     pub fn load_config(&self) -> Result<AppConfig, AppError> {
         self.ensure_base_dir()?;
         let path = self.config_path();
-        if !path.exists() {
+        if !path.exists() && self.is_default_base_dir() {
             self.migrate_from_known_locations()?;
         }
         if !path.exists() {
@@ -776,6 +776,12 @@ impl NoteStore {
             }
         }
         Ok(())
+    }
+
+    fn is_default_base_dir(&self) -> bool {
+        default_base_dir()
+            .map(|default_dir| default_dir == self.base_dir)
+            .unwrap_or(false)
     }
 
     fn migrate_base_dir_if_changed(&self, config: &mut AppConfig) -> Result<(), AppError> {

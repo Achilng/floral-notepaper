@@ -98,6 +98,13 @@ struct MacosRollbackPlan {
     stage_root: PathBuf,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchdogPostExitAction {
+    Noop,
+    RelaunchWithoutFailure,
+    MarkFailedAndRelaunch,
+}
+
 impl UpdateHelperCommand {
     pub fn to_args(&self) -> Vec<OsString> {
         vec![
@@ -151,6 +158,7 @@ pub enum UpdateHelperExitCode {
     InstallerCancelled = 17,
     InstallerBusy = 18,
     InstallerFatal = 19,
+    InstallerVersionMismatch = 20,
 }
 
 impl UpdateHelperExitCode {
@@ -306,14 +314,13 @@ fn execute_apply(
             command.wait_pid
         ),
     )?;
-    if let Err(code) = wait_for_process_exit(command.wait_pid, log) {
+    if let Err(code) = wait_for_process_exit(command.wait_pid, &command.target_path, log) {
         let persist_result = persist_failed_state(command, code, log);
         let _ = cleanup_after_install(command, log, false);
         persist_result?;
+        let _ = write_completion_marker(command, log);
         return Err(code);
     }
-    persist_installing_state(command, log)?;
-
     let applied_update = match apply_update(command, log) {
         Ok(update) => update,
         Err(code) => {
@@ -324,16 +331,19 @@ fn execute_apply(
             persist_result?;
             cleanup_result?;
             relaunch_result?;
+            let _ = write_completion_marker(command, log);
             return Err(code);
         }
     };
 
     persist_pending_verification_state(command, log)?;
     cleanup_after_install(command, log, false)?;
+    write_relaunch_marker(command, log)?;
     if let Err(code) = relaunch_target(&applied_update.launch_target, log) {
         if let Some(rollback) = applied_update.rollback.as_ref() {
             let _ = rollback_macos_update(rollback, log);
         }
+        let _ = remove_relaunch_marker(command);
         let _ = persist_failed_state(command, code, log);
         return Err(code);
     }
@@ -349,26 +359,51 @@ fn execute_watchdog(
         log,
         &format!("watching update helper process {}", command.wait_pid),
     )?;
-    wait_for_process_exit_with_timeout(command.wait_pid, WATCHDOG_HELPER_TIMEOUT, log)?;
+    wait_for_process_exit_with_timeout(command.wait_pid, WATCHDOG_HELPER_TIMEOUT, None, log)?;
 
+    match watchdog_post_exit_action(command, log)? {
+        WatchdogPostExitAction::Noop => Ok(()),
+        WatchdogPostExitAction::RelaunchWithoutFailure => relaunch_existing_target(command, log),
+        WatchdogPostExitAction::MarkFailedAndRelaunch => {
+            let _ = persist_failed_state(command, UpdateHelperExitCode::InstallerFailed, log);
+            relaunch_existing_target(command, log)
+        }
+    }
+}
+
+fn watchdog_post_exit_action(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+) -> Result<WatchdogPostExitAction, UpdateHelperExitCode> {
     let completion_path = completion_marker_path(command);
     if completion_path.exists() {
         write_log_line(
             log,
             &format!(
-                "update helper completed successfully; watchdog marker found at {}",
+                "update helper completed; watchdog marker found at {}",
                 completion_path.display()
             ),
         )?;
-        return Ok(());
+        return Ok(WatchdogPostExitAction::Noop);
+    }
+
+    let relaunch_path = relaunch_marker_path(command);
+    if relaunch_path.exists() {
+        write_log_line(
+            log,
+            &format!(
+                "update helper reached relaunch handoff without completion marker; relaunching target without marking failed ({})",
+                relaunch_path.display()
+            ),
+        )?;
+        return Ok(WatchdogPostExitAction::RelaunchWithoutFailure);
     }
 
     write_log_line(
         log,
         "update helper exited without completion marker; persisting failure and relaunching existing target",
     )?;
-    let _ = persist_failed_state(command, UpdateHelperExitCode::InstallerFailed, log);
-    relaunch_existing_target(command, log)
+    Ok(WatchdogPostExitAction::MarkFailedAndRelaunch)
 }
 
 fn validate_request(
@@ -459,6 +494,12 @@ pub(crate) fn completion_marker_path(command: &UpdateHelperCommand) -> PathBuf {
     path
 }
 
+pub(crate) fn relaunch_marker_path(command: &UpdateHelperCommand) -> PathBuf {
+    let mut path = command.ready_path.clone();
+    path.set_extension("relaunching");
+    path
+}
+
 fn write_completion_marker(
     command: &UpdateHelperCommand,
     log: &mut File,
@@ -480,6 +521,34 @@ fn write_completion_marker(
         ),
     )?;
     Ok(())
+}
+
+fn write_relaunch_marker(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    let relaunch_path = relaunch_marker_path(command);
+    if let Some(parent) = relaunch_path.parent() {
+        fs::create_dir_all(parent).map_err(|_| UpdateHelperExitCode::StateWriteFailed)?;
+    }
+    fs::write(
+        &relaunch_path,
+        format!("relaunching {}\n", Utc::now().to_rfc3339()),
+    )
+    .map_err(|_| UpdateHelperExitCode::StateWriteFailed)?;
+    write_log_line(
+        log,
+        &format!("wrote helper relaunch marker {}", relaunch_path.display()),
+    )?;
+    Ok(())
+}
+
+fn remove_relaunch_marker(command: &UpdateHelperCommand) -> Result<(), std::io::Error> {
+    match fs::remove_file(relaunch_marker_path(command)) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(error) => Err(error),
+    }
 }
 
 fn ensure_sufficient_disk_space(
@@ -655,6 +724,7 @@ fn install_windows_installer(
 
     let launch_target = resolve_windows_launch_target(&command.target_path, log);
     wait_for_target_to_exist(&launch_target, log)?;
+    verify_windows_installed_version(&launch_target, &command.target_version, log)?;
     write_log_line(
         log,
         &format!("installer completed for version {}", command.target_version),
@@ -926,18 +996,23 @@ fn map_installer_exit(code: Option<i32>) -> UpdateHelperExitCode {
     }
 }
 
-fn wait_for_process_exit(pid: u32, log: &mut File) -> Result<(), UpdateHelperExitCode> {
-    wait_for_process_exit_with_timeout(pid, WAIT_FOR_EXIT_TIMEOUT, log)
+fn wait_for_process_exit(
+    pid: u32,
+    expected_target_path: &Path,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    wait_for_process_exit_with_timeout(pid, WAIT_FOR_EXIT_TIMEOUT, Some(expected_target_path), log)
 }
 
 fn wait_for_process_exit_with_timeout(
     pid: u32,
     timeout: Duration,
+    expected_target_path: Option<&Path>,
     log: &mut File,
 ) -> Result<(), UpdateHelperExitCode> {
     let deadline = Instant::now() + timeout;
     while Instant::now() < deadline {
-        if !process_is_running(pid) {
+        if !process_is_running(pid, expected_target_path) {
             write_log_line(log, "application process has exited")?;
             return Ok(());
         }
@@ -968,6 +1043,161 @@ fn wait_for_target_to_exist(
         ),
     )?;
     Err(UpdateHelperExitCode::InstallerFailed)
+}
+
+#[cfg(target_os = "windows")]
+fn verify_windows_installed_version(
+    target_path: &Path,
+    target_version: &str,
+    log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    let actual_versions = windows_file_versions(target_path).ok_or_else(|| {
+        let _ = write_log_line(
+            log,
+            &format!(
+                "unable to read installed Windows file version from {}",
+                target_path.display()
+            ),
+        );
+        UpdateHelperExitCode::InstallerVersionMismatch
+    })?;
+
+    if actual_versions
+        .iter()
+        .any(|actual_version| installed_version_matches_target(actual_version, target_version))
+    {
+        write_log_line(
+            log,
+            &format!(
+                "verified installed Windows version {}",
+                actual_versions.join(", ")
+            ),
+        )?;
+        return Ok(());
+    }
+
+    write_log_line(
+        log,
+        &format!(
+            "installed Windows version mismatch: actual {}, expected {target_version}",
+            actual_versions.join(", ")
+        ),
+    )?;
+    Err(UpdateHelperExitCode::InstallerVersionMismatch)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn verify_windows_installed_version(
+    _target_path: &Path,
+    _target_version: &str,
+    _log: &mut File,
+) -> Result<(), UpdateHelperExitCode> {
+    Ok(())
+}
+
+#[cfg(target_os = "windows")]
+fn windows_file_versions(path: &Path) -> Option<Vec<String>> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        GetFileVersionInfoSizeW, GetFileVersionInfoW, VerQueryValueW, VS_FIXEDFILEINFO,
+    };
+
+    let mut wide_path = path.as_os_str().encode_wide().collect::<Vec<_>>();
+    wide_path.push(0);
+
+    let mut handle = 0u32;
+    let size = unsafe { GetFileVersionInfoSizeW(wide_path.as_ptr(), &mut handle) };
+    if size == 0 {
+        return None;
+    }
+
+    let mut buffer = vec![0u8; size as usize];
+    let ok = unsafe {
+        GetFileVersionInfoW(
+            wide_path.as_ptr(),
+            0,
+            size,
+            buffer.as_mut_ptr().cast::<std::ffi::c_void>(),
+        )
+    };
+    if ok == 0 {
+        return None;
+    }
+
+    let sub_block = ['\\' as u16, 0];
+    let mut fixed_info_ptr: *mut std::ffi::c_void = std::ptr::null_mut();
+    let mut fixed_info_len = 0u32;
+    let ok = unsafe {
+        VerQueryValueW(
+            buffer.as_ptr().cast::<std::ffi::c_void>(),
+            sub_block.as_ptr(),
+            &mut fixed_info_ptr,
+            &mut fixed_info_len,
+        )
+    };
+    if ok == 0
+        || fixed_info_ptr.is_null()
+        || fixed_info_len < std::mem::size_of::<VS_FIXEDFILEINFO>() as u32
+    {
+        return None;
+    }
+
+    let fixed_info = unsafe { &*(fixed_info_ptr.cast::<VS_FIXEDFILEINFO>()) };
+    if fixed_info.dwSignature != 0xFEEF04BD {
+        return None;
+    }
+
+    let product =
+        fixed_file_version_text(fixed_info.dwProductVersionMS, fixed_info.dwProductVersionLS);
+    let file = fixed_file_version_text(fixed_info.dwFileVersionMS, fixed_info.dwFileVersionLS);
+    let mut versions = vec![product];
+    if versions.first() != Some(&file) {
+        versions.push(file);
+    }
+    Some(versions)
+}
+
+#[cfg(target_os = "windows")]
+fn fixed_file_version_text(ms: u32, ls: u32) -> String {
+    let major = ms >> 16;
+    let minor = ms & 0xffff;
+    let patch = ls >> 16;
+    let build = ls & 0xffff;
+    format!("{major}.{minor}.{patch}.{build}")
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn installed_version_matches_target(actual_version: &str, target_version: &str) -> bool {
+    let Some(actual) = numeric_version_prefix(actual_version) else {
+        return false;
+    };
+    let Some(target) = numeric_version_prefix(target_version) else {
+        return false;
+    };
+    if target.is_empty() {
+        return false;
+    }
+
+    target
+        .iter()
+        .enumerate()
+        .all(|(index, expected)| actual.get(index).copied().unwrap_or_default().eq(expected))
+}
+
+#[cfg(any(target_os = "windows", test))]
+fn numeric_version_prefix(version: &str) -> Option<Vec<u64>> {
+    let mut components = Vec::new();
+    let normalized = version.trim().trim_start_matches(['v', 'V']);
+    for segment in normalized.split(['.', '-', '+']) {
+        if segment.is_empty() {
+            break;
+        }
+        if !segment.bytes().all(|byte| byte.is_ascii_digit()) {
+            break;
+        }
+        components.push(segment.parse::<u64>().ok()?);
+    }
+    (!components.is_empty()).then_some(components)
 }
 
 #[cfg(target_os = "windows")]
@@ -1133,7 +1363,7 @@ fn available_disk_space(_path: &Path) -> Option<u64> {
 }
 
 #[cfg(target_os = "windows")]
-fn process_is_running(pid: u32) -> bool {
+fn process_is_running(pid: u32, _expected_target_path: Option<&Path>) -> bool {
     use windows_sys::Win32::{
         Foundation::{CloseHandle, WAIT_OBJECT_0},
         System::Threading::{OpenProcess, WaitForSingleObject, PROCESS_QUERY_LIMITED_INFORMATION},
@@ -1151,12 +1381,87 @@ fn process_is_running(pid: u32) -> bool {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn process_is_running(pid: u32) -> bool {
-    Command::new("/bin/kill")
+fn process_is_running(pid: u32, expected_target_path: Option<&Path>) -> bool {
+    let signal_ok = Command::new("/bin/kill")
         .args(["-0", &pid.to_string()])
         .status()
         .map(|status| status.success())
-        .unwrap_or(false)
+        .unwrap_or(false);
+    if !signal_ok {
+        return false;
+    }
+
+    match expected_target_path {
+        Some(expected) => unix_pid_matches_expected_target(pid, expected),
+        None => true,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn unix_pid_matches_expected_target(pid: u32, expected_target_path: &Path) -> bool {
+    let Some(expected_name) = expected_process_name(expected_target_path) else {
+        return true;
+    };
+    match unix_process_command_name(pid) {
+        Some(actual_name) => {
+            actual_name == expected_name || actual_name.ends_with(&format!("/{expected_name}"))
+        }
+        None => true,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn expected_process_name(path: &Path) -> Option<String> {
+    let executable_path = if path
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .is_some_and(|ext| ext.eq_ignore_ascii_case("app"))
+    {
+        let macos_dir = path.join("Contents").join("MacOS");
+        if let Some(executable_name) = single_child_file_name(&macos_dir) {
+            return Some(executable_name);
+        }
+        path.join("Contents").join("MacOS").join(path.file_stem()?)
+    } else {
+        path.to_path_buf()
+    };
+    executable_path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(ToOwned::to_owned)
+}
+
+#[cfg(not(target_os = "windows"))]
+fn single_child_file_name(path: &Path) -> Option<String> {
+    let mut names = fs::read_dir(path)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let file_type = entry.file_type().ok()?;
+            if !file_type.is_file() {
+                return None;
+            }
+            entry.file_name().to_str().map(ToOwned::to_owned)
+        })
+        .collect::<Vec<_>>();
+    names.sort();
+    (names.len() == 1).then(|| names.remove(0))
+}
+
+#[cfg(not(target_os = "windows"))]
+fn unix_process_command_name(pid: u32) -> Option<String> {
+    let output = Command::new("/bin/ps")
+        .args(["-p", &pid.to_string(), "-o", "comm="])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    text.lines()
+        .map(str::trim)
+        .find(|line| !line.is_empty())
+        .map(ToOwned::to_owned)
 }
 
 fn relaunch_existing_target(
@@ -1217,26 +1522,6 @@ fn persist_pending_verification_state(
         state.last_error = None;
     })?;
     write_log_line(log, "persisted install state pending relaunch verification")?;
-    Ok(())
-}
-
-fn persist_installing_state(
-    command: &UpdateHelperCommand,
-    log: &mut File,
-) -> Result<(), UpdateHelperExitCode> {
-    mutate_state_snapshot(command, log, "installing", |state| {
-        state.status = UpdateStatus::Installing;
-        state.current_version = command.current_version.clone();
-        if state.latest_version.is_none() {
-            state.latest_version = Some(command.target_version.clone());
-        }
-        state.install_log_path = Some(command.log_path.to_string_lossy().to_string());
-        state.install_mode = Some(UpdateInstallMode::Apply);
-        state.install_started_at = Some(Utc::now());
-        state.install_scheduled_at = None;
-        state.last_error = None;
-    })?;
-    write_log_line(log, "persisted installing state")?;
     Ok(())
 }
 
@@ -1321,7 +1606,13 @@ fn cleanup_applied_update(
     log: &mut File,
 ) -> Result<(), UpdateHelperExitCode> {
     if let Some(rollback) = applied_update.rollback.as_ref() {
-        cleanup_stage_root(&rollback.stage_root, log)?;
+        write_log_line(
+            log,
+            &format!(
+                "retaining macOS rollback backup after relaunch: {}",
+                rollback.stage_root.display()
+            ),
+        )?;
     }
     Ok(())
 }
@@ -1648,6 +1939,7 @@ fn install_error_code(code: UpdateHelperExitCode) -> &'static str {
         UpdateHelperExitCode::InstallerCancelled => "updateInstallInstallerCancelled",
         UpdateHelperExitCode::InstallerBusy => "updateInstallInstallerBusy",
         UpdateHelperExitCode::InstallerFatal => "updateInstallInstallerFatal",
+        UpdateHelperExitCode::InstallerVersionMismatch => "updateInstallVersionMismatch",
         UpdateHelperExitCode::Success => "updateInstallHelperFailed",
     }
 }
@@ -1672,6 +1964,7 @@ fn install_error_message(code: UpdateHelperExitCode) -> &'static str {
         UpdateHelperExitCode::InstallerCancelled => "更新安装已被取消",
         UpdateHelperExitCode::InstallerBusy => "另一个安装程序正在运行，请稍后重试",
         UpdateHelperExitCode::InstallerFatal => "更新安装程序返回了致命错误",
+        UpdateHelperExitCode::InstallerVersionMismatch => "安装完成后版本校验失败",
         UpdateHelperExitCode::Success => "更新安装助手执行失败",
     }
 }
@@ -2098,11 +2391,155 @@ mod tests {
     }
 
     #[test]
+    fn compares_installed_windows_version_to_target_version() {
+        assert!(installed_version_matches_target("1.0.5.0", "1.0.5"));
+        assert!(installed_version_matches_target("1.0.5.17", "v1.0.5"));
+        assert!(installed_version_matches_target("1.0.5.17", "1.0.5+stable"));
+        assert!(!installed_version_matches_target("1.0.4.99", "1.0.5"));
+        assert!(!installed_version_matches_target("1.0", "1.0.1"));
+        assert!(!installed_version_matches_target("unknown", "1.0.5"));
+    }
+
+    #[test]
+    fn maps_installer_version_mismatch_to_retry_install_error() {
+        assert_eq!(
+            install_error_code(UpdateHelperExitCode::InstallerVersionMismatch),
+            "updateInstallVersionMismatch"
+        );
+        assert_eq!(
+            install_error_action(UpdateHelperExitCode::InstallerVersionMismatch),
+            "retryInstall"
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn expected_process_name_uses_macos_bundle_executable() {
+        let root = temp_dir("helper-expected-process-name");
+        let bundle = root.join("花笺.app");
+        let macos_dir = bundle.join("Contents").join("MacOS");
+        fs::create_dir_all(&macos_dir).expect("create macos dir");
+        fs::write(macos_dir.join("floral-notepaper"), b"binary").expect("write binary");
+
+        assert_eq!(
+            expected_process_name(&bundle).as_deref(),
+            Some("floral-notepaper")
+        );
+        assert_eq!(
+            expected_process_name(&root.join("floral-notepaper")).as_deref(),
+            Some("floral-notepaper")
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn expected_process_name_falls_back_for_ambiguous_bundle() {
+        let root = temp_dir("helper-ambiguous-process-name");
+        let bundle = root.join("花笺.app");
+        let macos_dir = bundle.join("Contents").join("MacOS");
+        fs::create_dir_all(&macos_dir).expect("create macos dir");
+        fs::write(macos_dir.join("floral-notepaper"), b"binary").expect("write binary");
+        fs::write(macos_dir.join("helper"), b"binary").expect("write helper");
+
+        assert_eq!(expected_process_name(&bundle).as_deref(), Some("花笺"));
+    }
+
+    #[test]
     fn completion_marker_uses_ready_marker_stem() {
         let root = temp_dir("helper-completion-marker");
         let command = helper_command(&root);
 
         assert_eq!(completion_marker_path(&command), root.join("helper.done"));
+        assert_eq!(
+            relaunch_marker_path(&command),
+            root.join("helper.relaunching")
+        );
+    }
+
+    #[test]
+    fn watchdog_handoff_marker_does_not_mark_install_failed() {
+        let root = temp_dir("helper-watchdog-relaunch-handoff");
+        let mut command = helper_command(&root);
+        command.mode = UpdateHelperMode::Watchdog;
+        command.target_path = root.join("missing-target.app");
+        let installing_state = UpdateStateDto {
+            status: UpdateStatus::Installing,
+            latest_version: Some(command.target_version.clone()),
+            asset_path: Some(command.asset_path.to_string_lossy().to_string()),
+            asset_sha256: Some(command.asset_sha256.clone()),
+            asset_size: Some(command.asset_size),
+            install_log_path: Some(command.log_path.to_string_lossy().to_string()),
+            ..UpdateStateDto::idle_with_version(command.current_version.clone())
+        };
+        write_json_atomic(&command.state_path, &installing_state).expect("write state");
+        let mut log = open_log(&command.log_path).expect("open log");
+        write_relaunch_marker(&command, &mut log).expect("write relaunch marker");
+
+        let action =
+            watchdog_post_exit_action(&command, &mut log).expect("resolve watchdog action");
+
+        let saved_state: UpdateStateDto =
+            serde_json::from_str(&fs::read_to_string(&command.state_path).expect("read state"))
+                .expect("parse state");
+        assert_eq!(action, WatchdogPostExitAction::RelaunchWithoutFailure);
+        assert_eq!(saved_state.status, UpdateStatus::Installing);
+        assert!(saved_state.last_error.is_none());
+    }
+
+    #[test]
+    fn watchdog_completion_marker_skips_failure_recovery() {
+        let root = temp_dir("helper-watchdog-completion-marker");
+        let mut command = helper_command(&root);
+        command.mode = UpdateHelperMode::Watchdog;
+        let state = UpdateStateDto {
+            status: UpdateStatus::Failed,
+            latest_version: Some(command.target_version.clone()),
+            last_error: Some(UpdateErrorDto::recoverable(
+                install_error_code(UpdateHelperExitCode::WaitTimedOut),
+                install_error_message(UpdateHelperExitCode::WaitTimedOut),
+                Some(install_error_action(UpdateHelperExitCode::WaitTimedOut).into()),
+            )),
+            ..UpdateStateDto::idle_with_version(command.current_version.clone())
+        };
+        write_json_atomic(&command.state_path, &state).expect("write state");
+        let mut log = open_log(&command.log_path).expect("open log");
+        write_completion_marker(&command, &mut log).expect("write completion marker");
+
+        let action =
+            watchdog_post_exit_action(&command, &mut log).expect("resolve watchdog action");
+
+        let saved_state: UpdateStateDto =
+            serde_json::from_str(&fs::read_to_string(&command.state_path).expect("read state"))
+                .expect("parse state");
+        assert_eq!(action, WatchdogPostExitAction::Noop);
+        assert_eq!(
+            saved_state
+                .last_error
+                .as_ref()
+                .map(|error| error.code.as_str()),
+            Some("updateInstallWaitTimedOut")
+        );
+    }
+
+    #[test]
+    fn cleanup_applied_update_retains_macos_rollback_stage() {
+        let root = temp_dir("helper-retain-rollback-stage");
+        let stage_root = root.join(".floral-notepaper-update-stage-test");
+        let backup_path = stage_root.join("backup.app");
+        fs::create_dir_all(&backup_path).expect("create rollback backup");
+        let applied_update = AppliedUpdate {
+            launch_target: root.join("target.app"),
+            rollback: Some(MacosRollbackPlan {
+                target_path: root.join("target.app"),
+                backup_path,
+                stage_root: stage_root.clone(),
+            }),
+        };
+        let mut log = open_log(&root.join("cleanup.log")).expect("open log");
+
+        cleanup_applied_update(&applied_update, &mut log).expect("cleanup applied update");
+
+        assert!(stage_root.exists());
     }
 
     #[test]

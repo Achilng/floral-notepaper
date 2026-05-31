@@ -99,7 +99,7 @@ impl UpdateDownloadService {
         current_state: UpdateStateDto,
         source: Option<DownloadSourceUsed>,
         cancel_flag: Arc<AtomicBool>,
-        emit_progress: F,
+        mut emit_progress: F,
     ) -> Result<UpdateDownloadResult, AppError>
     where
         F: FnMut(UpdateDownloadProgressDto),
@@ -108,70 +108,85 @@ impl UpdateDownloadService {
             state::save(paths, &failed_state_without_plan(&current_state, &error))?;
             return Err(error);
         }
-        let plan = match self.resolve_plan(paths, &current_state, source) {
-            Ok(plan) => plan,
+        let primary_source = selected_download_source(&current_state, source);
+        let primary_plan =
+            match self.resolve_plan_for_source(paths, &current_state, &primary_source) {
+                Ok(plan) => plan,
+                Err(error) => {
+                    if should_try_github_fallback(&primary_source, &error, &cancel_flag) {
+                        match self.resolve_plan_for_source(
+                            paths,
+                            &current_state,
+                            &DownloadSourceUsed::Github,
+                        ) {
+                            Ok(fallback_plan) => {
+                                return self
+                                    .download_with_persisted_plan(
+                                        paths,
+                                        &current_state,
+                                        &fallback_plan,
+                                        cancel_flag,
+                                        &mut emit_progress,
+                                    )
+                                    .inspect_err(|fallback_error| {
+                                        let _ = state::save(
+                                            paths,
+                                            &failed_state(
+                                                &current_state,
+                                                &fallback_plan,
+                                                fallback_error,
+                                            ),
+                                        );
+                                    });
+                            }
+                            Err(_) => {
+                                state::save(
+                                    paths,
+                                    &failed_state_without_plan(&current_state, &error),
+                                )?;
+                                return Err(error);
+                            }
+                        }
+                    }
+
+                    state::save(paths, &failed_state_without_plan(&current_state, &error))?;
+                    return Err(error);
+                }
+            };
+
+        match self.download_with_persisted_plan(
+            paths,
+            &current_state,
+            &primary_plan,
+            Arc::clone(&cancel_flag),
+            &mut emit_progress,
+        ) {
+            Ok(result) => Ok(result),
             Err(error) => {
-                state::save(paths, &failed_state_without_plan(&current_state, &error))?;
-                return Err(error);
-            }
-        };
+                if should_try_github_fallback(&primary_plan.source, &error, &cancel_flag) {
+                    if let Ok(fallback_plan) = self.resolve_plan_for_source(
+                        paths,
+                        &current_state,
+                        &DownloadSourceUsed::Github,
+                    ) {
+                        return self
+                            .download_with_persisted_plan(
+                                paths,
+                                &current_state,
+                                &fallback_plan,
+                                cancel_flag,
+                                &mut emit_progress,
+                            )
+                            .inspect_err(|fallback_error| {
+                                let _ = state::save(
+                                    paths,
+                                    &failed_state(&current_state, &fallback_plan, fallback_error),
+                                );
+                            });
+                    }
+                }
 
-        let downloading_state = UpdateStateDto {
-            status: UpdateStatus::Downloading,
-            current_version: current_state.current_version.clone(),
-            latest_version: Some(plan.version.clone()),
-            channel: current_state.channel.clone(),
-            asset_name: Some(plan.asset_name.clone()),
-            asset_path: None,
-            asset_sha256: plan.asset_sha256.clone(),
-            asset_size: Some(plan.asset_size),
-            asset_url: current_state.asset_url.clone(),
-            source: Some(plan.source.clone()),
-            checked_at: current_state.checked_at,
-            downloaded_at: None,
-            install_log_path: None,
-            install_mode: None,
-            install_started_at: None,
-            install_scheduled_at: None,
-            last_error: None,
-        };
-        state::save(paths, &downloading_state)?;
-
-        match self.download_with_plan(&plan, cancel_flag, emit_progress) {
-            Ok((asset_path, computed_sha256)) => {
-                let asset_path_text = asset_path.to_string_lossy().to_string();
-                let sha256_to_store = plan.asset_sha256.clone().or(computed_sha256);
-                let downloaded_state = UpdateStateDto {
-                    status: UpdateStatus::Downloaded,
-                    current_version: current_state.current_version,
-                    latest_version: Some(plan.version.clone()),
-                    channel: current_state.channel,
-                    asset_name: Some(plan.asset_name.clone()),
-                    asset_path: Some(asset_path_text.clone()),
-                    asset_sha256: sha256_to_store,
-                    asset_size: Some(plan.asset_size),
-                    asset_url: current_state.asset_url.clone(),
-                    source: Some(plan.source.clone()),
-                    checked_at: downloading_state.checked_at,
-                    downloaded_at: Some(Utc::now()),
-                    install_log_path: None,
-                    install_mode: None,
-                    install_started_at: None,
-                    install_scheduled_at: None,
-                    last_error: None,
-                };
-                state::save(paths, &downloaded_state)?;
-
-                Ok(UpdateDownloadResult {
-                    status: UpdateStatus::Downloaded,
-                    version: Some(plan.version),
-                    asset_path: Some(asset_path_text),
-                    source: Some(plan.source),
-                })
-            }
-            Err(error) => {
-                let _ = remove_file_if_exists(&plan.part_path);
-                state::save(paths, &failed_state(&current_state, &plan, &error))?;
+                state::save(paths, &failed_state(&current_state, &primary_plan, &error))?;
                 Err(error)
             }
         }
@@ -183,11 +198,11 @@ impl UpdateDownloadService {
             .unwrap_or_else(platform::current_platform)
     }
 
-    fn resolve_plan(
+    fn resolve_plan_for_source(
         &self,
         paths: &UpdatePaths,
         current_state: &UpdateStateDto,
-        requested_source: Option<DownloadSourceUsed>,
+        source: &DownloadSourceUsed,
     ) -> Result<DownloadPlan, AppError> {
         let version = current_state
             .latest_version
@@ -201,11 +216,11 @@ impl UpdateDownloadService {
             .asset_size
             .ok_or_else(|| errors::app_error("updateDownloadNotReady", "当前没有可下载的更新包"))?;
 
-        let source = requested_source
-            .or_else(|| current_state.source.clone())
-            .unwrap_or(DownloadSourceUsed::Github);
-
-        if let Some(direct_url) = &current_state.asset_url {
+        if let Some(direct_url) = current_state
+            .asset_url
+            .as_deref()
+            .filter(|url| direct_url_matches_source(url, source))
+        {
             return self.resolve_direct_plan(
                 paths,
                 &version,
@@ -213,7 +228,7 @@ impl UpdateDownloadService {
                 current_state.asset_sha256.clone(),
                 asset_size,
                 direct_url,
-                &source,
+                source,
             );
         }
 
@@ -222,11 +237,12 @@ impl UpdateDownloadService {
                 paths,
                 &version,
                 &asset_name,
-                &current_state.asset_sha256.clone().unwrap_or_default(),
+                current_state.asset_sha256.as_deref(),
                 asset_size,
             ),
             DownloadSourceUsed::Mirror => self.resolve_mirror_plan(
                 paths,
+                &current_state.current_version,
                 &version,
                 &asset_name,
                 current_state.asset_sha256.clone(),
@@ -273,15 +289,43 @@ impl UpdateDownloadService {
         paths: &UpdatePaths,
         version: &str,
         asset_name: &str,
-        asset_sha256: &str,
+        asset_sha256: Option<&str>,
         asset_size: u64,
     ) -> Result<DownloadPlan, AppError> {
-        let manifest_path = self.github_manifest_path.as_ref().ok_or_else(|| {
-            errors::app_error(
-                "updateDownloadManifestUnavailable",
-                "当前阶段未配置 GitHub 更新清单，无法下载更新包",
-            )
-        })?;
+        if self.github_manifest_path.is_none() {
+            let platform = self.current_platform();
+            let info = super::check::fetch_github_download_info(
+                &platform,
+                version,
+                asset_name,
+                (asset_size > 0).then_some(asset_size),
+            )?;
+            let url = validate_download_url(
+                &info.url,
+                DownloadValidationOptions {
+                    allow_insecure_localhost: self.allow_insecure_localhost,
+                },
+            )?;
+            let version_dir = paths.downloads_dir().join(version);
+            let final_path = version_dir.join(&info.asset_name);
+            let part_path = version_dir.join(format!("{}.part", info.asset_name));
+
+            return Ok(DownloadPlan {
+                version: version.to_string(),
+                asset_name: info.asset_name,
+                asset_sha256: asset_sha256.map(ToOwned::to_owned),
+                asset_size: info.asset_size,
+                source: DownloadSourceUsed::Github,
+                url,
+                final_path,
+                part_path,
+            });
+        }
+
+        let manifest_path = self
+            .github_manifest_path
+            .as_ref()
+            .expect("manifest path checked above");
         let manifest_bytes = fs::read(manifest_path).map_err(|error| {
             let error = errors::app_error(
                 "updateDownloadManifestUnreadable",
@@ -316,7 +360,9 @@ impl UpdateDownloadService {
                 )
             })?;
 
-        if asset.sha256 != asset_sha256 || asset.size != asset_size {
+        if asset_sha256.is_some_and(|expected| asset.sha256 != expected)
+            || (asset_size > 0 && asset.size != asset_size)
+        {
             return Err(errors::with_detail(
                 errors::app_error(
                     "updateDownloadAssetMismatch",
@@ -340,8 +386,16 @@ impl UpdateDownloadService {
         Ok(DownloadPlan {
             version: version.to_string(),
             asset_name: asset_name.to_string(),
-            asset_sha256: Some(asset_sha256.to_string()),
-            asset_size,
+            asset_sha256: Some(
+                asset_sha256
+                    .map(ToOwned::to_owned)
+                    .unwrap_or_else(|| asset.sha256.clone()),
+            ),
+            asset_size: if asset_size > 0 {
+                asset_size
+            } else {
+                asset.size
+            },
             source: DownloadSourceUsed::Github,
             url,
             final_path,
@@ -352,14 +406,18 @@ impl UpdateDownloadService {
     fn resolve_mirror_plan(
         &self,
         paths: &UpdatePaths,
+        current_version: &str,
         version: &str,
         asset_name: &str,
         asset_sha256: Option<String>,
         asset_size: u64,
     ) -> Result<DownloadPlan, AppError> {
         let platform = self.current_platform();
-        let info =
-            super::check::fetch_mirror_download_url(&platform, version, self.cdk.as_deref())?;
+        let info = super::check::fetch_mirror_download_url(
+            &platform,
+            current_version,
+            self.cdk.as_deref(),
+        )?;
 
         let url = validate_download_url(
             &info.url,
@@ -381,6 +439,82 @@ impl UpdateDownloadService {
             final_path,
             part_path,
         })
+    }
+
+    fn download_with_persisted_plan<F>(
+        &self,
+        paths: &UpdatePaths,
+        current_state: &UpdateStateDto,
+        plan: &DownloadPlan,
+        cancel_flag: Arc<AtomicBool>,
+        emit_progress: &mut F,
+    ) -> Result<UpdateDownloadResult, AppError>
+    where
+        F: FnMut(UpdateDownloadProgressDto),
+    {
+        let persisted_asset_url = current_state
+            .asset_url
+            .as_deref()
+            .filter(|url| direct_url_matches_source(url, &plan.source))
+            .map(ToOwned::to_owned);
+        let downloading_state = UpdateStateDto {
+            status: UpdateStatus::Downloading,
+            current_version: current_state.current_version.clone(),
+            latest_version: Some(plan.version.clone()),
+            channel: current_state.channel.clone(),
+            asset_name: Some(plan.asset_name.clone()),
+            asset_path: None,
+            asset_sha256: plan.asset_sha256.clone(),
+            asset_size: Some(plan.asset_size),
+            asset_url: persisted_asset_url.clone(),
+            source: Some(plan.source.clone()),
+            checked_at: current_state.checked_at,
+            downloaded_at: None,
+            install_log_path: None,
+            install_mode: None,
+            install_started_at: None,
+            install_scheduled_at: None,
+            last_error: None,
+        };
+        state::save(paths, &downloading_state)?;
+
+        match self.download_with_plan(plan, cancel_flag, emit_progress) {
+            Ok((asset_path, computed_sha256)) => {
+                let asset_path_text = asset_path.to_string_lossy().to_string();
+                let sha256_to_store = plan.asset_sha256.clone().or(computed_sha256);
+                let downloaded_state = UpdateStateDto {
+                    status: UpdateStatus::Downloaded,
+                    current_version: current_state.current_version.clone(),
+                    latest_version: Some(plan.version.clone()),
+                    channel: current_state.channel.clone(),
+                    asset_name: Some(plan.asset_name.clone()),
+                    asset_path: Some(asset_path_text.clone()),
+                    asset_sha256: sha256_to_store,
+                    asset_size: Some(plan.asset_size),
+                    asset_url: persisted_asset_url,
+                    source: Some(plan.source.clone()),
+                    checked_at: downloading_state.checked_at,
+                    downloaded_at: Some(Utc::now()),
+                    install_log_path: None,
+                    install_mode: None,
+                    install_started_at: None,
+                    install_scheduled_at: None,
+                    last_error: None,
+                };
+                state::save(paths, &downloaded_state)?;
+
+                Ok(UpdateDownloadResult {
+                    status: UpdateStatus::Downloaded,
+                    version: Some(plan.version.clone()),
+                    asset_path: Some(asset_path_text),
+                    source: Some(plan.source.clone()),
+                })
+            }
+            Err(error) => {
+                let _ = remove_file_if_exists(&plan.part_path);
+                Err(error)
+            }
+        }
     }
 
     fn download_with_plan<F>(
@@ -620,6 +754,52 @@ fn is_host_allowed(host: &str, allow_insecure_localhost: bool) -> bool {
 
 fn is_localhost(host: &str) -> bool {
     matches!(host, "127.0.0.1" | "localhost" | "::1")
+}
+
+fn selected_download_source(
+    current_state: &UpdateStateDto,
+    requested_source: Option<DownloadSourceUsed>,
+) -> DownloadSourceUsed {
+    requested_source
+        .or_else(|| current_state.source.clone())
+        .unwrap_or(DownloadSourceUsed::Github)
+}
+
+fn direct_url_matches_source(raw_url: &str, source: &DownloadSourceUsed) -> bool {
+    let Ok(url) = Url::parse(raw_url) else {
+        return false;
+    };
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+
+    match source {
+        DownloadSourceUsed::Mirror => is_mirror_download_host(host),
+        DownloadSourceUsed::Github => is_github_download_host(host),
+    }
+}
+
+fn is_mirror_download_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    host == "mirrorchyan.com" || host == "www.mirrorchyan.com" || host.ends_with(".mirrorchyan.com")
+}
+
+fn is_github_download_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    host == "github.com"
+        || host == "objects.githubusercontent.com"
+        || host == "release-assets.githubusercontent.com"
+        || host.ends_with(".github.com")
+}
+
+fn should_try_github_fallback(
+    source: &DownloadSourceUsed,
+    error: &AppError,
+    cancel_flag: &Arc<AtomicBool>,
+) -> bool {
+    *source == DownloadSourceUsed::Mirror
+        && error.code != "updateDownloadCancelled"
+        && !cancel_flag.load(Ordering::Relaxed)
 }
 
 fn sanitize_url(url: &Url) -> String {
@@ -1141,6 +1321,156 @@ mod tests {
             saved_state.asset_path.as_deref(),
             Some(final_path.to_string_lossy().as_ref())
         );
+    }
+
+    #[test]
+    fn github_plan_ignores_mirror_direct_url_from_state() {
+        let paths = test_paths("download-github-plan-ignores-mirror-url");
+        let asset_name = "asset.zip";
+        let body = b"payload";
+        let sha256 = format!("{:x}", Sha256::digest(body));
+        let manifest_path = paths.root_dir().join("manifest.json");
+        let manifest = format!(
+            r#"{{
+  "schemaVersion": 1,
+  "appId": "com.floral-notepaper.app",
+  "productName": "花笺",
+  "channel": "stable",
+  "version": "1.0.5",
+  "tag": "v1.0.5",
+  "publishedAt": "2026-05-26T12:00:00Z",
+  "assets": [
+    {{
+      "os": "macos",
+      "arch": "aarch64",
+      "kind": "app_zip",
+      "name": "{asset_name}",
+      "sha256": "{sha256}",
+      "size": {size},
+      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/{asset_name}",
+      "mirrorUrl": "https://mirrorchyan.com/resources/download/floral-notepaper-1.0.5-macos-aarch64"
+    }}
+  ]
+}}"#,
+            sha256 = sha256,
+            size = body.len()
+        );
+        fs::create_dir_all(paths.root_dir()).expect("create root");
+        fs::write(&manifest_path, manifest).expect("write manifest");
+
+        let service = UpdateDownloadService {
+            github_manifest_path: Some(manifest_path),
+            allow_insecure_localhost: false,
+            platform_override: Some(test_platform(
+                Os::Macos,
+                Arch::Aarch64,
+                InstallKind::MacosAppBundle,
+            )),
+            cdk: None,
+        };
+        let mut current_state = available_state(asset_name, body);
+        current_state.source = Some(DownloadSourceUsed::Github);
+        current_state.asset_url =
+            Some("https://mirrorchyan.com/resources/download/floral-notepaper-1.0.5".into());
+
+        let plan = service
+            .resolve_plan_for_source(&paths, &current_state, &DownloadSourceUsed::Github)
+            .expect("github plan should come from manifest, not mirror direct url");
+
+        assert_eq!(plan.source, DownloadSourceUsed::Github);
+        assert_eq!(plan.url.host_str(), Some("github.com"));
+    }
+
+    #[test]
+    fn mirror_resolution_failure_falls_back_to_existing_github_download() {
+        let paths = test_paths("download-mirror-fallback-github-existing");
+        let asset_name = "asset.zip";
+        let body = b"fallback payload";
+        let sha256 = format!("{:x}", Sha256::digest(body));
+        let manifest_path = paths.root_dir().join("manifest.json");
+        let manifest = format!(
+            r#"{{
+  "schemaVersion": 1,
+  "appId": "com.floral-notepaper.app",
+  "productName": "花笺",
+  "channel": "stable",
+  "version": "1.0.5",
+  "tag": "v1.0.5",
+  "publishedAt": "2026-05-26T12:00:00Z",
+  "assets": [
+    {{
+      "os": "macos",
+      "arch": "aarch64",
+      "kind": "app_zip",
+      "name": "{asset_name}",
+      "sha256": "{sha256}",
+      "size": {size},
+      "githubUrl": "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/{asset_name}"
+    }}
+  ]
+}}"#,
+            sha256 = sha256,
+            size = body.len()
+        );
+        fs::create_dir_all(paths.root_dir()).expect("create root");
+        fs::write(&manifest_path, manifest).expect("write manifest");
+        let final_path = paths.downloads_dir().join("1.0.5").join(asset_name);
+        fs::create_dir_all(final_path.parent().expect("download dir")).expect("create dir");
+        fs::write(&final_path, body).expect("write existing github asset");
+
+        let service = UpdateDownloadService {
+            github_manifest_path: Some(manifest_path),
+            allow_insecure_localhost: false,
+            platform_override: Some(test_platform(
+                Os::Macos,
+                Arch::Aarch64,
+                InstallKind::MacosAppBundle,
+            )),
+            cdk: None,
+        };
+        let mut current_state = available_state(asset_name, body);
+        current_state.source = Some(DownloadSourceUsed::Mirror);
+        current_state.asset_url = Some("ftp://mirrorchyan.com/resources/download/bad".into());
+
+        let result = service
+            .run(
+                &paths,
+                current_state,
+                None,
+                Arc::new(AtomicBool::new(false)),
+                |_| {},
+            )
+            .expect("mirror failure should fall back to existing github asset");
+
+        assert_eq!(result.status, UpdateStatus::Downloaded);
+        assert_eq!(result.source, Some(DownloadSourceUsed::Github));
+        let saved_state = state::load(&paths).expect("load saved state");
+        assert_eq!(saved_state.status, UpdateStatus::Downloaded);
+        assert_eq!(saved_state.source, Some(DownloadSourceUsed::Github));
+        assert_eq!(
+            saved_state.asset_path.as_deref(),
+            Some(final_path.to_string_lossy().as_ref())
+        );
+    }
+
+    #[test]
+    fn direct_url_source_detection_distinguishes_hosts() {
+        assert!(direct_url_matches_source(
+            "https://mirrorchyan.com/resources/download/floral",
+            &DownloadSourceUsed::Mirror
+        ));
+        assert!(!direct_url_matches_source(
+            "https://mirrorchyan.com/resources/download/floral",
+            &DownloadSourceUsed::Github
+        ));
+        assert!(direct_url_matches_source(
+            "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/asset.zip",
+            &DownloadSourceUsed::Github
+        ));
+        assert!(!direct_url_matches_source(
+            "https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/asset.zip",
+            &DownloadSourceUsed::Mirror
+        ));
     }
 
     #[test]

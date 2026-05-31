@@ -53,14 +53,29 @@ struct UpdateCandidate {
     asset_sha256: Option<String>,
     asset_size: u64,
     asset_url: Option<String>,
+    mirror_asset_url: Option<String>,
+    github_asset_url: Option<String>,
     can_download_from_mirror: bool,
     can_download_from_github: bool,
+}
+
+impl UpdateCandidate {
+    fn asset_url_for_source(&self, source: Option<&DownloadSourceUsed>) -> Option<String> {
+        match source {
+            Some(DownloadSourceUsed::Mirror) => self.mirror_asset_url.clone(),
+            Some(DownloadSourceUsed::Github) => self.github_asset_url.clone(),
+            None => None,
+        }
+        .or_else(|| self.asset_url.clone())
+        .or_else(|| self.github_asset_url.clone())
+        .or_else(|| self.mirror_asset_url.clone())
+    }
 }
 
 #[derive(Debug, Clone)]
 enum ProviderCheck {
     NotAvailable,
-    Available(UpdateCandidate),
+    Available(Box<UpdateCandidate>),
 }
 
 trait UpdateCheckProvider {
@@ -209,7 +224,7 @@ impl UpdateCheckService {
     pub(crate) fn run(
         &self,
         paths: &UpdatePaths,
-        manual: bool,
+        _manual: bool,
         current_version: &str,
     ) -> Result<UpdateCheckResult, AppError> {
         let settings = settings::load(paths)?;
@@ -224,9 +239,7 @@ impl UpdateCheckService {
             previous_state,
         };
         if let Err(error) = context.platform.ensure_in_app_updates_supported() {
-            if !manual {
-                persist_last_auto_check_at(paths, &settings)?;
-            }
+            persist_last_auto_check_at(paths, &settings)?;
             state::save(paths, &failed_state(&context, &settings, &error))?;
             return Err(error);
         }
@@ -234,16 +247,12 @@ impl UpdateCheckService {
         let outcome = self.evaluate(&settings, &context);
         match outcome {
             Ok((result, next_state)) => {
-                if !manual {
-                    persist_last_auto_check_at(paths, &settings)?;
-                }
+                persist_last_auto_check_at(paths, &settings)?;
                 state::save(paths, &next_state)?;
                 Ok(result)
             }
             Err(error) => {
-                if !manual {
-                    persist_last_auto_check_at(paths, &settings)?;
-                }
+                persist_last_auto_check_at(paths, &settings)?;
                 state::save(paths, &failed_state(&context, &settings, &error))?;
                 Err(error)
             }
@@ -295,7 +304,7 @@ impl UpdateCheckService {
             };
 
             match provider_result {
-                Ok(ProviderCheck::Available(candidate)) => available.push(candidate),
+                Ok(ProviderCheck::Available(candidate)) => available.push(*candidate),
                 Ok(ProviderCheck::NotAvailable) => saw_not_available = true,
                 Err(error) => provider_errors.push(error),
             }
@@ -307,6 +316,7 @@ impl UpdateCheckService {
                 candidate.can_download_from_mirror,
                 candidate.can_download_from_github,
             );
+            let asset_url = candidate.asset_url_for_source(recommended_source.as_ref());
             let result = UpdateCheckResult {
                 status: UpdateCheckStatus::Available,
                 current_version: context.current_version_text(),
@@ -316,7 +326,7 @@ impl UpdateCheckService {
                 can_download_from_mirror: candidate.can_download_from_mirror,
                 can_download_from_github: candidate.can_download_from_github,
                 recommended_source: recommended_source.clone(),
-                asset_url: candidate.asset_url.clone(),
+                asset_url: asset_url.clone(),
             };
             let next_state = UpdateStateDto {
                 status: UpdateStatus::Available,
@@ -327,7 +337,7 @@ impl UpdateCheckService {
                 asset_path: None,
                 asset_sha256: candidate.asset_sha256,
                 asset_size: Some(candidate.asset_size),
-                asset_url: candidate.asset_url,
+                asset_url,
                 source: recommended_source,
                 checked_at: Some(Utc::now()),
                 downloaded_at: None,
@@ -518,8 +528,9 @@ fn check_mirror_api(
         return Ok(ProviderCheck::NotAvailable);
     }
 
-    let has_url = data.url.is_some();
-    Ok(ProviderCheck::Available(UpdateCandidate {
+    let mirror_asset_url = data.url;
+    let has_url = mirror_asset_url.is_some();
+    Ok(ProviderCheck::Available(Box::new(UpdateCandidate {
         priority,
         version: version_str.to_string(),
         normalized_version,
@@ -528,10 +539,12 @@ fn check_mirror_api(
         asset_name: format!("floral-notepaper_{version_str}_{os}_{arch}.zip"),
         asset_sha256: None,
         asset_size: 0,
-        asset_url: data.url,
+        asset_url: mirror_asset_url.clone(),
+        mirror_asset_url,
+        github_asset_url: None,
         can_download_from_mirror: has_url,
         can_download_from_github: false,
-    }))
+    })))
 }
 
 #[derive(Debug, Clone)]
@@ -635,10 +648,7 @@ struct GithubApiRelease {
     assets: Vec<GithubApiAsset>,
 }
 
-fn check_github_api(
-    context: &UpdateCheckContext,
-    priority: usize,
-) -> Result<ProviderCheck, AppError> {
+fn fetch_latest_github_release() -> Result<GithubApiRelease, AppError> {
     let repo = github_repo();
     let url = format!("https://api.github.com/repos/{repo}/releases/latest");
 
@@ -665,8 +675,83 @@ fn check_github_api(
     let body = response
         .text()
         .map_err(|error| errors::github_api_error(format!("响应读取失败：{error}")))?;
-    let release: GithubApiRelease = serde_json::from_str(&body)
-        .map_err(|error| errors::github_api_error(format!("响应解析失败：{error}")))?;
+    serde_json::from_str(&body)
+        .map_err(|error| errors::github_api_error(format!("响应解析失败：{error}")))
+}
+
+pub(crate) struct GithubDownloadInfo {
+    pub asset_name: String,
+    pub asset_size: u64,
+    pub url: String,
+}
+
+pub(crate) fn fetch_github_download_info(
+    platform: &PlatformInfo,
+    version: &str,
+    asset_name: &str,
+    expected_size: Option<u64>,
+) -> Result<GithubDownloadInfo, AppError> {
+    let release = fetch_latest_github_release()?;
+    let release_version = release
+        .tag_name
+        .trim_start_matches('v')
+        .trim_start_matches('V');
+    if version::normalize_version(release_version)? != version::normalize_version(version)? {
+        return Err(errors::with_detail(
+            errors::app_error(
+                "updateDownloadVersionMismatch",
+                "GitHub 最新 Release 与当前待下载版本不一致",
+            ),
+            "expectedVersion",
+            version,
+        ));
+    }
+
+    let matched = release
+        .assets
+        .iter()
+        .find(|asset| asset.name == asset_name)
+        .or_else(|| {
+            release.assets.iter().find(|asset| {
+                platform::infer_asset_from_filename(
+                    &asset.name,
+                    &asset.browser_download_url,
+                    asset.size,
+                )
+                .is_some_and(|inferred| {
+                    inferred.os == platform.os
+                        && inferred.arch == platform.arch
+                        && matches_install_kind(&inferred.kind, &platform.install_kind)
+                })
+            })
+        })
+        .ok_or_else(|| {
+            errors::with_detail(errors::manifest_asset_not_found(), "assetName", asset_name)
+        })?;
+
+    if expected_size.is_some_and(|size| size > 0 && matched.size != size) {
+        return Err(errors::with_detail(
+            errors::app_error(
+                "updateDownloadAssetMismatch",
+                "GitHub Release 中的更新包元数据与已检查结果不一致",
+            ),
+            "assetName",
+            asset_name,
+        ));
+    }
+
+    Ok(GithubDownloadInfo {
+        asset_name: matched.name.clone(),
+        asset_size: matched.size,
+        url: matched.browser_download_url.clone(),
+    })
+}
+
+fn check_github_api(
+    context: &UpdateCheckContext,
+    priority: usize,
+) -> Result<ProviderCheck, AppError> {
+    let release = fetch_latest_github_release()?;
 
     let version_str = release
         .tag_name
@@ -713,7 +798,7 @@ fn check_github_api(
         )
     })?;
 
-    Ok(ProviderCheck::Available(UpdateCandidate {
+    Ok(ProviderCheck::Available(Box::new(UpdateCandidate {
         priority,
         version: version_str.to_string(),
         normalized_version,
@@ -722,10 +807,12 @@ fn check_github_api(
         asset_name: matched.name,
         asset_sha256: None,
         asset_size: matched.size,
-        asset_url: Some(matched.url),
+        asset_url: Some(matched.url.clone()),
+        mirror_asset_url: None,
+        github_asset_url: Some(matched.url),
         can_download_from_mirror: false,
         can_download_from_github: true,
-    }))
+    })))
 }
 
 fn matches_install_kind(
@@ -786,18 +873,19 @@ fn load_manifest_candidate(
         return Ok(ProviderCheck::NotAvailable);
     }
 
-    let has_mirror_url = asset.mirror_url.is_some();
-    let has_github_url = !asset.github_url.trim().is_empty();
+    let mirror_asset_url = asset.mirror_url.clone();
+    let github_asset_url = (!asset.github_url.trim().is_empty()).then(|| asset.github_url.clone());
+    let has_mirror_url = mirror_asset_url.is_some();
+    let has_github_url = github_asset_url.is_some();
     let asset_url = if is_mirror_provider {
-        asset
-            .mirror_url
+        mirror_asset_url
             .clone()
-            .or_else(|| Some(asset.github_url.clone()))
+            .or_else(|| github_asset_url.clone())
     } else {
-        Some(asset.github_url.clone())
+        github_asset_url.clone()
     };
 
-    Ok(ProviderCheck::Available(UpdateCandidate {
+    Ok(ProviderCheck::Available(Box::new(UpdateCandidate {
         priority,
         version: manifest.version.clone(),
         normalized_version: candidate_version,
@@ -807,9 +895,11 @@ fn load_manifest_candidate(
         asset_sha256: Some(asset.sha256),
         asset_size: asset.size,
         asset_url,
+        mirror_asset_url,
+        github_asset_url,
         can_download_from_mirror: has_mirror_url,
         can_download_from_github: has_github_url,
-    }))
+    })))
 }
 
 fn check_provider_order(preference: &CheckSourcePreference) -> Vec<DownloadSourceUsed> {
@@ -843,15 +933,43 @@ fn merge_candidates(mut candidates: Vec<UpdateCandidate>) -> Option<UpdateCandid
     matching_candidates.sort_by_key(|candidate| candidate.priority);
 
     let mut primary = matching_candidates.remove(0);
-    primary.can_download_from_mirror |= matching_candidates
+    let fallback_candidates = matching_candidates;
+
+    primary.can_download_from_mirror |= fallback_candidates
         .iter()
         .any(|candidate| candidate.can_download_from_mirror);
-    primary.can_download_from_github |= matching_candidates
+    primary.can_download_from_github |= fallback_candidates
         .iter()
         .any(|candidate| candidate.can_download_from_github);
-    primary.mandatory |= matching_candidates
+    primary.mandatory |= fallback_candidates
         .iter()
         .any(|candidate| candidate.mandatory);
+
+    if primary.mirror_asset_url.is_none() {
+        primary.mirror_asset_url = fallback_candidates
+            .iter()
+            .find_map(|candidate| candidate.mirror_asset_url.clone());
+    }
+    if primary.github_asset_url.is_none() {
+        primary.github_asset_url = fallback_candidates
+            .iter()
+            .find_map(|candidate| candidate.github_asset_url.clone());
+    }
+    if primary.asset_sha256.is_none() {
+        primary.asset_sha256 = fallback_candidates
+            .iter()
+            .find_map(|candidate| candidate.asset_sha256.clone());
+    }
+    if primary.asset_size == 0 {
+        if let Some(candidate) = fallback_candidates
+            .iter()
+            .find(|candidate| candidate.asset_size > 0)
+        {
+            primary.asset_size = candidate.asset_size;
+            primary.asset_name = candidate.asset_name.clone();
+        }
+    }
+
     if primary
         .release_notes
         .as_deref()
@@ -859,9 +977,10 @@ fn merge_candidates(mut candidates: Vec<UpdateCandidate>) -> Option<UpdateCandid
         .trim()
         .is_empty()
     {
-        primary.release_notes = matching_candidates.into_iter().find_map(|candidate| {
+        primary.release_notes = fallback_candidates.iter().find_map(|candidate| {
             candidate
                 .release_notes
+                .clone()
                 .filter(|notes| !notes.trim().is_empty())
         });
     }
@@ -1129,6 +1248,97 @@ mod tests {
 
         assert!(result.asset_url.is_some());
         assert!(next_state.asset_url.is_some());
+    }
+
+    #[test]
+    fn stores_asset_url_for_recommended_download_source() {
+        let paths = test_paths("check-recommended-source-url");
+        let mirror_manifest = write_manifest(&paths, "mirror.json", "1.0.5");
+        let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
+        let service = UpdateCheckService::with_providers(
+            MirrorProvider::with_manifest_path(mirror_manifest),
+            GithubProvider::with_manifest_path(github_manifest),
+        );
+        let mut settings = test_settings(CheckSourcePreference::GithubFirst);
+        settings.download_source_preference = DownloadSourcePreference::MirrorFirst;
+
+        let (result, next_state) = service
+            .evaluate(&settings, &test_context(InstallKind::MacosAppBundle))
+            .expect("available update should have recommended asset url");
+
+        assert_eq!(result.recommended_source, Some(DownloadSourceUsed::Mirror));
+        assert_eq!(next_state.source, Some(DownloadSourceUsed::Mirror));
+        assert_eq!(
+            result.asset_url.as_deref(),
+            Some("https://mirrorchyan.com/resources/download/floral-notepaper-1.0.5-macos-aarch64")
+        );
+        assert_eq!(next_state.asset_url, result.asset_url);
+    }
+
+    #[test]
+    fn merge_candidates_enriches_mirror_result_with_github_metadata() {
+        let mirror_candidate = UpdateCandidate {
+            priority: 0,
+            version: "1.0.5".into(),
+            normalized_version: Version::new(1, 0, 5),
+            release_notes: None,
+            mandatory: false,
+            asset_name: "mirror-generated.zip".into(),
+            asset_sha256: None,
+            asset_size: 0,
+            asset_url: Some("https://mirrorchyan.com/resources/download/floral".into()),
+            mirror_asset_url: Some("https://mirrorchyan.com/resources/download/floral".into()),
+            github_asset_url: None,
+            can_download_from_mirror: true,
+            can_download_from_github: false,
+        };
+        let github_candidate = UpdateCandidate {
+            priority: 1,
+            version: "1.0.5".into(),
+            normalized_version: Version::new(1, 0, 5),
+            release_notes: Some("GitHub notes".into()),
+            mandatory: false,
+            asset_name: "floral-notepaper_1.0.5_macos_aarch64_app.zip".into(),
+            asset_sha256: Some("3333333333333333333333333333333333333333333333333333333333333333".into()),
+            asset_size: 22345678,
+            asset_url: Some("https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_macos_aarch64_app.zip".into()),
+            mirror_asset_url: None,
+            github_asset_url: Some("https://github.com/Achilng/floral-notepaper/releases/download/v1.0.5/floral-notepaper_1.0.5_macos_aarch64_app.zip".into()),
+            can_download_from_mirror: false,
+            can_download_from_github: true,
+        };
+
+        let merged = merge_candidates(vec![mirror_candidate, github_candidate])
+            .expect("same-version candidates should merge");
+
+        assert_eq!(
+            merged.asset_name,
+            "floral-notepaper_1.0.5_macos_aarch64_app.zip"
+        );
+        assert_eq!(merged.asset_size, 22345678);
+        assert!(merged.asset_sha256.is_some());
+        assert!(merged.can_download_from_mirror);
+        assert!(merged.can_download_from_github);
+        assert!(merged.github_asset_url.is_some());
+        assert!(merged.mirror_asset_url.is_some());
+    }
+
+    #[test]
+    fn manual_run_updates_last_auto_check_timestamp() {
+        let paths = test_paths("check-manual-updates-last-auto-check-at");
+        let github_manifest = write_manifest(&paths, "github.json", "1.0.5");
+        let service = UpdateCheckService::with_providers_and_platform(
+            MirrorProvider::offline(),
+            GithubProvider::with_manifest_path(github_manifest),
+            test_platform(Os::Macos, Arch::Aarch64, InstallKind::MacosAppBundle),
+        );
+
+        service
+            .run(&paths, true, "1.0.3")
+            .expect("manual check should succeed");
+
+        let saved_settings = settings::load(&paths).expect("load settings");
+        assert!(saved_settings.last_auto_check_at.is_some());
     }
 
     #[test]

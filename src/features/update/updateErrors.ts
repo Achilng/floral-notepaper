@@ -58,17 +58,53 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
       return translate("settings.update.error.sourceNotConfigured", {
         defaultValue: "更新源尚未配置，当前阶段仅支持本地测试清单注入",
       });
+    case "updateProviderNotConfigured":
+      return translate("settings.update.error.providerNotConfigured", {
+        defaultValue: "更新源尚未配置测试清单",
+      });
     case "updateProviderFixtureUnreadable":
       return translate("settings.update.error.providerFixtureUnreadable", {
         defaultValue: "无法读取本地更新测试清单",
       });
+    case "updateVersionInvalid":
+      return translate("settings.update.error.versionInvalid", {
+        defaultValue: "版本号格式无效",
+      });
+    case "updateManifestInvalid":
+      return translate("settings.update.error.manifestInvalid", {
+        defaultValue: "更新清单格式无效",
+      });
+    case "updateManifestAssetNotFound":
+      return translate("settings.update.error.manifestAssetNotFound", {
+        defaultValue: "当前平台没有匹配的更新包",
+      });
+    case "updateManifestUnsupportedSchema":
+      return translate("settings.update.error.manifestUnsupportedSchema", {
+        defaultValue: "更新清单格式版本暂不受支持",
+      });
+    case "updateManifestAppIdMismatch":
+      return translate("settings.update.error.manifestAppIdMismatch", {
+        defaultValue: "更新清单不属于当前应用",
+      });
+    case "updateManifestMissingAssets":
+      return translate("settings.update.error.manifestMissingAssets", {
+        defaultValue: "更新清单未包含任何可下载资产",
+      });
+    case "updateStateCorrupted":
+      return translate("settings.update.error.stateCorrupted", {
+        defaultValue: "更新状态文件已损坏，已重置",
+      });
+    case "updateStateLockTimeout":
+      return translate("settings.update.error.stateLockTimeout", {
+        defaultValue: "等待更新状态文件锁超时，请稍后重试",
+      });
+    case "updateCheckInterrupted":
+      return translate("settings.update.error.checkInterrupted", {
+        defaultValue: "上次检查更新被中断，已恢复为空闲状态",
+      });
     case "updatePlatformUnsupported":
       return translate("settings.update.error.platformUnsupported", {
         defaultValue: "当前平台或安装形态暂不支持应用内更新",
-      });
-    case "updateDownloadUnavailable":
-      return translate("settings.update.error.downloadUnavailable", {
-        defaultValue: "下载基础设施尚未启用",
       });
     case "updateDownloadNotReady":
       return translate("settings.update.error.downloadNotReady", {
@@ -101,6 +137,38 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
     case "updateDownloadHttpStatus":
       return translate("settings.update.error.downloadHttpStatus", {
         defaultValue: "下载请求失败，请稍后重试",
+      });
+    case "updateDownloadInterrupted":
+      return translate("settings.update.error.downloadInterrupted", {
+        defaultValue: "上次下载被中断，请重新下载更新包",
+      });
+    case "updateDownloadVersionMismatch":
+      return translate("settings.update.error.downloadVersionMismatch", {
+        defaultValue: "下载版本与已检查到的版本不一致，请重新检查更新",
+      });
+    case "updateDownloadAssetMismatch":
+      return translate("settings.update.error.downloadAssetMismatch", {
+        defaultValue: "更新包信息与已检查结果不一致，请重新检查更新",
+      });
+    case "updateDownloadClientUnavailable":
+      return translate("settings.update.error.downloadClientUnavailable", {
+        defaultValue: "下载客户端不可用，请稍后重试",
+      });
+    case "updateDownloadRedirectInvalid":
+      return translate("settings.update.error.downloadRedirectInvalid", {
+        defaultValue: "下载重定向地址无效",
+      });
+    case "updateDownloadRedirectLoop":
+      return translate("settings.update.error.downloadRedirectLoop", {
+        defaultValue: "下载重定向次数过多，请稍后重试",
+      });
+    case "updateDownloadTimeout":
+      return translate("settings.update.error.downloadTimeout", {
+        defaultValue: "下载请求超时，请稍后重试",
+      });
+    case "updateDownloadNetwork":
+      return translate("settings.update.error.downloadNetwork", {
+        defaultValue: "下载过程中网络中断，请稍后重试",
       });
     case "updateMirrorDownloadUnavailable":
       return translate("settings.update.error.mirrorDownloadUnavailable", {
@@ -177,10 +245,6 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
     case "updateDownloadTaskJoinFailed":
       return translate("settings.update.error.downloadTaskJoinFailed", {
         defaultValue: "下载任务执行失败",
-      });
-    case "updateInstallUnavailable":
-      return translate("settings.update.error.installUnavailable", {
-        defaultValue: "安装调度尚未启用",
       });
     case "updateInstallNotReady":
       return translate("settings.update.error.installNotReady", {
@@ -285,6 +349,14 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
     case "updateInstallVersionMismatch":
       return translate("settings.update.error.installVersionMismatch", {
         defaultValue: "安装后重新打开的仍是旧版本，请直接重试安装",
+      });
+    case "updateInstallInterrupted":
+      return translate("settings.update.error.installInterrupted", {
+        defaultValue: "上次安装未完成，请重试安装",
+      });
+    case "updateInstallCleanupFailed":
+      return translate("settings.update.error.installCleanupFailed", {
+        defaultValue: "安装后清理临时文件失败",
       });
     case "updateInstallLogWriteFailed":
       return translate("settings.update.error.installLogWriteFailed", {

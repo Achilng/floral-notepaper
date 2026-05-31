@@ -5,7 +5,7 @@ use super::{
     install::UpdateInstallService,
     types::{
         DownloadSourceUsed, UpdateCheckResult, UpdateDownloadResult, UpdateErrorDto,
-        UpdateInstallResult, UpdateStateDto, UpdateStatus,
+        UpdateInstallMode, UpdateInstallResult, UpdateStateDto, UpdateStatus,
     },
     ActiveTaskGuard, InstallPrepareState, InstallPrepareWindowStatus, UpdatePaths, UpdateTaskKind,
     UpdaterState,
@@ -18,7 +18,9 @@ use std::time::{Duration, Instant};
 use tauri::{async_runtime, Emitter, Manager, State};
 
 const INSTALL_PREPARE_EVENT: &str = "update://prepare-install";
-const INSTALL_PREPARE_TIMEOUT: Duration = Duration::from_secs(30);
+const INSTALL_PREPARE_MIN_TIMEOUT: Duration = Duration::from_secs(30);
+const INSTALL_PREPARE_TIMEOUT_PER_PENDING_WINDOW: Duration = Duration::from_secs(3);
+const INSTALL_PREPARE_MAX_TIMEOUT: Duration = Duration::from_secs(120);
 const INSTALL_PREPARE_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const INSTALL_TERMINATE_DELAY: Duration = Duration::from_millis(500);
 
@@ -71,11 +73,26 @@ pub async fn update_check(
     state: State<'_, UpdaterState>,
     manual: bool,
 ) -> Result<UpdateCheckResult, AppError> {
-    let (task, paths) = prepare_update_check(&app, &state)?;
+    let task = state.begin_task(UpdateTaskKind::Check)?;
+    let paths = state.paths().clone();
     let result_paths = paths.clone();
     let current_version = state.current_version().to_string();
     let emit_version = current_version.clone();
     let cdk = state.get_mirror_cdk();
+
+    let prepare_paths = paths.clone();
+    let prepare_version = current_version.clone();
+    let checking_state = async_runtime::spawn_blocking(move || {
+        prepare_update_check_state(&prepare_paths, &prepare_version)
+    })
+    .await
+    .map_err(|error| {
+        errors::app_error(
+            "updateCheckTaskJoinFailed",
+            format!("准备检查更新任务失败：{error}"),
+        )
+    })??;
+    app.emit_checking(&checking_state);
 
     let result = async_runtime::spawn_blocking(move || {
         let _task = task;
@@ -100,17 +117,18 @@ pub async fn update_download(
 ) -> Result<UpdateDownloadResult, AppError> {
     let source = source.as_deref().map(parse_download_source).transpose()?;
     let task = state.begin_task(UpdateTaskKind::Download)?;
-    let current_state = state.load_state()?;
     let cancel_flag = task
         .cancel_flag()
         .ok_or_else(|| errors::app_error("updateCancelUnavailable", "当前没有可取消的更新任务"))?;
     let paths = state.paths().clone();
     let result_paths = paths.clone();
+    let current_version = state.current_version().to_string();
     let app_handle = app.clone();
     let cdk = state.get_mirror_cdk();
 
     let result = async_runtime::spawn_blocking(move || {
         let _task = task;
+        let current_state = super::state::load_with_current_version(&paths, &current_version)?;
         let service = UpdateDownloadService::from_env().with_cdk(cdk);
         service.run(&paths, current_state, source, cancel_flag, |progress| {
             if let Err(error) = app_handle.emit("update://download-progress", &progress) {
@@ -156,9 +174,8 @@ pub async fn update_install(
     state: State<'_, UpdaterState>,
 ) -> Result<UpdateInstallResult, AppError> {
     let task = state.begin_task(UpdateTaskKind::Install)?;
-    let current_state = state.load_state()?;
     let request_id = begin_install_prepare(&app, &state);
-    if let Err(error) = wait_for_install_prepare(&state, &request_id).await {
+    if let Err(error) = wait_for_install_prepare(&app, &state, &request_id).await {
         state.clear_install_prepare(&request_id);
         let error_payload = load_saved_error_payload(
             state.paths(),
@@ -174,9 +191,11 @@ pub async fn update_install(
     state.clear_install_prepare(&request_id);
     let paths = state.paths().clone();
     let result_paths = paths.clone();
+    let current_version = state.current_version().to_string();
 
     let result = async_runtime::spawn_blocking(move || {
         let _task = task;
+        let current_state = super::state::load_with_current_version(&paths, &current_version)?;
         let service = UpdateInstallService::from_env();
         service.run(&paths, current_state)
     })
@@ -195,8 +214,10 @@ pub async fn update_install(
                     eprintln!("failed to emit update://install-finished: {error}");
                 }
             }
-            desktop::mark_app_exiting(&app);
-            schedule_force_terminate_self();
+            if install_result.mode == UpdateInstallMode::Apply {
+                desktop::mark_app_exiting(&app);
+                schedule_force_terminate_self();
+            }
             Ok(install_result)
         }
         Err(error) => {
@@ -309,14 +330,22 @@ fn prepare_update_check<E: UpdateCheckEmitter>(
     state: &UpdaterState,
 ) -> Result<(ActiveTaskGuard, UpdatePaths), AppError> {
     let task = state.begin_task(UpdateTaskKind::Check)?;
-    let mut checking_state = state.load_state()?;
-    checking_state.status = UpdateStatus::Checking;
-    checking_state.checked_at = Some(Utc::now());
-    checking_state.last_error = None;
-    state.save_state(&checking_state)?;
+    let checking_state = prepare_update_check_state(state.paths(), state.current_version())?;
     emitter.emit_checking(&checking_state);
 
     Ok((task, state.paths().clone()))
+}
+
+fn prepare_update_check_state(
+    paths: &UpdatePaths,
+    current_version: &str,
+) -> Result<UpdateStateDto, AppError> {
+    let mut checking_state = super::state::load_with_current_version(paths, current_version)?;
+    checking_state.status = UpdateStatus::Checking;
+    checking_state.checked_at = Some(Utc::now());
+    checking_state.last_error = None;
+    super::state::save_with_current_version(paths, &checking_state, current_version)?;
+    Ok(checking_state)
 }
 
 fn begin_install_prepare(app: &tauri::AppHandle, state: &UpdaterState) -> String {
@@ -344,12 +373,26 @@ fn begin_install_prepare(app: &tauri::AppHandle, state: &UpdaterState) -> String
     request_id
 }
 
-async fn wait_for_install_prepare(state: &UpdaterState, request_id: &str) -> Result<(), AppError> {
-    let deadline = Instant::now() + INSTALL_PREPARE_TIMEOUT;
+async fn wait_for_install_prepare(
+    app: &tauri::AppHandle,
+    state: &UpdaterState,
+    request_id: &str,
+) -> Result<(), AppError> {
+    let started_at = Instant::now();
+    let mut deadline = started_at + install_prepare_timeout_for_pending_count(0);
 
     loop {
+        sync_install_prepare_windows(app, state, request_id);
         match state.poll_install_prepare(request_id) {
-            InstallPrepareState::Ready => return Ok(()),
+            InstallPrepareState::Ready => {
+                sync_install_prepare_windows(app, state, request_id);
+                if matches!(
+                    state.poll_install_prepare(request_id),
+                    InstallPrepareState::Ready
+                ) {
+                    return Ok(());
+                }
+            }
             InstallPrepareState::Failed {
                 window_label,
                 message,
@@ -364,16 +407,31 @@ async fn wait_for_install_prepare(state: &UpdaterState, request_id: &str) -> Res
                     window_label,
                 ));
             }
-            InstallPrepareState::Pending { .. } => {
+            InstallPrepareState::Pending { pending_labels } => {
+                let pending_count = pending_labels.len();
+                let scaled_deadline =
+                    started_at + install_prepare_timeout_for_pending_count(pending_count);
+                if scaled_deadline > deadline {
+                    deadline = scaled_deadline;
+                }
+
                 if Instant::now() >= deadline {
-                    return Err(errors::with_detail(
+                    let error = errors::with_detail(
                         errors::app_error(
                             "updateInstallSaveTimedOut",
                             "等待窗口保存未保存内容超时，请稍后重试",
                         ),
                         "requestId",
                         request_id,
-                    ));
+                    );
+                    let error =
+                        errors::with_detail(error, "pendingWindows", pending_count.to_string());
+                    let error = errors::with_detail(
+                        error,
+                        "timeoutSeconds",
+                        deadline.duration_since(started_at).as_secs().to_string(),
+                    );
+                    return Err(error);
                 }
                 tokio::time::sleep(INSTALL_PREPARE_POLL_INTERVAL).await;
             }
@@ -387,6 +445,38 @@ async fn wait_for_install_prepare(state: &UpdaterState, request_id: &str) -> Res
                     request_id,
                 ));
             }
+        }
+    }
+}
+
+fn install_prepare_timeout_for_pending_count(pending_count: usize) -> Duration {
+    let scaled = INSTALL_PREPARE_MIN_TIMEOUT.saturating_add(
+        INSTALL_PREPARE_TIMEOUT_PER_PENDING_WINDOW.saturating_mul(pending_count as u32),
+    );
+    scaled.min(INSTALL_PREPARE_MAX_TIMEOUT)
+}
+
+fn sync_install_prepare_windows(app: &tauri::AppHandle, state: &UpdaterState, request_id: &str) {
+    let windows = app.webview_windows();
+    let added_labels = state.sync_install_prepare_labels(request_id, windows.keys().cloned());
+    if added_labels.is_empty() {
+        return;
+    }
+
+    let payload = InstallPrepareRequestPayload {
+        request_id: request_id.to_string(),
+    };
+    for label in added_labels {
+        let Some(window) = windows.get(&label) else {
+            state.report_install_prepare(request_id, &label, InstallPrepareWindowStatus::Ready);
+            continue;
+        };
+        if let Err(error) = window.emit(INSTALL_PREPARE_EVENT, &payload) {
+            state.report_install_prepare(
+                request_id,
+                &label,
+                InstallPrepareWindowStatus::Failed(format!("无法通知窗口保存未保存内容：{error}")),
+            );
         }
     }
 }
@@ -552,5 +642,21 @@ mod tests {
         );
         assert_eq!(emitter.checked.lock().expect("checked events").len(), 1);
         assert!(emitter.errors.lock().expect("error events").is_empty());
+    }
+
+    #[test]
+    fn install_prepare_timeout_scales_with_pending_windows() {
+        assert_eq!(
+            install_prepare_timeout_for_pending_count(0),
+            INSTALL_PREPARE_MIN_TIMEOUT
+        );
+        assert_eq!(
+            install_prepare_timeout_for_pending_count(15),
+            Duration::from_secs(75)
+        );
+        assert_eq!(
+            install_prepare_timeout_for_pending_count(100),
+            INSTALL_PREPARE_MAX_TIMEOUT
+        );
     }
 }

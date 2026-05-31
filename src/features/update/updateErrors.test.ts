@@ -14,4 +14,13 @@ describe("update error helpers", () => {
     expect(getUpdateErrorCode(error)).toBe("updateDownloadCancelled");
     expect(getUpdateErrorMessage(error, i18n.t.bind(i18n))).toBe("下载已取消");
   });
+
+  test("maps backend-only update codes instead of returning raw rust messages", () => {
+    const error = {
+      code: "updateManifestUnsupportedSchema",
+      message: "更新清单 schemaVersion 暂不受支持",
+    };
+
+    expect(getUpdateErrorMessage(error, i18n.t.bind(i18n))).toBe("更新清单格式版本暂不受支持");
+  });
 });

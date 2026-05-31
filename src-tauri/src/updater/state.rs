@@ -283,6 +283,10 @@ fn remove_download_dir(asset_path: Option<String>) {
 }
 
 fn verify_asset(path: &Path, expected_size: Option<u64>, expected_hash: Option<&str>) -> bool {
+    if expected_size.is_none() && expected_hash.is_none() {
+        return false;
+    }
+
     let metadata = match fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(_) => return false,
@@ -476,6 +480,29 @@ mod tests {
         state.asset_path = Some(asset_path.to_string_lossy().to_string());
         state.asset_size = Some(fs::metadata(&asset_path).expect("asset metadata").len());
         state.asset_sha256 = Some("not-a-sha256".into());
+        save(&paths, &state).expect("save scheduled state");
+
+        let recovered = recover_with_current_version(&paths, "1.0.3").expect("recover state");
+
+        assert_eq!(recovered.status, UpdateStatus::Failed);
+        assert_eq!(
+            recovered.last_error.expect("last error").action,
+            Some("retryDownload".into())
+        );
+    }
+
+    #[test]
+    fn rejects_recovery_asset_without_size_or_hash() {
+        let paths = test_paths("state-recover-install-missing-asset-metadata");
+        let asset_path = paths.downloads_dir().join("1.0.5").join("asset.zip");
+        fs::create_dir_all(asset_path.parent().expect("asset parent")).expect("create asset dir");
+        fs::write(&asset_path, b"installable asset").expect("write asset");
+        let mut state = UpdateStateDto::idle();
+        state.status = UpdateStatus::InstallScheduled;
+        state.latest_version = Some("1.0.5".into());
+        state.asset_path = Some(asset_path.to_string_lossy().to_string());
+        state.asset_size = None;
+        state.asset_sha256 = None;
         save(&paths, &state).expect("save scheduled state");
 
         let recovered = recover_with_current_version(&paths, "1.0.3").expect("recover state");

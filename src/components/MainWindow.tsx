@@ -23,7 +23,11 @@ import {
   dismissAboutUpdateReminderText,
   type AboutUpdateReminderState,
 } from "../features/update/presentation";
-import type { UpdateInstallPrepareRequest, UpdateState } from "../features/update/types";
+import type {
+  UpdateErrorPayload,
+  UpdateInstallPrepareRequest,
+  UpdateState,
+} from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
@@ -647,7 +651,9 @@ export function MainWindow({
         if (!active) return;
         syncUpdateStatus(status);
       })
-      .catch(() => undefined);
+      .catch((error) => {
+        console.error("failed to load update status", error);
+      });
 
     const bindEvents = async () => {
       const unlistenChecking = await listen<UpdateState>("update://checking", (event) => {
@@ -683,8 +689,26 @@ export function MainWindow({
             if (!active) return;
             syncUpdateStatus(status);
           })
-          .catch(() => undefined);
+          .catch((error) => {
+            console.error("failed to refresh update status after error event", error);
+          });
       });
+
+      const unlistenAutoCheckError = await listen<UpdateErrorPayload>(
+        "update://auto-check-error",
+        (event) => {
+          if (!active) return;
+          console.error("automatic update check failed", event.payload);
+          void getUpdateStatus()
+            .then((status) => {
+              if (!active) return;
+              syncUpdateStatus(status);
+            })
+            .catch((error) => {
+              console.error("failed to refresh update status after automatic check error", error);
+            });
+        },
+      );
 
       return () => {
         unlistenChecking();
@@ -692,6 +716,7 @@ export function MainWindow({
         unlistenDownloadFinished();
         unlistenInstallFinished();
         unlistenError();
+        unlistenAutoCheckError();
       };
     };
 

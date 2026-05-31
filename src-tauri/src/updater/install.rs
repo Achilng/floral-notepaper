@@ -44,6 +44,10 @@ impl InstallExecutor for ProcessInstallExecutor {
         if request.command.ready_path.exists() {
             let _ = fs::remove_file(&request.command.ready_path);
         }
+        let relaunch_path = helper::relaunch_marker_path(&request.command);
+        if relaunch_path.exists() {
+            let _ = fs::remove_file(relaunch_path);
+        }
         let completion_path = helper::completion_marker_path(&request.command);
         if completion_path.exists() {
             let _ = fs::remove_file(completion_path);
@@ -152,6 +156,23 @@ where
         let started_at = Utc::now();
         match self.executor.execute(&request) {
             Ok(_) => {
+                if self.helper_mode == helper::UpdateHelperMode::Test {
+                    state::save(
+                        paths,
+                        &validated_test_state(
+                            &current_state,
+                            &request,
+                            install_mode.clone(),
+                            started_at,
+                        ),
+                    )?;
+                    return Ok(UpdateInstallResult {
+                        status: UpdateStatus::Downloaded,
+                        log_path: Some(log_path_text),
+                        mode: install_mode,
+                    });
+                }
+
                 state::save(
                     paths,
                     &scheduled_state(&current_state, &request, install_mode.clone(), started_at),
@@ -695,6 +716,33 @@ fn scheduled_state(
     }
 }
 
+fn validated_test_state(
+    current_state: &UpdateStateDto,
+    request: &HelperLaunchRequest,
+    install_mode: UpdateInstallMode,
+    started_at: chrono::DateTime<Utc>,
+) -> UpdateStateDto {
+    UpdateStateDto {
+        status: UpdateStatus::Downloaded,
+        current_version: current_state.current_version.clone(),
+        latest_version: current_state.latest_version.clone(),
+        channel: current_state.channel.clone(),
+        asset_name: current_state.asset_name.clone(),
+        asset_path: current_state.asset_path.clone(),
+        asset_sha256: current_state.asset_sha256.clone(),
+        asset_size: current_state.asset_size,
+        asset_url: current_state.asset_url.clone(),
+        source: current_state.source.clone(),
+        checked_at: current_state.checked_at,
+        downloaded_at: current_state.downloaded_at,
+        install_log_path: Some(request.command.log_path.to_string_lossy().to_string()),
+        install_mode: Some(install_mode),
+        install_started_at: Some(started_at),
+        install_scheduled_at: None,
+        last_error: None,
+    }
+}
+
 fn failed_state(
     current_state: &UpdateStateDto,
     request: &HelperLaunchRequest,
@@ -919,6 +967,37 @@ mod tests {
         assert!(calls[0].command.ready_path.starts_with(paths.staging_dir()));
         assert!(calls[0].helper_path.exists());
         assert_ne!(calls[0].helper_path, app_binary);
+    }
+
+    #[test]
+    fn test_mode_keeps_downloaded_state_after_validation() {
+        let paths = test_paths("install-test-mode");
+        paths.ensure_dirs().expect("ensure dirs");
+        let bundle = paths.root_dir().join("Floral Notepaper.app");
+        write_bundle_with_helper(&bundle);
+        let app_binary = bundle
+            .join("Contents")
+            .join("MacOS")
+            .join("floral-notepaper");
+
+        let executor = FakeExecutor::new(FakeExecutorResult::Success);
+        let service = UpdateInstallService::with_executor(
+            executor.clone(),
+            helper::UpdateHelperMode::Test,
+            Some(app_binary),
+            Some(platform_with_bundle(&bundle)),
+        );
+
+        let result = service
+            .run(&paths, downloaded_state(&paths))
+            .expect("test validation should succeed");
+
+        let saved = state::load(&paths).expect("load saved state");
+        assert_eq!(result.status, UpdateStatus::Downloaded);
+        assert_eq!(result.mode, UpdateInstallMode::Test);
+        assert_eq!(saved.status, UpdateStatus::Downloaded);
+        assert_eq!(saved.install_mode, Some(UpdateInstallMode::Test));
+        assert!(saved.install_scheduled_at.is_none());
     }
 
     #[test]

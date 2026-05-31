@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -41,7 +41,7 @@ interface UpdateSettingsSectionProps {
   mode?: "full" | "checkOnly" | "settingsOnly";
 }
 
-type IntervalOption = "24" | "168";
+type IntervalOption = string;
 
 const MIRROR_SETTINGS_URL = "https://mirrorchyan.com/zh/projects?source=floral_notepaper_settings";
 
@@ -59,6 +59,18 @@ export function UpdateSettingsSection({
   const [notice, setNotice] = useState<UpdateInlineNotice | null>(() =>
     getInitialUpdateStatusNotice(initialStatus, t),
   );
+  const latestChannelRef = useRef<UpdateChannel>(
+    initialSettings?.channel ?? initialStatus?.channel ?? "stable",
+  );
+  const translateRef = useRef(t);
+
+  useEffect(() => {
+    translateRef.current = t;
+  }, [t]);
+
+  useEffect(() => {
+    latestChannelRef.current = settings?.channel ?? status?.channel ?? latestChannelRef.current;
+  }, [settings?.channel, status?.channel]);
 
   const checkSourceOptions = useMemo<Array<{ value: CheckSourcePreference; label: string }>>(
     () => [
@@ -106,8 +118,8 @@ export function UpdateSettingsSection({
     [t],
   );
 
-  const intervalOptions = useMemo<Array<{ value: IntervalOption; label: string }>>(
-    () => [
+  const intervalOptions = useMemo<Array<{ value: IntervalOption; label: string }>>(() => {
+    const options = [
       {
         value: "24",
         label: t("settings.update.interval.daily", { defaultValue: "每天" }),
@@ -116,9 +128,22 @@ export function UpdateSettingsSection({
         value: "168",
         label: t("settings.update.interval.weekly", { defaultValue: "每周" }),
       },
-    ],
-    [t],
-  );
+    ];
+    const current = settings?.checkIntervalHours;
+    if (current && current !== 24 && current !== 168) {
+      return [
+        {
+          value: String(current),
+          label: t("settings.update.interval.custom", {
+            hours: current,
+            defaultValue: "{{hours}} 小时",
+          }),
+        },
+        ...options,
+      ];
+    }
+    return options;
+  }, [settings?.checkIntervalHours, t]);
 
   useEffect(() => {
     if (initialSettings && initialStatus) return;
@@ -127,6 +152,7 @@ export function UpdateSettingsSection({
     Promise.all([getUpdateSettings(), getUpdateStatus()])
       .then(([loadedSettings, loadedStatus]) => {
         if (!alive) return;
+        latestChannelRef.current = loadedSettings.channel ?? loadedStatus.channel;
         setSettings(loadedSettings);
         setStatus(loadedStatus);
         setNotice(getInitialUpdateStatusNotice(loadedStatus, t));
@@ -152,8 +178,9 @@ export function UpdateSettingsSection({
 
       const unlistenChecked = await listen<UpdateState>("update://checked", (event) => {
         if (!active) return;
+        latestChannelRef.current = event.payload.channel;
         setStatus(event.payload);
-        const nextNotice = getUpdateCheckCompletionNotice(event.payload, t);
+        const nextNotice = getUpdateCheckCompletionNotice(event.payload, translateRef.current);
         if (nextNotice) {
           setNotice(nextNotice);
         }
@@ -165,38 +192,14 @@ export function UpdateSettingsSection({
           if (!active) return;
           setDownloadProgress(event.payload);
           setStatus((current) =>
-            current
-              ? {
-                  ...current,
-                  status: "downloading",
-                  latestVersion: event.payload.version,
-                  assetName: event.payload.assetName,
-                  assetSize: event.payload.totalBytes ?? current.assetSize ?? null,
-                  source: event.payload.source,
-                  assetPath: null,
-                  downloadedAt: null,
-                  lastError: null,
-                }
-              : {
-                  status: "downloading",
-                  currentVersion: "--",
-                  latestVersion: event.payload.version,
-                  channel: settings?.channel ?? "stable",
-                  assetName: event.payload.assetName,
-                  assetPath: null,
-                  assetSha256: null,
-                  assetSize: event.payload.totalBytes ?? null,
-                  source: event.payload.source,
-                  checkedAt: null,
-                  downloadedAt: null,
-                  lastError: null,
-                },
+            deriveDownloadProgressState(current, event.payload, latestChannelRef.current),
           );
         },
       );
 
       const unlistenFinished = await listen<UpdateState>("update://download-finished", (event) => {
         if (!active) return;
+        latestChannelRef.current = event.payload.channel;
         setDownloadProgress(null);
         setStatus(event.payload);
       });
@@ -205,12 +208,14 @@ export function UpdateSettingsSection({
         "update://install-finished",
         (event) => {
           if (!active) return;
+          latestChannelRef.current = event.payload.channel;
           setStatus(event.payload);
         },
       );
 
       const unlistenError = await listen<UpdateErrorPayload>("update://error", (event) => {
         if (!active) return;
+        const t = translateRef.current;
         const errorText = getUpdateErrorMessage(event.payload, t);
         setNotice({ tone: "error", text: errorText });
         if (event.payload.code.startsWith("updateInstall")) {
@@ -229,7 +234,7 @@ export function UpdateSettingsSection({
           if (!active) return;
           setNotice({
             tone: "error",
-            text: getUpdateErrorMessage(event.payload, t),
+            text: getUpdateErrorMessage(event.payload, translateRef.current),
           });
         },
       );
@@ -251,12 +256,12 @@ export function UpdateSettingsSection({
       active = false;
       void promise.then((dispose) => dispose()).catch(() => undefined);
     };
-  }, [settings?.channel, t]);
+  }, []);
 
   const currentVersion = status?.currentVersion ?? "--";
   const showCheckControls = mode !== "settingsOnly";
   const showSettingsControls = mode !== "checkOnly";
-  const intervalValue: IntervalOption = settings?.checkIntervalHours === 168 ? "168" : "24";
+  const intervalValue: IntervalOption = String(settings?.checkIntervalHours ?? 24);
   const isDownloading = status?.status === "downloading";
   const isInstalling = status?.status === "installing";
   const controlsDisabled = busyAction !== null || isDownloading;
@@ -285,6 +290,7 @@ export function UpdateSettingsSection({
     !isInstalling;
 
   const persistSettings = async (nextSettings: UpdateSettings) => {
+    latestChannelRef.current = nextSettings.channel;
     setSettings(nextSettings);
     setBusyAction("settings");
     setNotice(null);
@@ -934,6 +940,41 @@ function getSourceLabel(
     return t("settings.update.source.github", { defaultValue: "GitHub" });
   }
   return null;
+}
+
+export function deriveDownloadProgressState(
+  current: UpdateState | null,
+  progress: UpdateDownloadProgress,
+  fallbackChannel: UpdateChannel,
+): UpdateState {
+  if (current) {
+    return {
+      ...current,
+      status: "downloading",
+      latestVersion: progress.version,
+      assetName: progress.assetName,
+      assetSize: progress.totalBytes ?? current.assetSize ?? null,
+      source: progress.source,
+      assetPath: null,
+      downloadedAt: null,
+      lastError: null,
+    };
+  }
+
+  return {
+    status: "downloading",
+    currentVersion: "--",
+    latestVersion: progress.version,
+    channel: fallbackChannel,
+    assetName: progress.assetName,
+    assetPath: null,
+    assetSha256: null,
+    assetSize: progress.totalBytes ?? null,
+    source: progress.source,
+    checkedAt: null,
+    downloadedAt: null,
+    lastError: null,
+  };
 }
 
 function formatBytes(value: number | null | undefined) {

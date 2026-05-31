@@ -8,7 +8,8 @@
     "productName": "花笺",
     "summary": "轻量、优雅、现代化的本地便签工具",
     "tipPrefix": "您知道吗：",
-    "title": "关于"
+    "title": "关于",
+    "version": "版本：v{{version}}"
   },
   "common": {
     "back": "返回",
@@ -323,6 +324,7 @@
         "mirrorInvalidArch": "Mirror 酱不支持当前架构参数，请更新应用后重试",
         "mirrorInvalidChannel": "Mirror 酱不支持当前更新通道参数，请更新应用后重试",
         "mirrorBusiness": "Mirror 酱返回了业务错误，请稍后重试",
+        "mirrorDownloadNeedCdk": "Mirror 酱未返回下载链接，请配置有效的 CDK 后重试",
         "platformUnsupported": "当前平台或安装形态暂不支持应用内更新",
         "portableManualOnly": "当前便携版仅支持手动下载更新包后覆盖升级",
         "providerFixtureUnreadable": "无法读取本地更新测试清单",
@@ -336,6 +338,7 @@
       "download": "下载更新",
       "downloaded": "版本 {{version}} 已下载完成",
       "interval": {
+        "custom": "{{hours}} 小时",
         "daily": "每天",
         "label": "检查频率",
         "weekly": "每周"
@@ -363,6 +366,7 @@
       },
       "notAvailable": "当前已是最新版本",
       "saved": "更新设置已保存",
+      "settingsTitle": "更新设置",
       "speed": "速度：{{speed}}",
       "checkSource": {
         "label": "检查更新源",

@@ -8,7 +8,8 @@
     "productName": "花箋",
     "summary": "輕量、優雅、現代化的本地便箋工具",
     "tipPrefix": "您知道嗎：",
-    "title": "關於"
+    "title": "關於",
+    "version": "版本：v{{version}}"
   },
   "common": {
     "back": "返回",
@@ -323,6 +324,7 @@
         "mirrorInvalidArch": "Mirror 醬不支援目前架構參數，請更新應用後重試",
         "mirrorInvalidChannel": "Mirror 醬不支援目前更新通道參數，請更新應用後重試",
         "mirrorBusiness": "Mirror 醬返回了業務錯誤，請稍後重試",
+        "mirrorDownloadNeedCdk": "Mirror 醬未返回下載連結，請配置有效的 CDK 後重試",
         "platformUnsupported": "目前平台或安裝型態暫不支援應用內更新",
         "portableManualOnly": "目前可攜版僅支援手動下載更新包後覆蓋升級",
         "providerFixtureUnreadable": "無法讀取本地更新測試清單",
@@ -336,6 +338,7 @@
       "download": "下載更新",
       "downloaded": "版本 {{version}} 已下載完成",
       "interval": {
+        "custom": "{{hours}} 小時",
         "daily": "每天",
         "label": "檢查頻率",
         "weekly": "每週"
@@ -363,6 +366,7 @@
       },
       "notAvailable": "目前已是最新版本",
       "saved": "更新設定已儲存",
+      "settingsTitle": "更新設定",
       "speed": "速度：{{speed}}",
       "checkSource": {
         "label": "檢查更新來源",

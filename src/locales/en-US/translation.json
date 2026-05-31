@@ -8,7 +8,8 @@
     "productName": "花笺",
     "summary": "A lightweight, elegant, modern local note-taking tool",
     "tipPrefix": "Tip:",
-    "title": "About"
+    "title": "About",
+    "version": "Version: v{{version}}"
   },
   "common": {
     "back": "Back",
@@ -322,6 +323,7 @@
         "mirrorInvalidArch": "Mirror does not support the current architecture; please update the app",
         "mirrorInvalidChannel": "Mirror does not support the current update channel; please update the app",
         "mirrorBusiness": "Mirror returned a business error; please try again later",
+        "mirrorDownloadNeedCdk": "Mirror did not return a download link. Configure a valid CDK and try again.",
         "platformUnsupported": "This platform or install type does not support in-app updates yet",
         "portableManualOnly": "Portable builds must be updated manually by replacing the downloaded package",
         "providerFixtureUnreadable": "The local update manifest fixture could not be read",
@@ -335,6 +337,7 @@
       "download": "Download Update",
       "downloaded": "Version {{version}} has finished downloading",
       "interval": {
+        "custom": "{{hours}} hours",
         "daily": "Daily",
         "label": "Check frequency",
         "weekly": "Weekly"
@@ -362,6 +365,7 @@
       },
       "notAvailable": "You are on the latest version",
       "saved": "Update settings saved",
+      "settingsTitle": "Update Settings",
       "speed": "Speed: {{speed}}",
       "checkSource": {
         "label": "Check API source",
