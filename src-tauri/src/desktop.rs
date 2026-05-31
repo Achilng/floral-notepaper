@@ -400,12 +400,15 @@ mod keyboard_hook {
     }
 }
 use tauri::{
-    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
+    menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem},
     tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
     App, AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, WebviewUrl,
     WebviewWindowBuilder, Window, WindowEvent, Wry,
 };
 use uuid::Uuid;
+
+#[cfg(target_os = "macos")]
+use tauri::menu::Submenu;
 
 #[cfg(desktop)]
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
