@@ -411,6 +411,23 @@ input::placeholder {
   animation: menu-exit 0.15s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   pointer-events: none;
 }
+@keyframes tip-marquee {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  42%,
+  58% {
+    transform: translateX(var(--tip-scroll-offset));
+  }
+  88%,
+  100% {
+    transform: translateX(0);
+  }
+}
+.animate-tip-marquee {
+  animation: tip-marquee 12s ease-in-out infinite;
+}
 @keyframes menu-slide-left {
   from {
     opacity: 0;

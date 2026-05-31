@@ -1,8 +1,13 @@
 {
   "about": {
     "closeTitle": "Close About",
+    "contributors": "Contributors",
+    "feedback": "Feedback",
+    "github": "GitHub",
+    "license": "License",
     "productName": "花笺",
     "summary": "A lightweight, elegant, modern local note-taking tool",
+    "tipPrefix": "Tip:",
     "title": "About"
   },
   "common": {
