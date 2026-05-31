@@ -130,6 +130,13 @@
       "quickNotepad": "Quick Note",
       "restore": "Restore",
       "settings": "Settings"
+    },
+    "sync": {
+      "feedback": {
+        "syncCompleteAt": "Sync complete, updated at {{time}}.",
+        "syncComplete": "Sync complete, latest state retrieved.",
+        "connectionSuccess": "Connected, ready to sync."
+      }
     }
   },
   "noteMenu": {
@@ -248,6 +255,27 @@
         "cover": "Cover",
         "contain": "Contain",
         "repeat": "Repeat"
+      }
+    },
+    "sync": {
+      "label": "WebDAV Sync",
+      "enable": "Enable auto sync",
+      "webdavUrl": "WebDAV URL",
+      "webdavUrlPlaceholder": "https://dav.example.com/floral/",
+      "username": "Account",
+      "usernamePlaceholder": "username",
+      "password": "Password",
+      "passwordPlaceholder": "Enter password",
+      "interval": "Sync interval",
+      "testConnection": "Test Connection",
+      "syncNow": "Sync Now",
+      "status": {
+        "connectionSuccess": "Connected",
+        "notSynced": "Not synced",
+        "failed": "Sync failed",
+        "syncedAt": "Synced {{time}}",
+        "pending": "Pending",
+        "notConfigured": "Not configured"
       }
     }
   },

@@ -36,4 +36,9 @@ export interface AppConfig {
   backgroundScale?: number;
   backgroundPositionX?: number;
   backgroundPositionY?: number;
+  syncEnabled: boolean;
+  syncWebdavUrl: string;
+  syncWebdavUsername: string;
+  syncWebdavPassword: string;
+  syncIntervalSeconds: number;
 }

@@ -16,6 +16,7 @@ import {
   isValidGlobalShortcut,
   shortcutPlatform,
 } from "../features/settings/shortcutRecorder";
+import type { SyncStatus } from "../features/sync/types";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
 import { SUPPORTED_LOCALES } from "../locales/locale-whitelist";
@@ -28,9 +29,24 @@ interface SettingsPanelProps {
   onChange: (config: AppConfig) => void;
   onChooseNotesDir: () => void;
   onClose: () => void;
+  syncStatus?: SyncStatus | null;
+  syncFeedback?: { tone: "success" | "error"; message: string } | null;
+  syncBusy?: boolean;
+  onSyncNow?: () => void;
+  onTestSyncConnection?: () => void;
 }
 
-export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: SettingsPanelProps) {
+export function SettingsPanel({
+  config,
+  onChange,
+  onChooseNotesDir,
+  onClose,
+  syncStatus = null,
+  syncFeedback = null,
+  syncBusy = false,
+  onSyncNow = () => {},
+  onTestSyncConnection = () => {},
+}: SettingsPanelProps) {
   const { t } = useTranslation();
   const setConfigValue = <Key extends keyof AppConfig>(key: Key, value: AppConfig[Key]) => {
     onChange({ ...config, [key]: value });
@@ -92,6 +108,28 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
     [t],
   );
 
+  const syncStatusLabel = useMemo(() => {
+    if (syncFeedback?.tone === "success" && !syncStatus?.lastSyncAt) {
+      return t("settings.sync.status.connectionSuccess", { defaultValue: "连接成功" });
+    }
+    if (!syncStatus) {
+      return t("settings.sync.status.notSynced", { defaultValue: "未同步" });
+    }
+    if (syncStatus.lastError) {
+      return t("settings.sync.status.failed", { defaultValue: "同步失败" });
+    }
+    if (syncStatus.lastSyncAt) {
+      return t("settings.sync.status.syncedAt", {
+        time: new Date(syncStatus.lastSyncAt).toLocaleString(),
+        defaultValue: "已同步 {{time}}",
+      });
+    }
+    if (syncStatus.configured) {
+      return t("settings.sync.status.pending", { defaultValue: "待同步" });
+    }
+    return t("settings.sync.status.notConfigured", { defaultValue: "未配置" });
+  }, [syncFeedback?.tone, syncStatus, t]);
+
   return (
     <aside className="w-[360px] h-full shrink-0 border-l border-paper-deep/30 bg-cloud/92 backdrop-blur-sm flex flex-col">
       <div className="flex items-center justify-between h-11 px-4 border-b border-paper-deep/25">
@@ -132,6 +170,121 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
               watchSystemTheme(v);
             }}
           />
+        </section>
+
+        <section className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="block text-[11px] font-body text-ink-faint">
+              {t("settings.sync.label", { defaultValue: "WebDAV 同步" })}
+            </label>
+            <span className="text-[10px] text-ink-ghost font-mono">{syncStatusLabel}</span>
+          </div>
+          <ToggleRow
+            label={t("settings.sync.enable", { defaultValue: "启用自动同步" })}
+            checked={config.syncEnabled}
+            onChange={(checked) => setConfigValue("syncEnabled", checked)}
+          />
+          <label htmlFor="sync-webdav-url" className="block text-[11px] font-body text-ink-faint">
+            {t("settings.sync.webdavUrl", { defaultValue: "WebDAV 地址" })}
+          </label>
+          <input
+            id="sync-webdav-url"
+            type="url"
+            value={config.syncWebdavUrl}
+            onChange={(event) => setConfigValue("syncWebdavUrl", event.target.value)}
+            placeholder={t("settings.sync.webdavUrlPlaceholder", {
+              defaultValue: "https://dav.example.com/floral/",
+            })}
+            spellCheck={false}
+            className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+          />
+          <label
+            htmlFor="sync-webdav-username"
+            className="block text-[11px] font-body text-ink-faint"
+          >
+            {t("settings.sync.username", { defaultValue: "账户" })}
+          </label>
+          <input
+            id="sync-webdav-username"
+            type="text"
+            value={config.syncWebdavUsername}
+            onChange={(event) => setConfigValue("syncWebdavUsername", event.target.value)}
+            placeholder={t("settings.sync.usernamePlaceholder", { defaultValue: "username" })}
+            spellCheck={false}
+            className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+          />
+          <label
+            htmlFor="sync-webdav-password"
+            className="block text-[11px] font-body text-ink-faint"
+          >
+            {t("settings.sync.password", { defaultValue: "密码" })}
+          </label>
+          <input
+            id="sync-webdav-password"
+            type="password"
+            value={config.syncWebdavPassword}
+            onChange={(event) => setConfigValue("syncWebdavPassword", event.target.value)}
+            placeholder={t("settings.sync.passwordPlaceholder", { defaultValue: "输入密码" })}
+            spellCheck={false}
+            className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+          />
+          <label
+            htmlFor="sync-webdav-interval"
+            className="block text-[11px] font-body text-ink-faint"
+          >
+            {t("settings.sync.interval", { defaultValue: "同步间隔" })}
+          </label>
+          <input
+            id="sync-webdav-interval"
+            type="number"
+            min={30}
+            step={30}
+            value={config.syncIntervalSeconds}
+            onChange={(event) =>
+              setConfigValue("syncIntervalSeconds", Math.max(30, Number(event.target.value) || 300))
+            }
+            className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+          />
+          {syncStatus?.lastError && (
+            <p className="text-[11px] text-red-400 leading-relaxed">{syncStatus.lastError}</p>
+          )}
+          {syncFeedback && !syncStatus?.lastError && (
+            <p
+              className={`text-[11px] leading-relaxed ${
+                syncFeedback.tone === "success" ? "text-bamboo" : "text-red-400"
+              }`}
+            >
+              {syncFeedback.message}
+            </p>
+          )}
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={onTestSyncConnection}
+              disabled={
+                syncBusy ||
+                !config.syncWebdavUrl.trim() ||
+                !config.syncWebdavUsername.trim() ||
+                !config.syncWebdavPassword.trim()
+              }
+              className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {t("settings.sync.testConnection", { defaultValue: "测试连接" })}
+            </button>
+            <button
+              type="button"
+              onClick={onSyncNow}
+              disabled={
+                syncBusy ||
+                !config.syncWebdavUrl.trim() ||
+                !config.syncWebdavUsername.trim() ||
+                !config.syncWebdavPassword.trim()
+              }
+              className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {t("settings.sync.syncNow", { defaultValue: "立即同步" })}
+            </button>
+          </div>
         </section>
 
         <section className="space-y-2">

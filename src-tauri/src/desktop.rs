@@ -142,6 +142,7 @@ struct WindowOpenOptions {
 #[derive(Default)]
 struct RuntimeState {
     is_exiting: AtomicBool,
+    exit_sync_in_progress: AtomicBool,
     windows_hidden: AtomicBool,
     hidden_window_labels: Mutex<Vec<String>>,
     #[cfg(desktop)]
@@ -191,6 +192,14 @@ impl NotepadPool {
 }
 
 impl RuntimeState {
+    fn begin_exit_sync(&self) -> bool {
+        !self.exit_sync_in_progress.swap(true, Ordering::SeqCst)
+    }
+
+    fn is_exit_sync_in_progress(&self) -> bool {
+        self.exit_sync_in_progress.load(Ordering::SeqCst)
+    }
+
     fn allow_exit(&self) {
         self.is_exiting.store(true, Ordering::SeqCst);
     }
@@ -644,6 +653,15 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         return;
     };
 
+    if app_is_exiting(window.app_handle()) {
+        return;
+    }
+
+    if exit_sync_in_progress(window.app_handle()) {
+        api.prevent_close();
+        return;
+    }
+
     match main_window_close_action(app_is_exiting(window.app_handle()), close_to_tray_enabled()) {
         MainWindowCloseAction::AllowClose => {}
         MainWindowCloseAction::HideToTray => {
@@ -654,8 +672,7 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         }
         MainWindowCloseAction::ExitApp => {
             api.prevent_close();
-            mark_app_exiting(window.app_handle());
-            window.app_handle().exit(0);
+            request_app_exit(window.app_handle());
         }
     }
 }
@@ -727,8 +744,7 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
             let _ = app.emit("config-changed", &config);
         }
         Some(TrayMenuAction::Quit) => {
-            mark_app_exiting(app);
-            app.exit(0);
+            request_app_exit(app);
         }
         None => {}
     }
@@ -1229,10 +1245,40 @@ fn app_is_exiting(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
+fn exit_sync_in_progress(app: &AppHandle) -> bool {
+    app.try_state::<RuntimeState>()
+        .map(|state| state.is_exit_sync_in_progress())
+        .unwrap_or(false)
+}
+
 fn mark_app_exiting(app: &AppHandle) {
     if let Some(state) = app.try_state::<RuntimeState>() {
         state.allow_exit();
     }
+}
+
+fn request_app_exit(app: &AppHandle) {
+    if app_is_exiting(app) {
+        app.exit(0);
+        return;
+    }
+
+    let should_start = app
+        .try_state::<RuntimeState>()
+        .map(|state| state.begin_exit_sync())
+        .unwrap_or(true);
+    if !should_start {
+        return;
+    }
+
+    let app_handle = app.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(error) = crate::services::sync::sync_before_app_exit(&app_handle).await {
+            eprintln!("failed to sync before exit: {error}");
+        }
+        mark_app_exiting(&app_handle);
+        app_handle.exit(0);
+    });
 }
 
 #[cfg(desktop)]
@@ -1835,6 +1881,11 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
+            sync_enabled: false,
+            sync_webdav_url: String::new(),
+            sync_webdav_username: String::new(),
+            sync_webdav_password: String::new(),
+            sync_interval_seconds: 300,
         };
 
         let error = match shortcut_bindings_from_config(&config) {
@@ -1851,6 +1902,23 @@ mod tests {
             main_window_close_action(false, false),
             MainWindowCloseAction::ExitApp
         );
+    }
+
+    #[test]
+    fn allows_close_after_exit_has_started() {
+        assert_eq!(
+            main_window_close_action(true, false),
+            MainWindowCloseAction::AllowClose
+        );
+    }
+
+    #[test]
+    fn starts_exit_sync_only_once() {
+        let state = RuntimeState::default();
+
+        assert!(state.begin_exit_sync());
+        assert!(state.is_exit_sync_in_progress());
+        assert!(!state.begin_exit_sync());
     }
 
     #[test]
@@ -1886,6 +1954,11 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            sync_enabled: false,
+            sync_webdav_url: String::new(),
+            sync_webdav_username: String::new(),
+            sync_webdav_password: String::new(),
+            sync_interval_seconds: 300,
         };
         let next = AppConfig {
             locale: "en-US".into(),
@@ -1918,6 +1991,11 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),
+            sync_enabled: true,
+            sync_webdav_url: "https://dav.example.com/floral/".into(),
+            sync_webdav_username: "writer".into(),
+            sync_webdav_password: "secret-password".into(),
+            sync_interval_seconds: 180,
         };
 
         assert_eq!(

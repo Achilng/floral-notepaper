@@ -2,7 +2,9 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::BTreeMap,
-    env, fmt, fs, io,
+    env,
+    fmt::{self, Write},
+    fs, io,
     path::{Component, Path, PathBuf},
 };
 use uuid::Uuid;
@@ -78,6 +80,74 @@ pub struct AppConfig {
     pub toggle_visibility_shortcut: String,
     #[serde(default = "default_open_at_cursor")]
     pub open_at_cursor: bool,
+    #[serde(default = "default_sync_enabled")]
+    pub sync_enabled: bool,
+    #[serde(default = "default_sync_webdav_url")]
+    pub sync_webdav_url: String,
+    #[serde(default = "default_sync_webdav_username")]
+    pub sync_webdav_username: String,
+    #[serde(default = "default_sync_webdav_password")]
+    pub sync_webdav_password: String,
+    #[serde(default = "default_sync_interval_seconds")]
+    pub sync_interval_seconds: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+struct StoredAppConfig {
+    #[serde(default = "default_locale")]
+    locale: String,
+    notes_dir: String,
+    global_shortcut: String,
+    close_to_tray: bool,
+    autostart: bool,
+    default_view_mode: String,
+    #[serde(default = "default_note_auto_save")]
+    note_auto_save: bool,
+    #[serde(default = "default_note_surface_auto_save")]
+    note_surface_auto_save: bool,
+    #[serde(default = "default_tile_color")]
+    tile_color: String,
+    #[serde(default = "default_tile_color_mode")]
+    tile_color_mode: String,
+    #[serde(default = "default_theme")]
+    theme: String,
+    #[serde(default = "default_font_size")]
+    font_size: u32,
+    #[serde(default = "default_surface_font_size")]
+    surface_font_size: u32,
+    #[serde(default = "default_tab_indent_size")]
+    tab_indent_size: u32,
+    #[serde(default = "default_external_file_auto_save")]
+    external_file_auto_save: bool,
+    #[serde(default)]
+    render_html_markdown: bool,
+    #[serde(default = "default_remember_surface_size")]
+    remember_surface_size: bool,
+    #[serde(default = "default_tile_ctrl_close")]
+    tile_ctrl_close: bool,
+    #[serde(default)]
+    tile_render_markdown: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    surface_width: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    surface_height: Option<u32>,
+    #[serde(default = "default_toggle_visibility_shortcut")]
+    toggle_visibility_shortcut: String,
+    #[serde(default = "default_open_at_cursor")]
+    open_at_cursor: bool,
+    #[serde(default = "default_sync_enabled")]
+    sync_enabled: bool,
+    #[serde(default = "default_sync_webdav_url")]
+    sync_webdav_url: String,
+    #[serde(default = "default_sync_webdav_username")]
+    sync_webdav_username: String,
+    #[serde(default, skip_serializing)]
+    sync_webdav_password: String,
+    #[serde(default = "default_sync_webdav_password_encrypted")]
+    sync_webdav_password_encrypted: String,
+    #[serde(default = "default_sync_interval_seconds")]
+    sync_interval_seconds: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -127,7 +197,7 @@ pub struct AppError {
 }
 
 impl AppError {
-    fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -189,6 +259,88 @@ impl From<serde_json::Error> for AppError {
 impl From<tauri::Error> for AppError {
     fn from(error: tauri::Error) -> Self {
         Self::new("tauri", error.to_string())
+    }
+}
+
+impl From<StoredAppConfig> for AppConfig {
+    fn from(stored: StoredAppConfig) -> Self {
+        Self {
+            locale: stored.locale,
+            notes_dir: stored.notes_dir,
+            global_shortcut: stored.global_shortcut,
+            close_to_tray: stored.close_to_tray,
+            autostart: stored.autostart,
+            default_view_mode: stored.default_view_mode,
+            note_auto_save: stored.note_auto_save,
+            note_surface_auto_save: stored.note_surface_auto_save,
+            tile_color: stored.tile_color,
+            tile_color_mode: stored.tile_color_mode,
+            theme: stored.theme,
+            font_size: stored.font_size,
+            surface_font_size: stored.surface_font_size,
+            tab_indent_size: stored.tab_indent_size,
+            external_file_auto_save: stored.external_file_auto_save,
+            render_html_markdown: stored.render_html_markdown,
+            remember_surface_size: stored.remember_surface_size,
+            tile_ctrl_close: stored.tile_ctrl_close,
+            tile_render_markdown: stored.tile_render_markdown,
+            surface_width: stored.surface_width,
+            surface_height: stored.surface_height,
+            toggle_visibility_shortcut: stored.toggle_visibility_shortcut,
+            open_at_cursor: stored.open_at_cursor,
+            sync_enabled: stored.sync_enabled,
+            sync_webdav_url: stored.sync_webdav_url,
+            sync_webdav_username: stored.sync_webdav_username,
+            sync_webdav_password: if stored.sync_webdav_password_encrypted.trim().is_empty() {
+                stored.sync_webdav_password
+            } else {
+                decrypt_sync_password(&stored.sync_webdav_password_encrypted)
+            },
+            sync_interval_seconds: normalize_sync_interval_seconds(stored.sync_interval_seconds),
+            background_image_path: String::new(),
+            background_fit: default_background_fit(),
+            background_dim: default_background_dim(),
+            background_blur: default_background_blur(),
+            background_scale: default_background_scale(),
+            background_position_x: default_background_position(),
+            background_position_y: default_background_position(),
+        }
+    }
+}
+
+impl From<&AppConfig> for StoredAppConfig {
+    fn from(config: &AppConfig) -> Self {
+        Self {
+            locale: config.locale.clone(),
+            notes_dir: config.notes_dir.clone(),
+            global_shortcut: config.global_shortcut.clone(),
+            close_to_tray: config.close_to_tray,
+            autostart: config.autostart,
+            default_view_mode: config.default_view_mode.clone(),
+            note_auto_save: config.note_auto_save,
+            note_surface_auto_save: config.note_surface_auto_save,
+            tile_color: config.tile_color.clone(),
+            tile_color_mode: config.tile_color_mode.clone(),
+            theme: config.theme.clone(),
+            font_size: config.font_size,
+            surface_font_size: config.surface_font_size,
+            tab_indent_size: config.tab_indent_size,
+            external_file_auto_save: config.external_file_auto_save,
+            render_html_markdown: config.render_html_markdown,
+            remember_surface_size: config.remember_surface_size,
+            tile_ctrl_close: config.tile_ctrl_close,
+            tile_render_markdown: config.tile_render_markdown,
+            surface_width: config.surface_width,
+            surface_height: config.surface_height,
+            toggle_visibility_shortcut: config.toggle_visibility_shortcut.clone(),
+            open_at_cursor: config.open_at_cursor,
+            sync_enabled: config.sync_enabled,
+            sync_webdav_url: config.sync_webdav_url.clone(),
+            sync_webdav_username: config.sync_webdav_username.clone(),
+            sync_webdav_password: String::new(),
+            sync_webdav_password_encrypted: encrypt_sync_password(&config.sync_webdav_password),
+            sync_interval_seconds: normalize_sync_interval_seconds(config.sync_interval_seconds),
+        }
     }
 }
 
@@ -311,6 +463,10 @@ impl NoteStore {
         self.base_dir.join("config.json")
     }
 
+    pub fn sync_state_path(&self) -> PathBuf {
+        self.base_dir.join("sync_state.json")
+    }
+
     #[cfg(target_os = "macos")]
     fn macos_shortcut_migration_path(&self) -> PathBuf {
         self.base_dir.join(MACOS_SHORTCUT_MIGRATION_MARKER)
@@ -326,14 +482,19 @@ impl NoteStore {
             return Ok(config);
         }
 
-        let mut config: AppConfig = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        let stored: StoredAppConfig = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        let mut config: AppConfig = stored.into();
+        let mut changed = false;
         if is_safe_notes_dir(Path::new(&config.notes_dir)).is_err() {
             config.notes_dir = self.default_config().notes_dir;
-            write_json_atomic(&path, &config)?;
+            changed = true;
         }
         fs::create_dir_all(&config.notes_dir)?;
         if self.migrate_macos_shortcut_default(&mut config)? {
-            write_json_atomic(&path, &config)?;
+            changed = true;
+        }
+        if changed {
+            self.save_config(config.clone())?;
         }
         Ok(config)
     }
@@ -342,9 +503,12 @@ impl NoteStore {
         self.ensure_base_dir()?;
         config.notes_dir = ensure_notes_suffix(&config.notes_dir);
         config.tab_indent_size = config.tab_indent_size.clamp(1, 8);
+        config.sync_interval_seconds =
+            normalize_sync_interval_seconds(config.sync_interval_seconds);
         is_safe_notes_dir(Path::new(&config.notes_dir))?;
         fs::create_dir_all(&config.notes_dir)?;
-        write_json_atomic(&self.config_path(), &config)?;
+        let stored = StoredAppConfig::from(&config);
+        write_json_atomic(&self.config_path(), &stored)?;
         Ok(config)
     }
 
@@ -362,19 +526,16 @@ impl NoteStore {
     pub fn read_note(&self, id: &str) -> Result<Note, AppError> {
         self.ensure_storage()?;
         let metadata = self.find_metadata(id)?;
-        let content = fs::read_to_string(
-            self.note_path_in_category(&metadata.file_name, &metadata.category),
-        )?;
-        Ok(Note {
-            id: metadata.id,
-            title: metadata.title,
-            file_name: metadata.file_name,
-            category: metadata.category,
-            created_at: metadata.created_at,
-            updated_at: metadata.updated_at,
-            word_count: metadata.word_count,
-            content,
-        })
+        self.read_note_from_metadata(metadata)
+    }
+
+    // Sync needs to compare remote and local note bodies in batches, so it uses a
+    // content-aware listing instead of repeatedly calling the single-note loader.
+    pub fn list_note_contents(&self) -> Result<Vec<Note>, AppError> {
+        self.list_notes()?
+            .into_iter()
+            .map(|metadata| self.read_note_from_metadata(metadata))
+            .collect()
     }
 
     pub fn create_note(&self, request: SaveNoteRequest) -> Result<Note, AppError> {
@@ -414,6 +575,82 @@ impl NoteStore {
             word_count,
             content: request.content,
         })
+    }
+
+    // Remote sync replays exact note ids and timestamps from the manifest, so this
+    // entry point bypasses local note id generation and preserves remote metadata.
+    pub fn upsert_synced_note(
+        &self,
+        id: &str,
+        title: &str,
+        content: &str,
+        category: &str,
+        created_at: DateTime<Utc>,
+        updated_at: DateTime<Utc>,
+    ) -> Result<Note, AppError> {
+        self.ensure_storage()?;
+        validate_synced_note_id(id)?;
+        validate_optional_category_name(category)?;
+        let mut metadata_file = self.load_metadata()?;
+        let file_name = self.file_name_for(id, title);
+        let note_path = self.note_path_in_category(&file_name, category);
+        if let Some(parent) = note_path.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        fs::write(&note_path, content)?;
+
+        let word_count = count_words(content);
+        let note_preview = preview(content);
+        if let Some(existing) = metadata_file.notes.iter_mut().find(|note| note.id == id) {
+            let old_path = self.note_path_in_category(&existing.file_name, &existing.category);
+            if old_path.exists() && old_path != note_path {
+                fs::remove_file(old_path)?;
+            }
+            existing.title = title.to_string();
+            existing.file_name = file_name.clone();
+            existing.category = category.to_string();
+            existing.created_at = created_at;
+            existing.updated_at = updated_at;
+            existing.word_count = word_count;
+            existing.preview = note_preview.clone();
+        } else {
+            metadata_file.notes.push(NoteMetadata {
+                id: id.to_string(),
+                title: title.to_string(),
+                file_name: file_name.clone(),
+                category: category.to_string(),
+                created_at,
+                updated_at,
+                word_count,
+                preview: note_preview.clone(),
+            });
+        }
+
+        self.save_metadata(&metadata_file)?;
+        Ok(Note {
+            id: id.to_string(),
+            title: title.to_string(),
+            file_name,
+            category: category.to_string(),
+            created_at,
+            updated_at,
+            word_count,
+            content: content.to_string(),
+        })
+    }
+
+    pub fn delete_synced_note(&self, id: &str) -> Result<(), AppError> {
+        self.ensure_storage()?;
+        let mut metadata_file = self.load_metadata()?;
+        let Some(index) = metadata_file.notes.iter().position(|note| note.id == id) else {
+            return Ok(());
+        };
+        let metadata = metadata_file.notes.remove(index);
+        let path = self.note_path_in_category(&metadata.file_name, &metadata.category);
+        if path.exists() {
+            fs::remove_file(path)?;
+        }
+        self.save_metadata(&metadata_file)
     }
 
     pub fn update_note(&self, id: &str, request: SaveNoteRequest) -> Result<Note, AppError> {
@@ -692,6 +929,11 @@ impl NoteStore {
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
             open_at_cursor: default_open_at_cursor(),
+            sync_enabled: default_sync_enabled(),
+            sync_webdav_url: default_sync_webdav_url(),
+            sync_webdav_username: default_sync_webdav_username(),
+            sync_webdav_password: default_sync_webdav_password(),
+            sync_interval_seconds: default_sync_interval_seconds(),
         }
     }
 
@@ -757,6 +999,22 @@ impl NoteStore {
         } else {
             notes_dir.join(category).join(file_name)
         }
+    }
+
+    fn read_note_from_metadata(&self, metadata: NoteMetadata) -> Result<Note, AppError> {
+        let content = fs::read_to_string(
+            self.note_path_in_category(&metadata.file_name, &metadata.category),
+        )?;
+        Ok(Note {
+            id: metadata.id,
+            title: metadata.title,
+            file_name: metadata.file_name,
+            category: metadata.category,
+            created_at: metadata.created_at,
+            updated_at: metadata.updated_at,
+            word_count: metadata.word_count,
+            content,
+        })
     }
 
     fn find_metadata(&self, id: &str) -> Result<NoteMetadata, AppError> {
@@ -886,6 +1144,37 @@ fn shortcuts_equal(left: &str, right: &str) -> bool {
     }
 
     normalize(left) == normalize(right)
+}
+
+fn is_unsafe_path_segment(value: &str) -> bool {
+    value.trim() != value
+        || value.is_empty()
+        || value == "."
+        || value == ".."
+        || value.contains("..")
+        || value
+            .chars()
+            .any(|ch| matches!(ch, '/' | '\\' | ':') || ch.is_control())
+}
+
+fn validate_synced_note_id(id: &str) -> Result<(), AppError> {
+    if is_unsafe_path_segment(id) {
+        return Err(AppError::new(
+            "syncNoteIdInvalid",
+            "远端同步清单中的笔记 ID 不合法，已停止写入本地文件。",
+        ));
+    }
+    Ok(())
+}
+
+fn validate_optional_category_name(category: &str) -> Result<(), AppError> {
+    if category.is_empty() {
+        return Ok(());
+    }
+    if is_unsafe_path_segment(category) {
+        return Err(AppError::category_name_invalid_chars());
+    }
+    Ok(())
 }
 
 fn safe_file_stem(title: &str) -> String {
@@ -1052,6 +1341,82 @@ fn default_open_at_cursor() -> bool {
     true
 }
 
+fn default_sync_enabled() -> bool {
+    false
+}
+
+fn default_sync_webdav_url() -> String {
+    String::new()
+}
+
+fn default_sync_webdav_username() -> String {
+    String::new()
+}
+
+fn default_sync_webdav_password() -> String {
+    String::new()
+}
+
+fn default_sync_webdav_password_encrypted() -> String {
+    String::new()
+}
+
+fn default_sync_interval_seconds() -> u32 {
+    300
+}
+
+fn normalize_sync_interval_seconds(value: u32) -> u32 {
+    match value {
+        0 => default_sync_interval_seconds(),
+        1..=29 => 30,
+        _ => value.min(86_400),
+    }
+}
+
+const SYNC_PASSWORD_PREFIX: &str = "v1:";
+const SYNC_PASSWORD_MASK: &[u8] = b"floral-webdav-sync";
+
+fn encrypt_sync_password(password: &str) -> String {
+    if password.is_empty() {
+        return String::new();
+    }
+
+    let mut encoded = String::from(SYNC_PASSWORD_PREFIX);
+    for (index, byte) in password.as_bytes().iter().enumerate() {
+        let masked = byte ^ SYNC_PASSWORD_MASK[index % SYNC_PASSWORD_MASK.len()];
+        let _ = write!(&mut encoded, "{masked:02x}");
+    }
+    encoded
+}
+
+fn decrypt_sync_password(value: &str) -> String {
+    if value.is_empty() {
+        return String::new();
+    }
+
+    let Some(encoded) = value.strip_prefix(SYNC_PASSWORD_PREFIX) else {
+        return value.to_string();
+    };
+
+    if encoded.len() % 2 != 0 {
+        return String::new();
+    }
+
+    let mut decoded = Vec::with_capacity(encoded.len() / 2);
+    let mut index = 0;
+    while index < encoded.len() {
+        let pair = &encoded[index..index + 2];
+        let Ok(masked) = u8::from_str_radix(pair, 16) else {
+            return String::new();
+        };
+        let original = masked ^ SYNC_PASSWORD_MASK[decoded.len() % SYNC_PASSWORD_MASK.len()];
+        decoded.push(original);
+        index += 2;
+    }
+
+    String::from_utf8(decoded).unwrap_or_default()
+}
+
 fn default_locale() -> String {
     "zh-CN".into()
 }
@@ -1157,6 +1522,28 @@ mod tests {
     }
 
     #[test]
+    fn rejects_unsafe_synced_note_paths() {
+        let store = NoteStore::new(test_root("unsafe-synced-note-paths"));
+        let now = Utc::now();
+
+        let unsafe_id =
+            store.upsert_synced_note("../outside", "Remote title", "body", "", now, now);
+        assert!(unsafe_id.is_err());
+
+        let unsafe_category = store.upsert_synced_note(
+            "safe-note-id",
+            "Remote title",
+            "body",
+            "../outside",
+            now,
+            now,
+        );
+        assert!(unsafe_category.is_err());
+        assert!(!store.base_dir().join("outside").exists());
+        assert!(!store.base_dir().join("outside_Remote title.md").exists());
+    }
+
+    #[test]
     fn reads_and_writes_config_json() {
         let store = NoteStore::new(test_root("config"));
 
@@ -1205,6 +1592,11 @@ mod tests {
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
             open_at_cursor: true,
+            sync_enabled: true,
+            sync_webdav_url: "https://dav.example.com/floral/".into(),
+            sync_webdav_username: "writer".into(),
+            sync_webdav_password: "secret-password".into(),
+            sync_interval_seconds: 180,
         };
 
         store.save_config(saved.clone()).expect("save config");
@@ -1212,6 +1604,10 @@ mod tests {
         let loaded = store.load_config().expect("reload config");
         assert_eq!(loaded, saved);
         assert!(custom_notes_dir.exists());
+
+        let raw_config = fs::read_to_string(store.config_path()).expect("read raw config");
+        assert!(raw_config.contains("\"syncWebdavPasswordEncrypted\""));
+        assert!(!raw_config.contains("secret-password"));
     }
 
     #[test]
@@ -1244,6 +1640,11 @@ mod tests {
         assert_eq!(loaded.locale, "zh-CN");
         assert_eq!(loaded.font_size, 14);
         assert_eq!(loaded.surface_font_size, 14);
+        assert!(!loaded.sync_enabled);
+        assert_eq!(loaded.sync_webdav_url, "");
+        assert_eq!(loaded.sync_webdav_username, "");
+        assert_eq!(loaded.sync_webdav_password, "");
+        assert_eq!(loaded.sync_interval_seconds, 300);
     }
 
     #[cfg(target_os = "macos")]

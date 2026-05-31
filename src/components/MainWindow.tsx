@@ -12,6 +12,8 @@ import {
   saveConfig,
 } from "../features/settings/api";
 import type { AppConfig, ViewMode } from "../features/settings/types";
+import { getSyncStatus, syncNow, testSyncConnection } from "../features/sync/api";
+import type { SyncStatus } from "../features/sync/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { SettingsPanel } from "./SettingsPanel";
@@ -62,6 +64,13 @@ import {
 } from "../features/windows/tileWindowEvents";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+
+export function shouldSaveCurrentNoteBeforeManualSync(
+  selectedId: string | null,
+  saveState: SaveState,
+): boolean {
+  return Boolean(selectedId && saveState === "dirty");
+}
 
 interface NoteMenuState {
   x: number;
@@ -296,6 +305,12 @@ export function MainWindow({
   const [savedNotesDir, setSavedNotesDir] = useState<string | null>(
     initialConfig?.notesDir ?? null,
   );
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null);
+  const [syncFeedback, setSyncFeedback] = useState<{
+    tone: "success" | "error";
+    message: string;
+  } | null>(null);
+  const [syncBusy, setSyncBusy] = useState(false);
   const [noteTransitionKey, setNoteTransitionKey] = useState(0);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
   const [deleteExiting, setDeleteExiting] = useState(false);
@@ -539,14 +554,16 @@ export function MainWindow({
     async function bootstrap() {
       setIsLoading(true);
       try {
-        const [loadedConfig, loadedNotes, loadedCategories] = await Promise.all([
+        const [loadedConfig, loadedNotes, loadedCategories, loadedSyncStatus] = await Promise.all([
           getConfig(),
           listNotes(),
           listCategories(),
+          getSyncStatus().catch(() => null),
         ]);
         if (cancelled) return;
         setSettingsConfig(loadedConfig);
         setSavedNotesDir(loadedConfig.notesDir);
+        setSyncStatus(loadedSyncStatus);
         setViewMode(normalizeViewMode(loadedConfig.defaultViewMode));
         setNotes(loadedNotes);
         setCategories(loadedCategories);
@@ -576,6 +593,15 @@ export function MainWindow({
       cancelled = true;
     };
   }, [applyNote, clearCurrentNote]);
+
+  useEffect(() => {
+    const unlisten = listen<SyncStatus>("sync-status-changed", (event) => {
+      setSyncStatus(event.payload);
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
 
   useEffect(() => {
     const unlisten = listen("notes-changed", () => {
@@ -897,6 +923,81 @@ export function MainWindow({
   const handleCloseSettings = useCallback(() => {
     setSettingsOpen(false);
   }, []);
+
+  const saveCurrentSettingsImmediately = useCallback(async () => {
+    if (!settingsConfig) {
+      return null;
+    }
+
+    const normalizedConfig = {
+      ...settingsConfig,
+      defaultViewMode: normalizeViewMode(settingsConfig.defaultViewMode),
+      tileColor: normalizeTileColor(settingsConfig.tileColor),
+    };
+    const savedConfig = await saveConfig(normalizedConfig);
+    setSettingsConfig(savedConfig);
+    setSavedNotesDir(savedConfig.notesDir);
+    setViewMode(normalizeViewMode(savedConfig.defaultViewMode));
+    return savedConfig;
+  }, [settingsConfig]);
+
+  const runManualSync = useCallback(async () => {
+    setSyncBusy(true);
+    setSyncFeedback(null);
+    setErrorMessage(null);
+    try {
+      if (shouldSaveCurrentNoteBeforeManualSync(selectedId, saveState)) {
+        const saved = await saveCurrentNote();
+        if (!saved) return;
+      }
+      await saveCurrentSettingsImmediately();
+      const status = await syncNow();
+      setSyncStatus(status);
+      setSyncFeedback({
+        tone: "success",
+        message: status.lastSyncAt
+          ? t("main.sync.feedback.syncCompleteAt", {
+              time: new Date(status.lastSyncAt).toLocaleString(),
+              defaultValue: "同步完成，更新时间 {{time}}。",
+            })
+          : t("main.sync.feedback.syncComplete", {
+              defaultValue: "同步完成，已经拿到最新状态。",
+            }),
+      });
+      await refreshNotes();
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+      setSyncFeedback(null);
+      const latest = await getSyncStatus().catch(() => null);
+      if (latest) setSyncStatus(latest);
+    } finally {
+      setSyncBusy(false);
+    }
+  }, [refreshNotes, saveCurrentNote, saveCurrentSettingsImmediately, saveState, selectedId, t]);
+
+  const runSyncConnectionTest = useCallback(async () => {
+    setSyncBusy(true);
+    setSyncFeedback(null);
+    setErrorMessage(null);
+    try {
+      await saveCurrentSettingsImmediately();
+      const status = await testSyncConnection();
+      setSyncStatus(status);
+      setSyncFeedback({
+        tone: "success",
+        message: t("main.sync.feedback.connectionSuccess", {
+          defaultValue: "连接成功，可以开始同步。",
+        }),
+      });
+    } catch (error) {
+      setErrorMessage(getErrorMessage(error));
+      setSyncFeedback(null);
+      const latest = await getSyncStatus().catch(() => null);
+      if (latest) setSyncStatus(latest);
+    } finally {
+      setSyncBusy(false);
+    }
+  }, [saveCurrentSettingsImmediately, t]);
 
   const handleImportNote = async () => {
     setErrorMessage(null);
@@ -2290,6 +2391,11 @@ export function MainWindow({
                   onChange={handleSettingsChange}
                   onChooseNotesDir={() => void handleChooseNotesDir()}
                   onClose={handleCloseSettings}
+                  syncStatus={syncStatus}
+                  syncFeedback={syncFeedback}
+                  syncBusy={syncBusy}
+                  onSyncNow={() => void runManualSync()}
+                  onTestSyncConnection={() => void runSyncConnectionTest()}
                 />
               </div>
             </div>
