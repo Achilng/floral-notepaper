@@ -36,14 +36,6 @@ pub fn notepad_window_title(locale: Locale) -> &'static str {
     }
 }
 
-pub fn about_window_title(locale: Locale) -> &'static str {
-    match locale {
-        Locale::ZhCn => "关于花笺",
-        Locale::EnUs => "About Floral Notepaper",
-        Locale::ZhHk => "關於花箋",
-    }
-}
-
 pub fn tile_window_title(locale: Locale) -> &'static str {
     match locale {
         Locale::ZhCn => "花笺磁贴",

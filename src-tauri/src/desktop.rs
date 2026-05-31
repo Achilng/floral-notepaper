@@ -2273,29 +2273,6 @@ pub fn stop_shortcut_recording(_app: &AppHandle) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-pub(crate) fn open_debug_about_window(app: &AppHandle) -> Result<String, AppError> {
-    let locale = configured_locale();
-    open_or_focus_window(
-        app,
-        "about-debug",
-        WindowOpenOptions {
-            url: "index.html?view=about".to_string(),
-            title: locales::about_window_title(locale).to_string(),
-            specs: WindowSizeSpec {
-                width: 400.0,
-                height: 520.0,
-                min_width: 360.0,
-                min_height: 400.0,
-            },
-            decorations: true,
-            always_on_top: false,
-            shadow: true,
-            skip_taskbar: false,
-            bounds: None,
-        },
-    )
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

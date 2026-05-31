@@ -277,11 +277,6 @@ fn take_startup_file() -> Option<String> {
     desktop::take_startup_file()
 }
 
-#[tauri::command]
-fn open_debug_about_window(app: AppHandle) -> Result<String, AppError> {
-    desktop::open_debug_about_window(&app)
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -341,8 +336,7 @@ pub fn run() {
             updater::commands::update_install,
             updater::commands::update_install_prepare_report,
             updater::commands::update_cancel,
-            take_startup_file,
-            open_debug_about_window
+            take_startup_file
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
