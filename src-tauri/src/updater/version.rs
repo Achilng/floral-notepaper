@@ -2,7 +2,7 @@ use super::{errors, types::UpdateChannel};
 use crate::services::notes::AppError;
 use semver::Version;
 
-pub const CURRENT_APP_VERSION: &str = env!("CARGO_PKG_VERSION");
+pub const CURRENT_APP_VERSION: &str = env!("TAURI_CONF_VERSION");
 
 pub fn current_version() -> Result<Version, AppError> {
     normalize_version(CURRENT_APP_VERSION)

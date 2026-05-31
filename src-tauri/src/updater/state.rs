@@ -18,7 +18,7 @@ const STATE_LOCK_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const STALE_STATE_LOCK_AGE: Duration = Duration::from_secs(5 * 60);
 
 pub fn load(paths: &UpdatePaths) -> Result<UpdateStateDto, AppError> {
-    load_with_current_version(paths, env!("CARGO_PKG_VERSION"))
+    load_with_current_version(paths, super::version::CURRENT_APP_VERSION)
 }
 
 pub fn load_with_current_version(
@@ -106,7 +106,7 @@ pub fn save_with_current_version(
 }
 
 pub fn recover(paths: &UpdatePaths) -> Result<UpdateStateDto, AppError> {
-    recover_with_current_version(paths, env!("CARGO_PKG_VERSION"))
+    recover_with_current_version(paths, super::version::CURRENT_APP_VERSION)
 }
 
 pub fn recover_with_current_version(

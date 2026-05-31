@@ -1,3 +1,5 @@
+import { getVersion } from "@tauri-apps/api/app";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { UpdateSettingsSection } from "../features/update/UpdateSettingsSection";
 
@@ -7,6 +9,11 @@ interface AboutPanelProps {
 
 export function AboutPanel({ onClose }: AboutPanelProps) {
   const { t } = useTranslation();
+  const [version, setVersion] = useState("");
+
+  useEffect(() => {
+    getVersion().then(setVersion);
+  }, []);
 
   return (
     <aside className="w-[360px] h-full shrink-0 border-l border-paper-deep/30 bg-cloud/92 backdrop-blur-sm flex flex-col">
@@ -42,6 +49,11 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
           <p className="text-[11px] text-ink-ghost font-body">
             {t("about.summary", { defaultValue: "轻量、优雅、现代化的本地便签工具" })}
           </p>
+          {version && (
+            <p className="text-[11px] text-ink-ghost font-mono">
+              {t("about.version", { defaultValue: "版本：v{{version}}", version })}
+            </p>
+          )}
         </section>
 
         <UpdateSettingsSection mode="checkOnly" />

@@ -452,6 +452,7 @@ fn force_terminate_self() -> ! {
 
 #[cfg(test)]
 mod tests {
+    use super::super::version::CURRENT_APP_VERSION;
     use super::*;
     use std::{fs, sync::Mutex};
 
@@ -510,7 +511,7 @@ mod tests {
             &emitter,
             &paths,
             true,
-            env!("CARGO_PKG_VERSION"),
+            CURRENT_APP_VERSION,
             Err(errors::github_api_error("request failed")),
         );
 
@@ -541,7 +542,7 @@ mod tests {
             &emitter,
             &paths,
             false,
-            env!("CARGO_PKG_VERSION"),
+            CURRENT_APP_VERSION,
             Err(errors::github_rate_limited()),
         );
 

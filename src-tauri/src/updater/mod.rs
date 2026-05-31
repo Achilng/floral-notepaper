@@ -350,14 +350,14 @@ impl UpdaterState {
 
 impl Default for UpdaterState {
     fn default() -> Self {
-        Self::new(env!("CARGO_PKG_VERSION"))
+        Self::new(version::CURRENT_APP_VERSION)
     }
 }
 
 #[cfg(test)]
 impl UpdaterState {
     pub(crate) fn with_paths(paths: UpdatePaths) -> Self {
-        Self::with_paths_and_version(paths, env!("CARGO_PKG_VERSION"))
+        Self::with_paths_and_version(paths, version::CURRENT_APP_VERSION)
     }
 
     pub(crate) fn with_paths_and_version(

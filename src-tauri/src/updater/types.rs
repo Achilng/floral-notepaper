@@ -148,7 +148,7 @@ pub struct UpdateStateDto {
 
 impl UpdateStateDto {
     pub fn idle() -> Self {
-        Self::idle_with_version(env!("CARGO_PKG_VERSION"))
+        Self::idle_with_version(super::version::CURRENT_APP_VERSION)
     }
 
     pub fn idle_with_version(current_version: impl Into<String>) -> Self {
