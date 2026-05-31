@@ -37,6 +37,7 @@ AGENTS.md
 CLAUDE.md
 .codex
 *ANALYSIS.md
+.claude
 
 ## 已从仓库历史清除的本地文件
 src/assets/fonts/SourceHanSerifSC-Bold.woff2
