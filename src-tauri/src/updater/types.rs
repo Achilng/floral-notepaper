@@ -147,6 +147,7 @@ pub struct UpdateStateDto {
 }
 
 impl UpdateStateDto {
+    #[cfg(test)]
     pub fn idle() -> Self {
         Self::idle_with_version(super::version::CURRENT_APP_VERSION)
     }
@@ -173,16 +174,22 @@ impl UpdateStateDto {
         }
     }
 
-    pub fn failed(error: UpdateErrorDto) -> Self {
+    pub fn failed_with_version(current_version: impl Into<String>, error: UpdateErrorDto) -> Self {
         Self {
             status: UpdateStatus::Failed,
             checked_at: Some(Utc::now()),
             last_error: Some(error),
-            ..Self::idle()
+            ..Self::idle_with_version(current_version)
         }
+    }
+
+    #[cfg(test)]
+    pub fn failed(error: UpdateErrorDto) -> Self {
+        Self::failed_with_version(super::version::CURRENT_APP_VERSION, error)
     }
 }
 
+#[cfg(test)]
 impl Default for UpdateStateDto {
     fn default() -> Self {
         Self::idle()

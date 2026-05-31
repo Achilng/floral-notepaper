@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useTranslation } from "react-i18next";
@@ -171,90 +171,104 @@ export function UpdateSettingsSection({
     let active = true;
 
     const bindEvents = async () => {
-      const unlistenChecking = await listen<UpdateState>("update://checking", (event) => {
-        if (!active) return;
-        setStatus(event.payload);
-      });
-
-      const unlistenChecked = await listen<UpdateState>("update://checked", (event) => {
-        if (!active) return;
-        latestChannelRef.current = event.payload.channel;
-        setStatus(event.payload);
-        const nextNotice = getUpdateCheckCompletionNotice(event.payload, translateRef.current);
-        if (nextNotice) {
-          setNotice(nextNotice);
+      const unlistenFns: UnlistenFn[] = [];
+      const disposeAll = () => {
+        for (const unlisten of unlistenFns.splice(0)) {
+          unlisten();
         }
-      });
-
-      const unlistenProgress = await listen<UpdateDownloadProgress>(
-        "update://download-progress",
-        (event) => {
-          if (!active) return;
-          setDownloadProgress(event.payload);
-          setStatus((current) =>
-            deriveDownloadProgressState(current, event.payload, latestChannelRef.current),
-          );
-        },
-      );
-
-      const unlistenFinished = await listen<UpdateState>("update://download-finished", (event) => {
-        if (!active) return;
-        latestChannelRef.current = event.payload.channel;
-        setDownloadProgress(null);
-        setStatus(event.payload);
-      });
-
-      const unlistenInstallFinished = await listen<UpdateState>(
-        "update://install-finished",
-        (event) => {
-          if (!active) return;
-          latestChannelRef.current = event.payload.channel;
-          setStatus(event.payload);
-        },
-      );
-
-      const unlistenError = await listen<UpdateErrorPayload>("update://error", (event) => {
-        if (!active) return;
-        const t = translateRef.current;
-        const errorText = getUpdateErrorMessage(event.payload, t);
-        setNotice({ tone: "error", text: errorText });
-        if (event.payload.code.startsWith("updateInstall")) {
-          void message(errorText, {
-            title: t("settings.update.installFailedTitle", {
-              defaultValue: "安装更新失败",
-            }),
-            kind: "error",
-          });
-        }
-      });
-
-      const unlistenAutoCheckError = await listen<UpdateErrorPayload>(
-        "update://auto-check-error",
-        (event) => {
-          if (!active) return;
-          setNotice({
-            tone: "error",
-            text: getUpdateErrorMessage(event.payload, translateRef.current),
-          });
-        },
-      );
-
-      return () => {
-        unlistenChecking();
-        unlistenChecked();
-        unlistenProgress();
-        unlistenFinished();
-        unlistenInstallFinished();
-        unlistenError();
-        unlistenAutoCheckError();
       };
+
+      try {
+        unlistenFns.push(
+          await listen<UpdateState>("update://checking", (event) => {
+            if (!active) return;
+            setStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://checked", (event) => {
+            if (!active) return;
+            latestChannelRef.current = event.payload.channel;
+            setStatus(event.payload);
+            const nextNotice = getUpdateCheckCompletionNotice(event.payload, translateRef.current);
+            if (nextNotice) {
+              setNotice(nextNotice);
+            }
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateDownloadProgress>("update://download-progress", (event) => {
+            if (!active) return;
+            setDownloadProgress(event.payload);
+            setStatus((current) =>
+              deriveDownloadProgressState(current, event.payload, latestChannelRef.current),
+            );
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://download-finished", (event) => {
+            if (!active) return;
+            latestChannelRef.current = event.payload.channel;
+            setDownloadProgress(null);
+            setStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://install-finished", (event) => {
+            if (!active) return;
+            latestChannelRef.current = event.payload.channel;
+            setStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateErrorPayload>("update://error", (event) => {
+            if (!active) return;
+            const t = translateRef.current;
+            const errorText = getUpdateErrorMessage(event.payload, t);
+            setNotice({ tone: "error", text: errorText });
+            if (event.payload.code.startsWith("updateInstall")) {
+              void message(errorText, {
+                title: t("settings.update.installFailedTitle", {
+                  defaultValue: "安装更新失败",
+                }),
+                kind: "error",
+              });
+            }
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateErrorPayload>("update://auto-check-error", (event) => {
+            if (!active) return;
+            setNotice({
+              tone: "error",
+              text: getUpdateErrorMessage(event.payload, translateRef.current),
+            });
+          }),
+        );
+
+        return disposeAll;
+      } catch (error) {
+        disposeAll();
+        console.error("failed to bind update settings event listeners", error);
+        return () => undefined;
+      }
     };
 
     const promise = bindEvents();
 
     return () => {
       active = false;
-      void promise.then((dispose) => dispose()).catch(() => undefined);
+      void promise
+        .then((dispose) => dispose())
+        .catch((error) => {
+          console.error("failed to dispose update settings event listeners", error);
+        });
     };
   }, []);
 

@@ -213,8 +213,8 @@ impl UpdaterState {
         self.cdk_store.clear_cdk()
     }
 
-    pub fn has_mirror_cdk(&self) -> bool {
-        self.has_mirror_cdk_for_settings()
+    pub fn has_mirror_cdk(&self) -> Result<bool, AppError> {
+        self.cdk_store.has_cdk()
     }
 
     pub fn get_mirror_cdk(&self) -> Option<String> {
@@ -539,6 +539,7 @@ mod tests {
     use super::*;
     use crate::updater::types::{
         CheckSourcePreference, DownloadSourcePreference, UpdateChannel, UpdateSettingsDto,
+        UpdateStateDto, UpdateStatus,
     };
     use chrono::Utc;
     use std::fs;
@@ -592,6 +593,37 @@ mod tests {
     }
 
     #[test]
+    fn save_state_normalizes_runtime_version_and_missing_asset() {
+        let paths = test_paths("updater-save-state-normalizes");
+        let updater = UpdaterState::with_paths_and_version(paths.clone(), "1.0.9");
+        let mut update_state = UpdateStateDto::idle_with_version("0.0.0");
+        update_state.status = UpdateStatus::Downloaded;
+        update_state.latest_version = Some("1.1.0".into());
+        update_state.asset_path = Some(
+            paths
+                .downloads_dir()
+                .join("missing.zip")
+                .to_string_lossy()
+                .to_string(),
+        );
+
+        updater
+            .save_state(&update_state)
+            .expect("save normalized update state");
+        let saved = state::load_with_current_version(&paths, "1.0.9").expect("load saved state");
+
+        assert_eq!(saved.current_version, "1.0.9");
+        assert_eq!(saved.status, UpdateStatus::Failed);
+        assert_eq!(
+            saved
+                .last_error
+                .as_ref()
+                .and_then(|error| error.action.as_deref()),
+            Some("retryDownload")
+        );
+    }
+
+    #[test]
     fn settings_tolerate_unavailable_secure_store() {
         let paths = test_paths("updater-settings-keyring-unavailable");
         let state = UpdaterState::with_paths_version_and_cdk_store(
@@ -603,6 +635,21 @@ mod tests {
         let settings = state.settings().expect("settings should still load");
 
         assert!(!settings.has_mirror_cdk);
+    }
+
+    #[test]
+    fn has_mirror_cdk_propagates_unavailable_secure_store() {
+        let state = UpdaterState::with_paths_version_and_cdk_store(
+            test_paths("updater-has-cdk-keyring-unavailable"),
+            version::CURRENT_APP_VERSION,
+            cdk_store::CdkStore::invalid_for_tests(),
+        );
+
+        let error = state
+            .has_mirror_cdk()
+            .expect_err("direct CDK status should propagate secure store failures");
+
+        assert_eq!(error.code, "updateSecureStoreUnavailable");
     }
 
     #[test]

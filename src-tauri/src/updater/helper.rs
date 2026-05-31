@@ -22,7 +22,10 @@ pub const HELPER_BINARY_NAME: &str = "floral-notepaper-update-helper.exe";
 #[cfg(not(target_os = "windows"))]
 pub const HELPER_BINARY_NAME: &str = "floral-notepaper-update-helper";
 
-const WAIT_FOR_EXIT_TIMEOUT: Duration = Duration::from_secs(30);
+// Give the GUI process enough time to flush notes, WebView state, and filesystem buffers before
+// the helper treats the handoff as failed. A premature timeout leaves the update recoverable but
+// forces the user through another install attempt.
+const WAIT_FOR_EXIT_TIMEOUT: Duration = Duration::from_secs(120);
 const WAIT_FOR_REPLACEMENT_TIMEOUT: Duration = Duration::from_secs(30);
 const WATCHDOG_HELPER_TIMEOUT: Duration = Duration::from_secs(30 * 60);
 const POLL_INTERVAL: Duration = Duration::from_millis(500);
@@ -2273,6 +2276,11 @@ mod tests {
     #[cfg(unix)]
     fn temp_log(root: &Path, name: &str) -> File {
         open_log(&root.join(name)).expect("open temp log")
+    }
+
+    #[test]
+    fn waits_long_enough_for_slow_main_process_shutdown() {
+        assert!(WAIT_FOR_EXIT_TIMEOUT >= Duration::from_secs(120));
     }
 
     #[test]

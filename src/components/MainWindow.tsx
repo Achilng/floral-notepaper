@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { emit, listen } from "@tauri-apps/api/event";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AboutPanel } from "./AboutPanel";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
@@ -656,88 +656,98 @@ export function MainWindow({
       });
 
     const bindEvents = async () => {
-      const unlistenChecking = await listen<UpdateState>("update://checking", (event) => {
-        if (!active) return;
-        syncUpdateStatus(event.payload);
-      });
-
-      const unlistenChecked = await listen<UpdateState>("update://checked", (event) => {
-        if (!active) return;
-        syncUpdateStatus(event.payload);
-      });
-
-      const unlistenDownloadFinished = await listen<UpdateState>(
-        "update://download-finished",
-        (event) => {
-          if (!active) return;
-          syncUpdateStatus(event.payload);
-        },
-      );
-
-      const unlistenInstallFinished = await listen<UpdateState>(
-        "update://install-finished",
-        (event) => {
-          if (!active) return;
-          syncUpdateStatus(event.payload);
-        },
-      );
-
-      const unlistenError = await listen("update://error", () => {
-        if (!active) return;
-        void getUpdateStatus()
-          .then((status) => {
-            if (!active) return;
-            syncUpdateStatus(status);
-          })
-          .catch((error) => {
-            console.error("failed to refresh update status after error event", error);
-          });
-      });
-
-      const unlistenAutoCheckError = await listen<UpdateErrorPayload>(
-        "update://auto-check-error",
-        (event) => {
-          if (!active) return;
-          console.error("automatic update check failed", event.payload);
-          void getUpdateStatus()
-            .then((status) => {
-              if (!active) return;
-              syncUpdateStatus(status);
-            })
-            .catch((error) => {
-              console.error("failed to refresh update status after automatic check error", error);
-            });
-        },
-      );
-
-      return () => {
-        unlistenChecking();
-        unlistenChecked();
-        unlistenDownloadFinished();
-        unlistenInstallFinished();
-        unlistenError();
-        unlistenAutoCheckError();
+      const unlistenFns: UnlistenFn[] = [];
+      const disposeAll = () => {
+        for (const unlisten of unlistenFns.splice(0)) {
+          unlisten();
+        }
       };
+
+      try {
+        unlistenFns.push(
+          await listen<UpdateState>("update://checking", (event) => {
+            if (!active) return;
+            syncUpdateStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://checked", (event) => {
+            if (!active) return;
+            syncUpdateStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://download-finished", (event) => {
+            if (!active) return;
+            syncUpdateStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://install-finished", (event) => {
+            if (!active) return;
+            syncUpdateStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen("update://error", () => {
+            if (!active) return;
+            void getUpdateStatus()
+              .then((status) => {
+                if (!active) return;
+                syncUpdateStatus(status);
+              })
+              .catch((error) => {
+                console.error("failed to refresh update status after error event", error);
+              });
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateErrorPayload>("update://auto-check-error", (event) => {
+            if (!active) return;
+            console.error("automatic update check failed", event.payload);
+            void getUpdateStatus()
+              .then((status) => {
+                if (!active) return;
+                syncUpdateStatus(status);
+              })
+              .catch((error) => {
+                console.error("failed to refresh update status after automatic check error", error);
+              });
+          }),
+        );
+
+        return disposeAll;
+      } catch (error) {
+        disposeAll();
+        console.error("failed to bind update event listeners", error);
+        return () => undefined;
+      }
     };
 
     const promise = bindEvents();
 
     return () => {
       active = false;
-      void promise.then((dispose) => dispose()).catch(() => undefined);
+      void promise
+        .then((dispose) => dispose())
+        .catch((error) => {
+          console.error("failed to dispose update event listeners", error);
+        });
     };
   }, [syncUpdateStatus]);
 
   useEffect(() => {
     if (!aboutUpdateReminder.showText) return;
-
     const timer = window.setTimeout(() => {
       setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
     }, ABOUT_UPDATE_LABEL_DURATION_MS);
-
     return () => window.clearTimeout(timer);
   }, [aboutUpdateReminder.showText]);
-
   useEffect(() => {
     if (visibleSidePanel) {
       setMountedSidePanel(visibleSidePanel);

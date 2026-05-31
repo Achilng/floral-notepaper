@@ -9,6 +9,8 @@ const MIRROR_CDK_ACCOUNT: &str = "mirrorchyan-cdk";
 pub struct CdkStore {
     service: &'static str,
     account: &'static str,
+    #[cfg(test)]
+    unavailable: bool,
 }
 
 impl Default for CdkStore {
@@ -16,6 +18,8 @@ impl Default for CdkStore {
         Self {
             service: SERVICE_NAME,
             account: MIRROR_CDK_ACCOUNT,
+            #[cfg(test)]
+            unavailable: false,
         }
     }
 }
@@ -26,6 +30,7 @@ impl CdkStore {
         Self {
             service: "",
             account: "",
+            unavailable: true,
         }
     }
 
@@ -67,6 +72,13 @@ impl CdkStore {
     }
 
     fn entry(&self) -> Result<Entry, AppError> {
+        #[cfg(test)]
+        if self.unavailable {
+            return Err(errors::secure_store_unavailable(
+                "test secure store unavailable",
+            ));
+        }
+
         Entry::new(self.service, self.account).map_err(errors::secure_store_unavailable)
     }
 }

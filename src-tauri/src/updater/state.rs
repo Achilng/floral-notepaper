@@ -17,6 +17,7 @@ const STATE_LOCK_TIMEOUT: Duration = Duration::from_secs(10);
 const STATE_LOCK_POLL_INTERVAL: Duration = Duration::from_millis(50);
 const STALE_STATE_LOCK_AGE: Duration = Duration::from_secs(5 * 60);
 
+#[cfg(test)]
 pub fn load(paths: &UpdatePaths) -> Result<UpdateStateDto, AppError> {
     load_with_current_version(paths, super::version::CURRENT_APP_VERSION)
 }
@@ -49,12 +50,14 @@ fn load_with_current_version_unlocked(
         }
         Err(_error) => {
             rename_corrupt_file(&path, "state")?;
-            let mut state = UpdateStateDto::failed(UpdateErrorDto::recoverable(
-                "updateStateCorrupted",
-                "更新状态文件已损坏，已重置为空闲状态",
-                Some("retry".into()),
-            ));
-            state.current_version = current_version.to_string();
+            let state = UpdateStateDto::failed_with_version(
+                current_version,
+                UpdateErrorDto::recoverable(
+                    "updateStateCorrupted",
+                    "更新状态文件已损坏，已重置为空闲状态",
+                    Some("retry".into()),
+                ),
+            );
             save_unlocked(paths, &state)?;
             Ok(state)
         }
@@ -105,6 +108,7 @@ pub fn save_with_current_version(
     save(paths, &normalized)
 }
 
+#[cfg(test)]
 pub fn recover(paths: &UpdatePaths) -> Result<UpdateStateDto, AppError> {
     recover_with_current_version(paths, super::version::CURRENT_APP_VERSION)
 }

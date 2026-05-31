@@ -452,6 +452,26 @@ fn build_mirror_api_client() -> Result<Client, AppError> {
         .map_err(|error| errors::mirror_api_error(format!("无法创建 HTTP 客户端：{error}")))
 }
 
+fn mirror_request_error(error: reqwest::Error) -> AppError {
+    errors::mirror_api_error(mirror_request_error_message(&error))
+}
+
+fn mirror_request_error_message(error: &reqwest::Error) -> String {
+    if error.is_timeout() {
+        return "请求超时".into();
+    }
+    if error.is_connect() {
+        return "网络连接失败".into();
+    }
+    if error.is_redirect() {
+        return "重定向失败".into();
+    }
+    if let Some(status) = error.status() {
+        return format!("HTTP {}", status.as_u16());
+    }
+    "请求失败".into()
+}
+
 fn check_mirror_api(
     context: &UpdateCheckContext,
     priority: usize,
@@ -473,13 +493,7 @@ fn check_mirror_api(
     }
 
     let client = build_mirror_api_client()?;
-    let response = client.get(url).send().map_err(|error| {
-        if error.is_timeout() {
-            errors::mirror_api_error("请求超时")
-        } else {
-            errors::mirror_api_error(error.to_string())
-        }
-    })?;
+    let response = client.get(url).send().map_err(mirror_request_error)?;
 
     let status = response.status();
     if !status.is_success() && status.as_u16() != 403 {
@@ -489,9 +503,12 @@ fn check_mirror_api(
         )));
     }
 
-    let body = response
-        .text()
-        .map_err(|error| errors::mirror_api_error(format!("响应读取失败：{error}")))?;
+    let body = response.text().map_err(|error| {
+        errors::mirror_api_error(format!(
+            "响应读取失败：{}",
+            mirror_request_error_message(&error)
+        ))
+    })?;
     let api_response: MirrorApiResponse = serde_json::from_str(&body)
         .map_err(|error| errors::mirror_api_error(format!("响应解析失败：{error}")))?;
 
@@ -572,13 +589,7 @@ pub(crate) fn fetch_mirror_download_url(
     }
 
     let client = build_mirror_api_client()?;
-    let response = client.get(url).send().map_err(|error| {
-        if error.is_timeout() {
-            errors::mirror_api_error("请求超时")
-        } else {
-            errors::mirror_api_error(error.to_string())
-        }
-    })?;
+    let response = client.get(url).send().map_err(mirror_request_error)?;
 
     let status = response.status();
     if !status.is_success() && status.as_u16() != 403 {
@@ -588,9 +599,12 @@ pub(crate) fn fetch_mirror_download_url(
         )));
     }
 
-    let body = response
-        .text()
-        .map_err(|error| errors::mirror_api_error(format!("响应读取失败：{error}")))?;
+    let body = response.text().map_err(|error| {
+        errors::mirror_api_error(format!(
+            "响应读取失败：{}",
+            mirror_request_error_message(&error)
+        ))
+    })?;
     let api_response: MirrorApiResponse = serde_json::from_str(&body)
         .map_err(|error| errors::mirror_api_error(format!("响应解析失败：{error}")))?;
 
@@ -1321,6 +1335,20 @@ mod tests {
         assert!(merged.can_download_from_github);
         assert!(merged.github_asset_url.is_some());
         assert!(merged.mirror_asset_url.is_some());
+    }
+
+    #[test]
+    fn mirror_request_error_message_does_not_include_sensitive_url() {
+        let error = Client::new()
+            .get("http://127.0.0.1:0/latest?cdk=secret-token")
+            .send()
+            .expect_err("invalid URL should fail before network I/O");
+
+        let message = mirror_request_error_message(&error);
+
+        assert!(!message.contains("secret-token"));
+        assert!(!message.contains("cdk="));
+        assert!(!message.contains("127.0.0.1"));
     }
 
     #[test]

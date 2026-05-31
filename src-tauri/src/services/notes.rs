@@ -795,7 +795,7 @@ impl NoteStore {
         if !old_dir.exists() {
             return Ok(());
         }
-        if self.base_dir.exists() {
+        if self.base_dir_has_user_data()? {
             return Ok(());
         }
         eprintln!(
@@ -803,6 +803,26 @@ impl NoteStore {
             self.base_dir.display()
         );
         move_or_copy_dir(old_dir, &self.base_dir)
+    }
+
+    fn base_dir_has_user_data(&self) -> Result<bool, AppError> {
+        if !self.base_dir.exists() {
+            return Ok(false);
+        }
+
+        for entry in fs::read_dir(&self.base_dir)? {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let Some(name) = file_name.to_str() else {
+                return Ok(true);
+            };
+            if name == "config.json" || name == MACOS_SHORTCUT_MIGRATION_MARKER {
+                continue;
+            }
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     fn ensure_base_dir(&self) -> Result<(), AppError> {
@@ -1345,6 +1365,56 @@ mod tests {
                 .join("Documents")
                 .join("花笺")
         ));
+    }
+
+    #[test]
+    fn migrates_last_known_base_dir_when_current_dir_only_has_config() {
+        let root = test_root("last-known-base-dir-migration");
+        let old_store = NoteStore::new(root.join("old"));
+        fs::create_dir_all(old_store.base_dir()).expect("create old base");
+        fs::write(old_store.metadata_path(), r#"{"notes":[]}"#).expect("write old metadata");
+        fs::write(old_store.base_dir().join("legacy.txt"), "legacy").expect("write legacy file");
+
+        let new_store = NoteStore::new(root.join("new"));
+        fs::create_dir_all(new_store.base_dir()).expect("create new base");
+        let mut config = new_store.default_config();
+        config.last_known_base_dir = Some(old_store.base_dir().to_string_lossy().to_string());
+        write_json_atomic(&new_store.config_path(), &config).expect("write copied config");
+
+        let loaded = new_store.load_config().expect("load copied config");
+
+        assert_eq!(
+            loaded.last_known_base_dir.as_deref(),
+            Some(new_store.base_dir().to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            fs::read_to_string(new_store.base_dir().join("legacy.txt"))
+                .expect("read migrated legacy file"),
+            "legacy"
+        );
+        assert!(new_store.metadata_path().exists());
+        assert!(!old_store.base_dir().exists());
+    }
+
+    #[test]
+    fn does_not_merge_last_known_base_dir_into_non_empty_current_dir() {
+        let root = test_root("last-known-base-dir-non-empty");
+        let old_store = NoteStore::new(root.join("old"));
+        fs::create_dir_all(old_store.base_dir()).expect("create old base");
+        fs::write(old_store.base_dir().join("legacy.txt"), "legacy").expect("write legacy file");
+
+        let new_store = NoteStore::new(root.join("new"));
+        fs::create_dir_all(new_store.base_dir()).expect("create new base");
+        fs::write(new_store.metadata_path(), r#"{"notes":[]}"#).expect("write current metadata");
+        let mut config = new_store.default_config();
+        config.last_known_base_dir = Some(old_store.base_dir().to_string_lossy().to_string());
+        write_json_atomic(&new_store.config_path(), &config).expect("write copied config");
+
+        new_store.load_config().expect("load copied config");
+
+        assert!(old_store.base_dir().exists());
+        assert!(!new_store.base_dir().join("legacy.txt").exists());
+        assert!(new_store.metadata_path().exists());
     }
 
     #[test]
