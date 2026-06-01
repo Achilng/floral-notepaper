@@ -35,6 +35,8 @@ jobs:
 
           macOS Apple Silicon 版：\`floral-notepaper_${ver}_aarch64.dmg\`；macOS Intel 版：\`floral-notepaper_${ver}_x64.dmg\`。
 
+          Linux 版：\`floral-notepaper_${ver}_amd64.deb\`（Debian/Ubuntu）、\`floral-notepaper-${ver}-1.x86_64.rpm\`（Fedora/RHEL）、\`floral-notepaper_${ver}_amd64.AppImage\`（通用 Linux）。
+
           macOS 版安装流程请参考视频（Bilibili）：[Mac云课堂 - 在 Mac 上装软件，要学会和苹果斗智斗勇](https://www.bilibili.com/video/BV1tg411t7hN)
           EOF
 
@@ -243,6 +245,82 @@ jobs:
           )
           gh release upload $env:TAG_NAME $files --clobber --repo $env:GITHUB_REPOSITORY
 
+  build-linux:
+    needs: prepare-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Set version
+        run: |
+          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
+          cat > set-version.cjs << 'SCRIPT'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          SCRIPT
+          node set-version.cjs "$ver"
+
+      - name: Build
+        run: npm run tauri build
+
+      - name: Upload release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.event.inputs.version }}
+        run: |
+          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
+          mkdir -p release-assets
+
+          # DEB
+          deb_source="$(find src-tauri/target/release/bundle/deb -type f -name '*.deb' | sort | head -n 1)"
+          if [ -n "$deb_source" ]; then
+            cp "$deb_source" "release-assets/floral-notepaper_${ver}_amd64.deb"
+          fi
+
+          # RPM
+          rpm_source="$(find src-tauri/target/release/bundle/rpm -type f -name '*.rpm' | sort | head -n 1)"
+          if [ -n "$rpm_source" ]; then
+            cp "$rpm_source" "release-assets/floral-notepaper-${ver}-1.x86_64.rpm"
+          fi
+
+          # AppImage
+          appimage_source="$(find src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' | sort | head -n 1)"
+          if [ -n "$appimage_source" ]; then
+            cp "$appimage_source" "release-assets/floral-notepaper_${ver}_amd64.AppImage"
+          fi
+
+          shopt -s nullglob
+          assets=(release-assets/*)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "No Linux release assets found." >&2
+            exit 1
+          fi
+
+          gh release upload "$TAG_NAME" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+
   build-macos-x86_64:
     needs: prepare-release
     runs-on: macos-15-intel
@@ -358,7 +436,7 @@ jobs:
           gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
 
   cleanup-release:
-    needs: [prepare-release, build-windows, build-macos-x86_64, build-macos-aarch64]
+    needs: [prepare-release, build-windows, build-linux, build-macos-x86_64, build-macos-aarch64]
     if: failure() && needs.prepare-release.outputs.created == 'true'
     runs-on: ubuntu-latest
     permissions:

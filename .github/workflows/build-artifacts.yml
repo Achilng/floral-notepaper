@@ -277,6 +277,84 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  build-linux:
+    needs: prepare-build
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare-build.outputs.checkout_ref }}
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Set version
+        run: |
+          ver='${{ needs.prepare-build.outputs.version }}'
+          cat > set-version.cjs << 'SCRIPT'
+          const fs = require("fs");
+          const ver = process.argv[2];
+          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
+          conf.version = ver;
+          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
+          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
+          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
+          fs.writeFileSync("src-tauri/Cargo.toml", toml);
+          SCRIPT
+          node set-version.cjs "$ver"
+
+      - name: Build
+        run: npm run tauri build
+
+      - name: Collect artifacts
+        run: |
+          ver='${{ needs.prepare-build.outputs.version }}'
+          mkdir -p release-assets
+
+          deb_source="$(find src-tauri/target/release/bundle/deb -type f -name '*.deb' | sort | head -n 1)"
+          if [ -n "$deb_source" ]; then
+            cp "$deb_source" "release-assets/floral-notepaper_${ver}_amd64.deb"
+          fi
+
+          rpm_source="$(find src-tauri/target/release/bundle/rpm -type f -name '*.rpm' | sort | head -n 1)"
+          if [ -n "$rpm_source" ]; then
+            cp "$rpm_source" "release-assets/floral-notepaper-${ver}-1.x86_64.rpm"
+          fi
+
+          appimage_source="$(find src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' | sort | head -n 1)"
+          if [ -n "$appimage_source" ]; then
+            cp "$appimage_source" "release-assets/floral-notepaper_${ver}_amd64.AppImage"
+          fi
+
+          shopt -s nullglob
+          assets=(release-assets/*)
+          if [ ${#assets[@]} -eq 0 ]; then
+            echo "No Linux build artifacts found." >&2
+            exit 1
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: floral-notepaper-linux-${{ needs.prepare-build.outputs.source_label }}-${{ needs.prepare-build.outputs.version_label }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
   build-macos-x86_64:
     needs: prepare-build
     runs-on: macos-15-intel

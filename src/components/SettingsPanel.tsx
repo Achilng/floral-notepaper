@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useHotkeyRecorder } from "@tanstack/react-hotkeys";
 import { useTranslation } from "react-i18next";
 import { checkGlobalShortcut, chooseBackgroundImage } from "../features/settings/api";
 import type {
@@ -16,6 +15,7 @@ import {
   isValidGlobalShortcut,
   shortcutPlatform,
 } from "../features/settings/shortcutRecorder";
+import { useShortcutRecorder } from "../features/settings/useShortcutRecorder";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
 import { SUPPORTED_LOCALES } from "../locales/locale-whitelist";
@@ -539,7 +539,6 @@ type ShortcutMsg = { key: string; params?: Record<string, string> } | { raw: str
 
 function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const { t } = useTranslation();
-  const [heldKeys, setHeldKeys] = useState<string[]>([]);
   const [checkState, setCheckState] = useState<"idle" | "checking" | "ok" | "warning" | "error">(
     "idle",
   );
@@ -600,16 +599,16 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     }
   };
 
-  const recorder = useHotkeyRecorder({
-    onRecord: (hotkey) => {
-      if (String(hotkey) === "") {
+  const recorder = useShortcutRecorder({
+    onRecord: (shortcut) => {
+      if (shortcut === "") {
         invalidateShortcutChecks();
         onChange("");
         setCheckState("idle");
         setCheckMsg({ key: "settings.shortcut.cleared" });
-      } else if (isValidGlobalShortcut(hotkey)) {
-        const nextShortcut = hotkeyToConfigString(hotkey, platform);
-        void runShortcutCheck(nextShortcut, true);
+      } else if (isValidGlobalShortcut(shortcut)) {
+        const configString = hotkeyToConfigString(shortcut, platform);
+        void runShortcutCheck(configString, true);
       } else {
         invalidateShortcutChecks();
         setCheckState("warning");
@@ -618,45 +617,6 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     },
   });
   const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!recorder.isRecording) {
-      setHeldKeys([]);
-      return;
-    }
-
-    const pressed = new Set<string>();
-
-    const toLabel = (e: KeyboardEvent): string => {
-      if (e.key === "Control") return "Control";
-      if (e.key === "Alt") return "Alt";
-      if (e.key === "Shift") return "Shift";
-      if (e.key === "Meta") return "Meta";
-      return e.key.length === 1 ? e.key.toUpperCase() : e.key;
-    };
-
-    const onKeyDown = (e: KeyboardEvent) => {
-      pressed.add(toLabel(e));
-      setHeldKeys([...pressed]);
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      pressed.delete(toLabel(e));
-      setHeldKeys([...pressed]);
-    };
-    const onBlur = () => {
-      pressed.clear();
-      setHeldKeys([]);
-    };
-
-    document.addEventListener("keydown", onKeyDown, true);
-    document.addEventListener("keyup", onKeyUp, true);
-    window.addEventListener("blur", onBlur);
-    return () => {
-      document.removeEventListener("keydown", onKeyDown, true);
-      document.removeEventListener("keyup", onKeyUp, true);
-      window.removeEventListener("blur", onBlur);
-    };
-  }, [recorder.isRecording]);
 
   useEffect(() => {
     if (!recorder.isRecording) return;
@@ -670,7 +630,9 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   }, [recorder.isRecording, recorder.cancelRecording]);
 
   const liveDisplay =
-    recorder.isRecording && heldKeys.length > 0 ? formatHeldKeys(heldKeys, platform) : null;
+    recorder.isRecording && recorder.heldKeys.length > 0
+      ? formatHeldKeys(recorder.heldKeys, platform)
+      : null;
   const statusClass =
     checkState === "ok"
       ? "text-bamboo"

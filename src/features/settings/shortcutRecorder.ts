@@ -1,6 +1,12 @@
-import { parseHotkey, type Hotkey } from "@tanstack/react-hotkeys";
-
 export type ShortcutPlatform = "mac" | "windows";
+
+interface ParsedShortcut {
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  meta: boolean;
+  key: string;
+}
 
 const KEY_DISPLAY_NAMES: Record<string, string> = {
   Control: "Ctrl",
@@ -27,11 +33,46 @@ export function shortcutPlatform(): ShortcutPlatform {
   return "windows";
 }
 
+function parseShortcutString(
+  shortcut: string,
+  platform: ShortcutPlatform = "windows",
+): ParsedShortcut {
+  const parts = shortcut.split("+");
+  const result: ParsedShortcut = { ctrl: false, alt: false, shift: false, meta: false, key: "" };
+  for (const part of parts) {
+    switch (part) {
+      case "Control":
+      case "Ctrl":
+        result.ctrl = true;
+        break;
+      case "Alt":
+      case "Option":
+        result.alt = true;
+        break;
+      case "Shift":
+        result.shift = true;
+        break;
+      case "Meta":
+      case "Command":
+        result.meta = true;
+        break;
+      case "Mod":
+        if (platform === "mac") result.meta = true;
+        else result.ctrl = true;
+        break;
+      default:
+        result.key = part;
+        break;
+    }
+  }
+  return result;
+}
+
 export function hotkeyToConfigString(
-  hotkey: Hotkey,
+  shortcut: string,
   platform: ShortcutPlatform = "windows",
 ): string {
-  const parsed = parseHotkey(hotkey, platform);
+  const parsed = parseShortcutString(shortcut, platform);
   const parts: string[] = [];
   if (platform === "mac") {
     if (parsed.meta) parts.push("Command");
@@ -48,8 +89,8 @@ export function hotkeyToConfigString(
   return parts.join("+");
 }
 
-export function isValidGlobalShortcut(hotkey: Hotkey): boolean {
-  const parsed = parseHotkey(hotkey, "windows");
+export function isValidGlobalShortcut(shortcut: string): boolean {
+  const parsed = parseShortcutString(shortcut, "windows");
   return parsed.ctrl || parsed.alt || parsed.meta;
 }
 

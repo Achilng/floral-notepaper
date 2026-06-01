@@ -215,6 +215,24 @@ fn global_shortcut_check(
 }
 
 #[tauri::command]
+fn start_shortcut_recording(app: AppHandle) -> Result<(), AppError> {
+    desktop::start_shortcut_recording(&app).map_err(|error| AppError {
+        code: "shortcutRecording".into(),
+        message: error.to_string(),
+        details: Default::default(),
+    })
+}
+
+#[tauri::command]
+fn stop_shortcut_recording(app: AppHandle) -> Result<(), AppError> {
+    desktop::stop_shortcut_recording(&app).map_err(|error| AppError {
+        code: "shortcutRecording".into(),
+        message: error.to_string(),
+        details: Default::default(),
+    })
+}
+
+#[tauri::command]
 async fn open_notepad_window(
     app: AppHandle,
     note_id: Option<String>,
@@ -295,6 +313,8 @@ pub fn run() {
             copy_background_image,
             config_save,
             global_shortcut_check,
+            start_shortcut_recording,
+            stop_shortcut_recording,
             open_notepad_window,
             recycle_notepad_window,
             open_tile_window,

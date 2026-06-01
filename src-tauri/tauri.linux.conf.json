@@ -1,0 +1,23 @@
+{
+  "productName": "floral-notepaper",
+  "version": "1.0.4",
+  "identifier": "com.floral-notepaper.app",
+  "bundle": {
+    "linux": {
+      "deb": {
+        "depends": [],
+        "section": "utils",
+        "priority": "optional",
+        "desktopTemplate": "linux-desktop-template.hbs"
+      },
+      "rpm": {
+        "epoch": 0,
+        "release": "1",
+        "desktopTemplate": "linux-desktop-template.hbs"
+      },
+      "appimage": {
+        "bundleMediaFramework": false
+      }
+    }
+  }
+}

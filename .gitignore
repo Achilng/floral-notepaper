@@ -54,3 +54,5 @@ src-tauri/icons/macOS
 temp/
 
 /src-tauri/data
+nul
+

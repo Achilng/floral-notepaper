@@ -1,4 +1,4 @@
-简体中文 | [繁體中文](README_zh-HK.md) | [English](README_en-US.md)
+**简体中文** | [繁體中文](README_zh-HK.md) | [English](README_en-US.md)
 
 <!-- markdownlint-disable -->
 

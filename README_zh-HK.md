@@ -1,3 +1,5 @@
+[简体中文](README.md) | **繁體中文** | [English](README_en-US.md)
+
 <!-- markdownlint-disable -->
 
 <div align="center">
@@ -9,7 +11,6 @@
 輕巧、優雅、現代化的本機便箋工具<br>
 基於 Tauri 2 + React 構建
 
-[简体中文](README.md) · [English](README_en-US.md)<br>
 [回報問題](https://github.com/Achilng/floral-notepaper/issues) · [更新日誌](https://github.com/Achilng/floral-notepaper/releases)
 
 [![Version](https://img.shields.io/github/v/release/Achilng/floral-notepaper)](https://github.com/Achilng/floral-notepaper/releases/latest)
