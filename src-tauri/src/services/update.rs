@@ -26,7 +26,8 @@ struct GitHubRelease {
 #[derive(Debug, Clone, serde::Deserialize)]
 struct GitHubAsset {
     name: String,
-    browser_download_url: String,
+    #[serde(rename = "browser_download_url")]
+    _browser_download_url: String,
     digest: Option<String>, // GitHub API 返回的 SHA256
 }
 
