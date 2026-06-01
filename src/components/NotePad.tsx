@@ -124,7 +124,7 @@ export function NotePad({
   const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] = useState(initialAutoSave);
   const [tileColorRaw, setTileColorRaw] = useState(normalizeTileColor(initialTileColor));
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
-  const [surfaceFontSize, setSurfaceFontSize] = useState(14);
+  const [surfaceFontSize, setSurfaceFontSize] = useState(16);
   const [tileRenderMarkdown, setTileRenderMarkdown] = useState(false);
   const [tileColor, setTileColor] = useState(() =>
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
@@ -179,7 +179,7 @@ export function NotePad({
         const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
         if (!cancelled) {
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
-          setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
+          setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 16);
           setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
           setTileColorRaw(normalizeTileColor(loadedConfig.tileColor));
           setTileColorMode(loadedConfig.tileColorMode ?? "system");

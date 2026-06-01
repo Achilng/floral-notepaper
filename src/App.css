@@ -13,9 +13,9 @@
   --color-paper-warm: #f0ebe0;
   --color-paper-deep: #e8e1d3;
   --color-ink: #1a1a18;
-  --color-ink-soft: #3d3d38;
-  --color-ink-faint: #8a8a80;
-  --color-ink-ghost: #b8b8ae;
+  --color-ink-soft: #2f2f2b;
+  --color-ink-faint: #68685f;
+  --color-ink-ghost: #949489;
   --color-bamboo: #2d5a3d;
   --color-bamboo-light: #3a7a52;
   --color-bamboo-mist: #e8f0eb;
@@ -45,9 +45,9 @@
   --color-paper-warm: #2c2a27;
   --color-paper-deep: #3c3935;
   --color-ink: #e5e1da;
-  --color-ink-soft: #b5b1a8;
-  --color-ink-faint: #928f87;
-  --color-ink-ghost: #706d67;
+  --color-ink-soft: #cbc6bc;
+  --color-ink-faint: #aaa59a;
+  --color-ink-ghost: #858176;
   --color-bamboo: #4faa70;
   --color-bamboo-light: #5fc085;
   --color-bamboo-mist: #1c2e22;
@@ -116,10 +116,17 @@ body {
 
 .app-main-frame {
   border-radius: var(--app-window-radius);
+  border: 1px solid color-mix(in srgb, var(--color-paper-deep) 82%, var(--color-ink) 18%);
+  box-shadow:
+    0 18px 48px rgba(26, 26, 24, 0.18),
+    0 0 0 1px rgba(26, 26, 24, 0.05);
 }
 
 .app-surface-frame {
   border-radius: var(--app-surface-radius);
+  box-shadow:
+    0 14px 38px rgba(26, 26, 24, 0.2),
+    0 0 0 1px rgba(26, 26, 24, 0.08);
 }
 
 .mac-window-controls {
