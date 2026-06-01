@@ -325,6 +325,7 @@ export function MainWindow({
   saveStateRef.current = saveState;
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+  const recentNoteCreationTimeRef = useRef(0);
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -582,6 +583,7 @@ export function MainWindow({
       void refreshNotes().then((loaded) => {
         const currentId = selectedIdRef.current;
         if (!currentId) return;
+        if (Date.now() - recentNoteCreationTimeRef.current < 200) return;
         const stillExists = loaded.some((n) => n.id === currentId);
         if (stillExists) {
           if (saveStateRef.current !== "dirty") {
@@ -810,6 +812,7 @@ export function MainWindow({
     }
     try {
       const note = await createNote({ title: "", content: "", category: activeCategory });
+      recentNoteCreationTimeRef.current = Date.now();
       replaceNoteMetadata(note);
       applyNote(note);
     } catch (error) {
