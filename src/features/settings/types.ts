@@ -29,6 +29,8 @@ export interface AppConfig {
   surfaceHeight?: number;
   toggleVisibilityShortcut: string;
   openAtCursor: boolean;
+  checkUpdateOnStartup: boolean;
+  lastCheckUpdateTime?: number;
   backgroundImagePath?: string;
   backgroundFit?: BackgroundFit;
   backgroundDim?: number;
@@ -36,4 +38,14 @@ export interface AppConfig {
   backgroundScale?: number;
   backgroundPositionX?: number;
   backgroundPositionY?: number;
+  githubOwner?: string;
+  githubRepo?: string;
+}
+
+export interface UpdateInfo {
+  version: string;
+  releaseUrl: string;
+  latestSha256: string;
+  currentSha256: string;
+  hasUpdate: boolean;
 }

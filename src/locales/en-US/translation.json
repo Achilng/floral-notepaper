@@ -249,6 +249,19 @@
         "contain": "Contain",
         "repeat": "Repeat"
       }
+    },
+    "checkUpdateOnStartup": "Check for updates on startup",
+    "githubOwner": "GitHub Owner",
+    "githubRepo": "GitHub Repository",
+    "update": {
+      "checkNow": "Check for updates now",
+      "checking": "Checking...",
+      "available": "New version {{version}} available! Go to download?",
+      "upToDate": "Already up to date",
+      "error": "Failed to check for updates",
+      "macosNotSupported": "Automatic update checking is not supported on macOS",
+      "linuxNotSupported": "Automatic update checking is not supported on Linux",
+      "platformNotSupported": "Automatic update checking is not supported on this platform"
     }
   },
   "tile": {

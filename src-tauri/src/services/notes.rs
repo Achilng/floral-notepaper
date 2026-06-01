@@ -78,6 +78,14 @@ pub struct AppConfig {
     pub toggle_visibility_shortcut: String,
     #[serde(default = "default_open_at_cursor")]
     pub open_at_cursor: bool,
+    #[serde(default = "default_check_update_on_startup")]
+    pub check_update_on_startup: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_check_update_time: Option<i64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_owner: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub github_repo: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -692,6 +700,10 @@ impl NoteStore {
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
             open_at_cursor: default_open_at_cursor(),
+            check_update_on_startup: default_check_update_on_startup(),
+            last_check_update_time: None,
+            github_owner: None,
+            github_repo: None,
         }
     }
 
@@ -1052,8 +1064,22 @@ fn default_open_at_cursor() -> bool {
     true
 }
 
+fn default_check_update_on_startup() -> bool {
+    false
+}
+
 fn default_locale() -> String {
     "zh-CN".into()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct UpdateInfo {
+    pub version: String,
+    pub release_url: String,
+    pub latest_sha256: String,
+    pub current_sha256: String,
+    pub has_update: bool,
 }
 
 #[cfg(test)]

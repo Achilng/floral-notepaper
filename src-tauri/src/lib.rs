@@ -3,7 +3,10 @@ pub mod locales;
 pub mod services;
 
 use locales::Locale;
-use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
+use services::notes::{
+    default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest, UpdateInfo,
+};
+use services::update;
 use std::{fs, path::PathBuf};
 use tauri::{AppHandle, Emitter};
 
@@ -276,11 +279,34 @@ fn take_startup_file() -> Option<String> {
     desktop::take_startup_file()
 }
 
+#[tauri::command]
+async fn check_update(config: AppConfig) -> Result<UpdateInfo, AppError> {
+    update::check_for_updates(&config)
+        .await
+        .map_err(|e| AppError {
+            code: "updateCheck".into(),
+            message: e,
+            details: Default::default(),
+        })
+}
+
+#[tauri::command]
+async fn check_update_with_url(config: AppConfig, api_url: String) -> Result<UpdateInfo, AppError> {
+    update::check_for_updates_with_url(&config, &api_url)
+        .await
+        .map_err(|e| AppError {
+            code: "updateCheck".into(),
+            message: e,
+            details: Default::default(),
+        })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_single_instance::init(|app, args, _cwd| {
             if let Some(file_path) = desktop::extract_file_arg(&args) {
                 let _ = app.emit("open-external-file", file_path);
@@ -320,7 +346,9 @@ pub fn run() {
             open_tile_window,
             toggle_tile_window,
             open_note_in_editor,
-            take_startup_file
+            take_startup_file,
+            check_update,
+            check_update_with_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

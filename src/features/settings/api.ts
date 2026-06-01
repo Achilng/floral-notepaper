@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import type { AppConfig, ViewMode } from "./types";
+import type { AppConfig, ViewMode, UpdateInfo } from "./types";
 
 export interface ShortcutCheckResult {
   available: boolean;
@@ -18,6 +18,10 @@ export function saveConfig(config: AppConfig): Promise<AppConfig> {
 
 export function checkGlobalShortcut(shortcut: string): Promise<ShortcutCheckResult> {
   return invoke("global_shortcut_check", { shortcut });
+}
+
+export async function checkUpdate(config: AppConfig): Promise<UpdateInfo> {
+  return invoke("check_update", { config });
 }
 
 export async function chooseNotesDirectory(): Promise<string | null> {

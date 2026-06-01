@@ -249,6 +249,19 @@
         "contain": "完整",
         "repeat": "平铺"
       }
+    },
+    "checkUpdateOnStartup": "启动时检查更新",
+    "githubOwner": "GitHub 所有者",
+    "githubRepo": "GitHub 仓库",
+    "update": {
+      "checkNow": "立即检查更新",
+      "checking": "检查中...",
+      "available": "发现新版本 {{version}}！是否前往下载？",
+      "upToDate": "已是最新版本",
+      "error": "检查更新失败",
+      "macosNotSupported": "macOS 暂不支持自动更新检查",
+      "linuxNotSupported": "Linux 暂不支持自动更新检查",
+      "platformNotSupported": "当前平台不支持自动更新检查"
     }
   },
   "tile": {

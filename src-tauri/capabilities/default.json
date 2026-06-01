@@ -21,6 +21,7 @@
     "core:window:allow-set-focus",
     "dialog:allow-open",
     "dialog:allow-save",
+    "dialog:allow-confirm",
     "opener:default"
   ]
 }

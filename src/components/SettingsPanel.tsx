@@ -20,6 +20,7 @@ import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/til
 import { applyTheme, watchSystemTheme } from "../features/settings/theme";
 import { SUPPORTED_LOCALES } from "../locales/locale-whitelist";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
+import { CheckUpdate } from "./CheckUpdate";
 
 const HARMONY_FONT_LICENSE_URL = new URL("../assets/fonts/LICENSE_Fonts", import.meta.url).href;
 
@@ -32,9 +33,11 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: SettingsPanelProps) {
   const { t } = useTranslation();
+
   const setConfigValue = <Key extends keyof AppConfig>(key: Key, value: AppConfig[Key]) => {
     onChange({ ...config, [key]: value });
   };
+
   const tileColorModes = useMemo<Array<{ value: TileColorMode; label: string }>>(
     () => [
       {
@@ -163,6 +166,14 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             options={localeOptions}
             value={config.locale}
             onChange={(value) => setConfigValue("locale", value)}
+          />
+        </section>
+
+        <section className="space-y-2">
+          <ToggleRow
+            label={t("settings.checkUpdateOnStartup", { defaultValue: "启动时检查更新" })}
+            checked={config.checkUpdateOnStartup ?? true}
+            onChange={(checked) => setConfigValue("checkUpdateOnStartup", checked)}
           />
         </section>
 
@@ -457,12 +468,16 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             <a
               href={HARMONY_FONT_LICENSE_URL}
               target="_blank"
-              rel="noreferrer"
-              className="underline underline-offset-2 hover:text-ink-faint"
+              rel="noopener noreferrer"
+              className="text-bamboo hover:underline"
             >
-              HarmonyOS Sans Fonts License Agreement
+              {t("settings.fontLicense", { defaultValue: "查看字体许可" })}
             </a>
           </p>
+        </section>
+
+        <section className="pb-2">
+          <CheckUpdate config={config} />
         </section>
       </div>
     </aside>

@@ -17,6 +17,7 @@
     "@tauri-apps/api": "~2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.0",
     "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-os": "^2.3.2",
     "chroma-js": "^3.2.0",
     "i18next": "^26.2.0",
     "indent-textarea": "^4.0.0",

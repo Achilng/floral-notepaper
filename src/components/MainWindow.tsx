@@ -17,6 +17,7 @@ import { normalizeTileColor } from "../features/settings/tileColor";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
+import { checkUpdate } from "../features/settings/api";
 import {
   createNote,
   createCategory,
@@ -563,6 +564,27 @@ export function MainWindow({
           const startupFile = await takeStartupFile();
           if (!cancelled && startupFile) {
             await loadExternalFile(startupFile);
+          }
+        }
+
+        // 启动时检查更新
+        if (!cancelled && loadedConfig.checkUpdateOnStartup) {
+          try {
+            const updateInfo = await checkUpdate(loadedConfig);
+            if (!cancelled && updateInfo.hasUpdate) {
+              const { confirm } = await import("@tauri-apps/plugin-dialog");
+              const confirmed = await confirm(`发现新版本 ${updateInfo.version}！是否前往下载？`, {
+                title: "检查更新",
+                okLabel: "前往下载",
+                cancelLabel: "取消",
+              });
+              if (confirmed) {
+                const { openUrl } = await import("@tauri-apps/plugin-opener");
+                await openUrl(updateInfo.releaseUrl);
+              }
+            }
+          } catch (error) {
+            console.error("启动时检查更新失败:", error);
           }
         }
       } catch (error) {
