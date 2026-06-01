@@ -24,9 +24,6 @@ dist/
 src-tauri/target/
 src-tauri/gen/
 
-## Local hooks
-.husky/pre-push
-
 ## agent文档
 PLAN.md
 PROGRESS.md
@@ -52,4 +49,3 @@ src-tauri/icons/macOS
 
 ## Temp
 temp/
-nul

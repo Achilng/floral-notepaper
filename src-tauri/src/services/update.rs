@@ -4,6 +4,7 @@ use reqwest::Client;
 use sha2::{Digest, Sha256};
 use std::env;
 use std::fs;
+use std::io::Read;
 use std::path::PathBuf;
 
 const GITHUB_RELEASES_URL: &str =
@@ -86,7 +87,7 @@ pub async fn check_for_updates(config: &AppConfig) -> Result<UpdateInfo, String>
 }
 
 pub async fn check_for_updates_with_url(
-    config: &AppConfig,
+    _config: &AppConfig,
     api_url: &str,
 ) -> Result<UpdateInfo, String> {
     // 手动检查更新时不检查配置项，只在启动时自动检查才受配置项限制

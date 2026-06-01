@@ -2273,6 +2273,10 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
+            check_update_on_startup: false,
+            last_check_update_time: None,
+            github_owner: None,
+            github_repo: None,
         };
 
         let error = match shortcut_bindings_from_config(&config) {
@@ -2324,6 +2328,10 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            check_update_on_startup: false,
+            last_check_update_time: None,
+            github_owner: None,
+            github_repo: None,
         };
         let next = AppConfig {
             locale: "en-US".into(),
@@ -2356,6 +2364,10 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),
+            check_update_on_startup: true,
+            last_check_update_time: None,
+            github_owner: None,
+            github_repo: None,
         };
 
         assert_eq!(

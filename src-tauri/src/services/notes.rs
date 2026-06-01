@@ -1231,6 +1231,10 @@ mod tests {
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
             open_at_cursor: true,
+            check_update_on_startup: false,
+            last_check_update_time: None,
+            github_owner: None,
+            github_repo: None,
         };
 
         store.save_config(saved.clone()).expect("save config");
