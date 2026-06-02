@@ -58,7 +58,7 @@ describe("UpdateSettingsSection", () => {
     expect(markup).toContain("待更新版本：1.0.5");
     expect(markup).toContain("下载更新");
     expect(markup).not.toContain("自动检查更新");
-    expect(markup).not.toContain("Mirror 酱");
+    expect(markup).not.toContain("Mirror酱");
   });
 
   test("renders update settings for the settings panel", () => {
@@ -76,7 +76,7 @@ describe("UpdateSettingsSection", () => {
     expect(markup).toContain("下载源");
     expect(markup).toContain("GitHub");
     expect(markup).toContain("Mirror酱");
-    expect(markup).toContain("Mirror 酱");
+    expect(markup).toContain("Mirror酱");
     expect(markup).toContain("已设置");
     expect(markup).toContain("清除 CDK");
     expect(markup).toContain("允许预发布版本");

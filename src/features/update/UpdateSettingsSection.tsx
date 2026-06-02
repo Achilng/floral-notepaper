@@ -344,7 +344,7 @@ export function UpdateSettingsSection({
       setNotice({
         tone: "error",
         text: t("settings.update.error.cdkEmpty", {
-          defaultValue: "Mirror 酱 CDK 不能为空",
+          defaultValue: "Mirror酱 CDK 不能为空",
         }),
       });
       return;
@@ -373,7 +373,7 @@ export function UpdateSettingsSection({
   const handleClearCdk = async () => {
     const confirmed = window.confirm(
       t("settings.update.confirmClearCdk", {
-        defaultValue: "确认清除 Mirror 酱 CDK？",
+        defaultValue: "确认清除 Mirror酱 CDK？",
       }),
     );
     if (!confirmed) return;
@@ -633,7 +633,7 @@ export function UpdateSettingsSection({
             <div className="space-y-2">
               <label className="block text-[11px] font-body text-ink-faint">
                 {t("settings.update.mirror.title", {
-                  defaultValue: "Mirror 酱",
+                  defaultValue: "Mirror酱",
                 })}
               </label>
               <div className="flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
@@ -694,7 +694,7 @@ export function UpdateSettingsSection({
                   className="h-8 px-2.5 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer"
                 >
                   {t("settings.update.mirror.open", {
-                    defaultValue: "打开 Mirror 酱页面",
+                    defaultValue: "打开 Mirror酱页面",
                   })}
                 </button>
               </div>

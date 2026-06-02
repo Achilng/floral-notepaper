@@ -96,7 +96,7 @@ pub fn portable_manual_only() -> AppError {
 pub fn mirror_api_error(message: impl Into<String>) -> AppError {
     app_error(
         "updateMirrorApi",
-        format!("Mirror 酱 API 请求失败：{}", message.into()),
+        format!("Mirror酱 API 请求失败：{}", message.into()),
     )
 }
 

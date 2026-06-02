@@ -53,10 +53,7 @@ impl CdkStore {
     pub fn set_cdk(&self, cdk: &str) -> Result<(), AppError> {
         let cdk = cdk.trim();
         if cdk.is_empty() {
-            return Err(errors::app_error(
-                "mirrorCdkEmpty",
-                "Mirror 酱 CDK 不能为空",
-            ));
+            return Err(errors::app_error("mirrorCdkEmpty", "Mirror酱 CDK 不能为空"));
         }
 
         self.entry()?

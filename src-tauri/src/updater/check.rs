@@ -403,7 +403,7 @@ fn github_repo() -> String {
         .unwrap_or_else(|| DEFAULT_GITHUB_REPO.to_string())
 }
 
-// --- Mirror 酱 API ---
+// --- Mirror酱 API ---
 
 #[derive(Debug, Deserialize)]
 struct MirrorApiResponse {
@@ -630,7 +630,7 @@ pub(crate) fn fetch_mirror_download_url(
     let download_url = data.url.ok_or_else(|| {
         errors::app_error(
             "updateMirrorDownloadNeedCdk",
-            "Mirror 酱未返回下载链接，请配置有效的 CDK",
+            "Mirror酱未返回下载链接，请配置有效的 CDK",
         )
     })?;
 
