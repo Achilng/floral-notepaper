@@ -12,7 +12,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::Command,
+    process::{Command, Stdio},
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -162,6 +162,7 @@ pub enum UpdateHelperExitCode {
     InstallerBusy = 18,
     InstallerFatal = 19,
     InstallerVersionMismatch = 20,
+    CleanupFailed = 21,
 }
 
 impl UpdateHelperExitCode {
@@ -319,8 +320,9 @@ fn execute_apply(
     )?;
     if let Err(code) = wait_for_process_exit(command.wait_pid, &command.target_path, log) {
         let persist_result = persist_failed_state(command, code, log);
-        let _ = cleanup_after_install(command, log, false);
+        let cleanup_result = cleanup_after_install(command, log);
         persist_result?;
+        cleanup_result?;
         let _ = write_completion_marker(command, log);
         return Err(code);
     }
@@ -328,8 +330,7 @@ fn execute_apply(
         Ok(update) => update,
         Err(code) => {
             let persist_result = persist_failed_state(command, code, log);
-            let cleanup_result =
-                cleanup_after_install(command, log, should_remove_download_dir(code));
+            let cleanup_result = cleanup_after_install(command, log);
             let relaunch_result = relaunch_existing_target(command, log);
             persist_result?;
             cleanup_result?;
@@ -340,15 +341,25 @@ fn execute_apply(
     };
 
     persist_pending_verification_state(command, log)?;
-    cleanup_after_install(command, log, false)?;
+    cleanup_after_install(command, log)?;
     write_relaunch_marker(command, log)?;
     if let Err(code) = relaunch_target(&applied_update.launch_target, log) {
-        if let Some(rollback) = applied_update.rollback.as_ref() {
-            let _ = rollback_macos_update(rollback, log);
+        let failure_code = if let Some(rollback) = applied_update.rollback.as_ref() {
+            rollback_macos_update(rollback, log).err().unwrap_or(code)
+        } else {
+            code
+        };
+        if let Err(error) = remove_relaunch_marker(command) {
+            write_log_line(
+                log,
+                &format!(
+                    "failed to remove relaunch marker {} ({error})",
+                    relaunch_marker_path(command).display()
+                ),
+            )?;
         }
-        let _ = remove_relaunch_marker(command);
-        let _ = persist_failed_state(command, code, log);
-        return Err(code);
+        persist_failed_state(command, failure_code, log)?;
+        return Err(failure_code);
     }
     cleanup_applied_update(&applied_update, log)?;
     write_completion_marker(command, log)
@@ -368,8 +379,11 @@ fn execute_watchdog(
         WatchdogPostExitAction::Noop => Ok(()),
         WatchdogPostExitAction::RelaunchWithoutFailure => relaunch_existing_target(command, log),
         WatchdogPostExitAction::MarkFailedAndRelaunch => {
-            let _ = persist_failed_state(command, UpdateHelperExitCode::InstallerFailed, log);
-            relaunch_existing_target(command, log)
+            let persist_result =
+                persist_failed_state(command, UpdateHelperExitCode::InstallerFailed, log);
+            let relaunch_result = relaunch_existing_target(command, log);
+            persist_result?;
+            relaunch_result
         }
     }
 }
@@ -547,7 +561,11 @@ fn write_relaunch_marker(
 }
 
 fn remove_relaunch_marker(command: &UpdateHelperCommand) -> Result<(), std::io::Error> {
-    match fs::remove_file(relaunch_marker_path(command)) {
+    remove_file_if_exists(&relaunch_marker_path(command))
+}
+
+fn remove_file_if_exists(path: &Path) -> Result<(), std::io::Error> {
+    match fs::remove_file(path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Err(error) => Err(error),
@@ -1387,6 +1405,7 @@ fn process_is_running(pid: u32, _expected_target_path: Option<&Path>) -> bool {
 fn process_is_running(pid: u32, expected_target_path: Option<&Path>) -> bool {
     let signal_ok = Command::new("/bin/kill")
         .args(["-0", &pid.to_string()])
+        .stderr(Stdio::null())
         .status()
         .map(|status| status.success())
         .unwrap_or(false);
@@ -1556,36 +1575,17 @@ fn persist_failed_state(
 fn cleanup_after_install(
     command: &UpdateHelperCommand,
     log: &mut File,
-    remove_download_dir: bool,
 ) -> Result<(), UpdateHelperExitCode> {
-    if command.ready_path.exists() {
-        let _ = fs::remove_file(&command.ready_path);
-    }
-    if remove_download_dir {
-        if let Some(download_dir) = command.asset_path.parent() {
-            if download_dir.exists() {
-                let _ = fs::remove_dir_all(download_dir);
-                let _ = write_log_line(
-                    log,
-                    &format!(
-                        "removed downloaded asset directory {}",
-                        download_dir.display()
-                    ),
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-fn should_remove_download_dir(code: UpdateHelperExitCode) -> bool {
-    matches!(
-        code,
-        UpdateHelperExitCode::AssetMissing
-            | UpdateHelperExitCode::AssetSizeMismatch
-            | UpdateHelperExitCode::AssetHashMismatch
-            | UpdateHelperExitCode::AssetExtractFailed
-    )
+    remove_file_if_exists(&command.ready_path).map_err(|error| {
+        let _ = write_log_line(
+            log,
+            &format!(
+                "failed to remove helper ready marker {} ({error})",
+                command.ready_path.display()
+            ),
+        );
+        UpdateHelperExitCode::CleanupFailed
+    })
 }
 
 fn cleanup_stage_root(stage_root: &Path, log: &mut File) -> Result<(), UpdateHelperExitCode> {
@@ -1943,6 +1943,7 @@ fn install_error_code(code: UpdateHelperExitCode) -> &'static str {
         UpdateHelperExitCode::InstallerBusy => "updateInstallInstallerBusy",
         UpdateHelperExitCode::InstallerFatal => "updateInstallInstallerFatal",
         UpdateHelperExitCode::InstallerVersionMismatch => "updateInstallVersionMismatch",
+        UpdateHelperExitCode::CleanupFailed => "updateInstallCleanupFailed",
         UpdateHelperExitCode::Success => "updateInstallHelperFailed",
     }
 }
@@ -1968,6 +1969,7 @@ fn install_error_message(code: UpdateHelperExitCode) -> &'static str {
         UpdateHelperExitCode::InstallerBusy => "另一个安装程序正在运行，请稍后重试",
         UpdateHelperExitCode::InstallerFatal => "更新安装程序返回了致命错误",
         UpdateHelperExitCode::InstallerVersionMismatch => "安装完成后版本校验失败",
+        UpdateHelperExitCode::CleanupFailed => "安装后清理临时文件失败",
         UpdateHelperExitCode::Success => "更新安装助手执行失败",
     }
 }
@@ -2527,6 +2529,73 @@ mod tests {
                 .map(|error| error.code.as_str()),
             Some("updateInstallWaitTimedOut")
         );
+    }
+
+    #[test]
+    fn watchdog_propagates_state_write_failures() {
+        let root = temp_dir("helper-watchdog-state-write-failed");
+        let mut command = helper_command(&root);
+        command.mode = UpdateHelperMode::Watchdog;
+        command.wait_pid = u32::MAX;
+        command.target_path = root.join("missing-target.app");
+        command.state_path = root.join("state-directory");
+        fs::create_dir_all(&command.state_path).expect("create state path directory");
+        let mut log = open_log(&command.log_path).expect("open log");
+
+        let error =
+            execute_watchdog(&command, &mut log).expect_err("state write failure should surface");
+
+        assert_eq!(error, UpdateHelperExitCode::StateWriteFailed);
+    }
+
+    #[test]
+    fn failed_apply_preserves_downloaded_asset_directory() {
+        let root = temp_dir("helper-failed-apply-preserves-download");
+        let mut command = helper_command(&root);
+        let download_dir = root.join("downloads").join("1.0.5");
+        let asset_path = download_dir.join("asset.bin");
+        fs::create_dir_all(&download_dir).expect("create download dir");
+        fs::write(&asset_path, b"downloaded asset").expect("write downloaded asset");
+        command.mode = UpdateHelperMode::Apply;
+        command.install_kind = InstallKind::Unknown;
+        command.wait_pid = u32::MAX;
+        command.target_path = root.join("missing-target.app");
+        command.asset_path = asset_path.clone();
+        command.asset_size = fs::metadata(&asset_path).expect("asset metadata").len();
+        command.asset_sha256 = sha256_hex(&asset_path).expect("hash asset");
+        let mut log = open_log(&command.log_path).expect("open log");
+
+        let error =
+            execute_apply(&command, &mut log).expect_err("unknown install kind should fail");
+
+        assert_eq!(error, UpdateHelperExitCode::UnsupportedInstallKind);
+        assert!(download_dir.exists());
+        assert!(asset_path.exists());
+    }
+
+    #[test]
+    fn cleanup_after_install_reports_ready_marker_cleanup_failure() {
+        let root = temp_dir("helper-cleanup-ready-marker-failed");
+        let command = helper_command(&root);
+        fs::create_dir_all(&command.ready_path).expect("create ready marker directory");
+        let mut log = open_log(&command.log_path).expect("open log");
+
+        let error =
+            cleanup_after_install(&command, &mut log).expect_err("directory removal should fail");
+
+        assert_eq!(error, UpdateHelperExitCode::CleanupFailed);
+    }
+
+    #[test]
+    fn cleanup_after_install_removes_ready_marker_file() {
+        let root = temp_dir("helper-cleanup-ready-marker");
+        let command = helper_command(&root);
+        fs::write(&command.ready_path, "ready").expect("write ready marker");
+        let mut log = open_log(&command.log_path).expect("open log");
+
+        cleanup_after_install(&command, &mut log).expect("cleanup ready marker");
+
+        assert!(!command.ready_path.exists());
     }
 
     #[test]

@@ -302,6 +302,7 @@
         "installReplaceFailed": "Failed to replace the current installation",
         "installRelaunchFailed": "The app could not be reopened after the update",
         "installStateWriteFailed": "Could not write the install state file",
+        "installCleanupFailed": "Failed to clean up temporary files after install",
         "installInstallerFailed": "The update installer failed to complete",
         "installInstallerFatal": "The update installer returned a fatal error",
         "installInstallerTimedOut": "The update installer timed out before completion",

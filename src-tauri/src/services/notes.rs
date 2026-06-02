@@ -1,3 +1,4 @@
+use crate::json_io::write_json_atomic;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -992,16 +993,6 @@ impl NoteStore {
         }
         Ok(())
     }
-}
-
-fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), AppError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temp_path = path.with_extension("json.tmp");
-    fs::write(&temp_path, serde_json::to_string_pretty(value)?)?;
-    fs::rename(&temp_path, path)?;
-    Ok(())
 }
 
 #[cfg(target_os = "macos")]

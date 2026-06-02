@@ -10,8 +10,6 @@ use std::{
         Mutex,
     },
 };
-#[cfg(target_os = "macos")]
-use tauri::menu::Submenu;
 
 #[cfg(target_os = "windows")]
 mod keyboard_hook {

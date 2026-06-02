@@ -68,6 +68,7 @@ export interface UpdateCheckResult {
   canDownloadFromMirror: boolean;
   canDownloadFromGithub: boolean;
   recommendedSource?: DownloadSourceUsed | null;
+  assetUrl?: string | null;
 }
 
 export interface UpdateDownloadResult {

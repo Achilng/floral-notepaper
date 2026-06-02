@@ -303,6 +303,7 @@
         "installReplaceFailed": "替換目前安裝內容失敗，請稍後重試",
         "installRelaunchFailed": "更新完成後重新啟動應用失敗，請手動重新打開應用",
         "installStateWriteFailed": "無法寫入安裝狀態檔案",
+        "installCleanupFailed": "安裝後清理臨時檔案失敗",
         "installInstallerFailed": "更新安裝程式執行失敗",
         "installInstallerFatal": "更新安裝程式回傳致命錯誤",
         "installInstallerTimedOut": "更新安裝程式執行逾時，請稍後重試",

@@ -1,4 +1,5 @@
 pub mod desktop;
+pub mod json_io;
 pub mod locales;
 pub mod services;
 pub mod updater;

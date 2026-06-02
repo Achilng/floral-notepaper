@@ -23,4 +23,13 @@ describe("update error helpers", () => {
 
     expect(getUpdateErrorMessage(error, i18n.t.bind(i18n))).toBe("更新清单格式版本暂不受支持");
   });
+
+  test("maps helper cleanup failures through locale keys", () => {
+    const error = {
+      code: "updateInstallCleanupFailed",
+      message: "安装后清理临时文件失败",
+    };
+
+    expect(getUpdateErrorMessage(error, i18n.t.bind(i18n))).toBe("安装后清理临时文件失败");
+  });
 });
