@@ -278,7 +278,6 @@
         "downloadSizeMismatch": "The downloaded file size did not match",
         "downloadSourceInvalid": "The download source parameter is invalid",
         "downloadTaskJoinFailed": "The download task failed to finish cleanly",
-        "downloadUnavailable": "Download infrastructure is not enabled yet",
         "downloadUrlInvalid": "The download URL is invalid or not HTTPS",
         "downloadUrlNotAllowed": "The download URL host is not allowlisted",
         "helperNotFound": "Update helper executable was not found",
@@ -309,7 +308,6 @@
         "installTargetMissing": "The current install target no longer exists",
         "installVersionMismatch": "The app reopened on the old version after install. Retry the install directly.",
         "installTaskJoinFailed": "Install task failed to complete",
-        "installUnavailable": "Install scheduling is not enabled yet",
         "mirrorDownloadUnavailable": "Mirror downloads are not configured yet; use GitHub for now",
         "mirrorApi": "Mirror API request failed; please check your network and try again",
         "mirrorCdk": "Mirror CDK verification failed; please check your CDK",
@@ -350,7 +348,6 @@
       "installRetry": "Retry Install",
       "installScheduled": "A legacy pending-install state was found. Click Install & Restart again to finish replacing the app.",
       "installValidated": "The app will close to install the update and reopen when it is done.",
-      "installValidatedTest": "The update helper finished test-mode validation",
       "latestVersion": "Pending version: {{version}}",
       "loading": "Reading update settings...",
       "mirror": {

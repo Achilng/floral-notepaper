@@ -279,7 +279,6 @@
         "downloadSizeMismatch": "下载文件大小校验失败",
         "downloadSourceInvalid": "无效的下载源参数",
         "downloadTaskJoinFailed": "下载任务执行失败",
-        "downloadUnavailable": "下载基础设施尚未启用",
         "downloadUrlInvalid": "下载地址无效或未使用 HTTPS",
         "downloadUrlNotAllowed": "下载地址不在允许列表中",
         "helperNotFound": "找不到更新安装助手可执行文件",
@@ -310,7 +309,6 @@
         "installTargetMissing": "当前安装目标不存在，无法继续",
         "installVersionMismatch": "安装后重新打开的仍是旧版本，请直接重试安装",
         "installTaskJoinFailed": "安装任务执行失败",
-        "installUnavailable": "安装调度尚未启用",
         "mirrorDownloadUnavailable": "Mirror 下载源尚未配置，当前阶段请改用 GitHub 下载",
         "mirrorApi": "Mirror酱 API 请求失败，请检查网络后重试",
         "mirrorCdk": "Mirror酱 CDK 验证失败，请检查 CDK 是否正确",
@@ -351,7 +349,6 @@
       "installRetry": "重新尝试安装",
       "installScheduled": "检测到旧版待安装状态，请重新点击“安装并重启”完成替换",
       "installValidated": "即将退出应用并安装更新，完成后会自动重新打开",
-      "installValidatedTest": "安装 helper 已完成 test 模式校验",
       "latestVersion": "待更新版本：{{version}}",
       "loading": "正在读取更新设置...",
       "mirror": {

@@ -279,7 +279,6 @@
         "downloadSizeMismatch": "下載檔案大小校驗失敗",
         "downloadSourceInvalid": "無效的下載來源參數",
         "downloadTaskJoinFailed": "下載任務執行失敗",
-        "downloadUnavailable": "下載基礎設施尚未啟用",
         "downloadUrlInvalid": "下載地址無效或未使用 HTTPS",
         "downloadUrlNotAllowed": "下載地址不在允許清單中",
         "helperNotFound": "找不到更新安裝助手可執行檔",
@@ -310,7 +309,6 @@
         "installTargetMissing": "目前安裝目標不存在，無法繼續",
         "installVersionMismatch": "安裝後重新打開的仍是舊版本，請直接重試安裝",
         "installTaskJoinFailed": "安裝任務執行失敗",
-        "installUnavailable": "安裝調度尚未啟用",
         "mirrorDownloadUnavailable": "Mirror 下載來源尚未配置，目前階段請改用 GitHub 下載",
         "mirrorApi": "Mirror 醬 API 請求失敗，請檢查網絡後重試",
         "mirrorCdk": "Mirror 醬 CDK 驗證失敗，請檢查 CDK 是否正確",
@@ -351,7 +349,6 @@
       "installRetry": "重新嘗試安裝",
       "installScheduled": "偵測到舊版待安裝狀態，請重新點擊「安裝並重新啟動」完成替換",
       "installValidated": "應用即將退出並安裝更新，完成後會自動重新打開",
-      "installValidatedTest": "安裝 helper 已完成 test 模式校驗",
       "latestVersion": "待更新版本：{{version}}",
       "loading": "正在讀取更新設定...",
       "mirror": {
