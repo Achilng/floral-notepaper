@@ -12,7 +12,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{BufReader, Read, Write},
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::Command,
     thread,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
@@ -1400,6 +1400,9 @@ fn process_is_running(pid: u32, _expected_target_path: Option<&Path>) -> bool {
         wait_result != WAIT_OBJECT_0
     }
 }
+
+#[cfg(not(target_os = "windows"))]
+use std::process::Stdio;
 
 #[cfg(not(target_os = "windows"))]
 fn process_is_running(pid: u32, expected_target_path: Option<&Path>) -> bool {
