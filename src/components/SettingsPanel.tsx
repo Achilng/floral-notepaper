@@ -283,6 +283,28 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
+            {t("settings.windowOpacity", { defaultValue: "窗口透明度" })}
+          </label>
+          <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
+            <input
+              type="range"
+              min={0}
+              max={100}
+              step={1}
+              value={Math.round((config.windowOpacity ?? 0.92) * 100)}
+              onChange={(event) =>
+                setConfigValue("windowOpacity", Number(event.target.value) / 100)
+              }
+              className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
+            />
+            <span className="text-[12px] font-mono text-ink-soft tabular-nums w-10 text-right">
+              {Math.round((config.windowOpacity ?? 0.92) * 100)}%
+            </span>
+          </div>
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
             {t("settings.tabIndentSize", { defaultValue: "Tab 缩进宽��" })}
           </label>
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">

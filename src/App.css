@@ -38,6 +38,7 @@
 :root {
   --app-window-radius: 14px;
   --app-surface-radius: 14px;
+  --window-opacity: 0.92;
 }
 
 :root[data-theme="dark"] {
@@ -116,6 +117,14 @@ body {
 
 .app-main-frame {
   border-radius: var(--app-window-radius);
+}
+
+.app-window-paper-bg {
+  background-color: color-mix(
+    in srgb,
+    var(--color-cloud) calc(var(--window-opacity, 0.92) * 100%),
+    transparent
+  );
 }
 
 .app-surface-frame {

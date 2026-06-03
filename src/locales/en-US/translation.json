@@ -195,6 +195,7 @@
       "editor": "Editor font size",
       "surface": "Surface font size"
     },
+    "windowOpacity": "Window opacity",
     "locale": {
       "enUS": "English",
       "label": "Language",

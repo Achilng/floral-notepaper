@@ -1314,7 +1314,7 @@ export function MainWindow({
 
   return (
     <div className="w-full h-screen flex flex-col">
-      <div className="relative noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
+      <div className="relative noise-bg app-window-paper-bg overflow-hidden flex flex-col flex-1">
         <BackgroundLayer config={settingsConfig} />
         <div
           className="relative z-10 flex items-center justify-between pl-5 pr-0 h-11 bg-paper/55 backdrop-blur-[1px] border-b border-paper-deep/30 shrink-0 select-none cursor-default"

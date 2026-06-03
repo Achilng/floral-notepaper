@@ -19,6 +19,7 @@ export interface AppConfig {
   theme: ThemeOption;
   fontSize: number;
   surfaceFontSize: number;
+  windowOpacity: number;
   tabIndentSize: number;
   externalFileAutoSave: boolean;
   rememberSurfaceSize: boolean;

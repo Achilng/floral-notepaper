@@ -12,6 +12,11 @@ import { getInitialRoute } from "./features/windows/windowRoutes";
 import { syncLanguage } from "./locales";
 import { listen } from "@tauri-apps/api/event";
 
+function applyWindowOpacity(opacity: number) {
+  const value = Math.max(0, Math.min(1, Number.isFinite(opacity) ? opacity : 0.92));
+  document.documentElement.style.setProperty("--window-opacity", String(value));
+}
+
 function App() {
   const route = getInitialRoute();
   const activeView = route.view;
@@ -27,6 +32,7 @@ function App() {
           "--tab-indent-size",
           String(config.tabIndentSize ?? 2),
         );
+        applyWindowOpacity(config.windowOpacity ?? 0.92);
         void syncLanguage(config.locale);
       })
       .catch(() => {});
@@ -44,6 +50,7 @@ function App() {
         "--tab-indent-size",
         String(event.payload.tabIndentSize ?? 2),
       );
+      applyWindowOpacity(event.payload.windowOpacity ?? 0.92);
       void syncLanguage(event.payload.locale);
     });
     return () => {

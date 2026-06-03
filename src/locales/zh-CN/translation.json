@@ -195,6 +195,7 @@
       "editor": "编辑器字号",
       "surface": "小窗/磁贴字号"
     },
+    "windowOpacity": "窗口透明度",
     "locale": {
       "enUS": "English",
       "label": "语言",

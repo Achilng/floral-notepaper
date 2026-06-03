@@ -97,7 +97,7 @@ export function Tile({
   }, [tileColor]);
   const mergedStyle: CSSProperties = {
     width,
-    backgroundColor: tileColor,
+    backgroundColor: `color-mix(in srgb, ${tileColor} calc(var(--window-opacity, 0.92) * 100%), transparent)`,
     borderColor,
     transition: "box-shadow 0.3s ease",
     ...(rotation ? { transform: `rotate(${rotation}deg)` } : {}),

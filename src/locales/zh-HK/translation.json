@@ -195,6 +195,7 @@
       "editor": "編輯器字級",
       "surface": "小窗／磁貼字級"
     },
+    "windowOpacity": "視窗透明度",
     "locale": {
       "enUS": "English",
       "label": "語言",
