@@ -21,7 +21,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 
 [[bin]]
 name = "floral_cli_backend"
-path = "src/bin/floral_cli_backend.rs"
+path = "src/addon/floral_cli_backend.rs"
 required-features = ["floral-ai-addon"]
 
 [build-dependencies]

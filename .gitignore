@@ -1,7 +1,5 @@
 ## .NET / Visual Studio
 bin/
-!src-tauri/src/bin/
-!src-tauri/src/bin/floral_cli_backend.rs
 obj/
 *.user
 *.suo
