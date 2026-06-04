@@ -1,5 +1,7 @@
 ## .NET / Visual Studio
 bin/
+!src-tauri/src/bin/
+!src-tauri/src/bin/floral_cli_backend.rs
 obj/
 *.user
 *.suo
@@ -23,6 +25,14 @@ node_modules/
 dist/
 src-tauri/target/
 src-tauri/gen/
+
+## Python harness
+__pycache__/
+*.py[cod]
+.pytest_cache/
+*.egg-info/
+.test-tmp/
+.verification-tmp/
 
 ## Local hooks
 .husky/pre-push
