@@ -41,10 +41,17 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tauri-plugin-clipboard-manager = "2"
 trash = "5"
 fs2 = "0.4"
-rmcp = { version = "1.7", default-features = false, features = ["macros", "server", "transport-io"], optional = true }
+rmcp = { version = "1.7", default-features = false, features = [
+  "macros",
+  "server",
+  "transport-io",
+], optional = true }
 schemars = { version = "1", optional = true }
 tokio = { version = "1", features = ["io-std", "macros", "rt-multi-thread"], optional = true }
 
 [dev-dependencies]
-rmcp = { version = "1.7", default-features = false, features = ["client", "transport-child-process"] }
+rmcp = { version = "1.7", default-features = false, features = [
+  "client",
+  "transport-child-process",
+] }
 tokio = { version = "1", features = ["macros", "process", "rt-multi-thread"] }
