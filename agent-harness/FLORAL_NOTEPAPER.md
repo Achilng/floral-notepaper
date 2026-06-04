@@ -21,7 +21,8 @@
 - 自动化和测试时应使用 `--data-dir` 指向独立目录。
 - `config patch` 会经过应用原有 `save_config` 校验。
 - undo/redo 只追踪通过当前 harness 执行的修改。
-- GUI 与 CLI 不应同时修改同一条笔记；二者没有跨进程写锁。
+- GUI、CLI 和 MCP Add-on 的写操作共享数据目录中的 `.floral-notepaper.lock` 跨进程锁。
+- MCP 写操作要求携带读取时获得的 `updatedAt`，发生版本冲突时不会覆盖较新的笔记。
 
 ## 架构
 

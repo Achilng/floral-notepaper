@@ -1,11 +1,28 @@
 use chrono::{DateTime, Utc};
+use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 use std::{
+    cell::Cell,
     collections::BTreeMap,
-    env, fmt, fs, io,
+    env, fmt, fs,
+    fs::OpenOptions,
+    io,
     path::{Component, Path, PathBuf},
+    sync::Mutex,
+    thread,
+    time::{Duration, Instant},
 };
 use uuid::Uuid;
+
+const STORE_LOCK_TIMEOUT: Duration = Duration::from_secs(5);
+const STORE_LOCK_RETRY_DELAY: Duration = Duration::from_millis(25);
+const MAX_SEARCH_RESULTS: usize = 200;
+const DEFAULT_SEARCH_RESULTS: usize = 50;
+static PROCESS_STORE_LOCK: Mutex<()> = Mutex::new(());
+
+thread_local! {
+    static STORE_LOCK_DEPTH: Cell<usize> = const { Cell::new(0) };
+}
 
 #[cfg(target_os = "macos")]
 const DEFAULT_MACOS_GLOBAL_SHORTCUT: &str = "Command+Option+N";
@@ -119,6 +136,27 @@ pub struct Note {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct NoteSearchResult {
+    pub id: String,
+    pub title: String,
+    pub category: String,
+    pub updated_at: DateTime<Utc>,
+    pub preview: String,
+    pub match_snippet: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct NoteSearchPage {
+    pub items: Vec<NoteSearchResult>,
+    pub offset: usize,
+    pub limit: usize,
+    pub total: usize,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AppError {
     pub code: String,
     pub message: String,
@@ -142,6 +180,22 @@ impl AppError {
 
     fn note_not_found(id: &str) -> Self {
         Self::new("noteNotFound", format!("Note {id} was not found")).with_detail("noteId", id)
+    }
+
+    fn note_conflict(id: &str, current_updated_at: DateTime<Utc>) -> Self {
+        Self::new(
+            "noteConflict",
+            "The note changed after it was read. Read the latest version before updating it.",
+        )
+        .with_detail("noteId", id)
+        .with_detail("currentUpdatedAt", current_updated_at.to_rfc3339())
+    }
+
+    fn store_busy() -> Self {
+        Self::new(
+            "storeBusy",
+            "Floral is currently writing notes. Please try again in a moment.",
+        )
     }
 
     fn unsupported_file() -> Self {
@@ -201,6 +255,21 @@ struct MetadataFile {
 #[derive(Debug, Clone)]
 pub struct NoteStore {
     base_dir: PathBuf,
+}
+
+struct StoreLockDepthGuard;
+
+impl StoreLockDepthGuard {
+    fn enter() -> Self {
+        STORE_LOCK_DEPTH.with(|depth| depth.set(depth.get() + 1));
+        Self
+    }
+}
+
+impl Drop for StoreLockDepthGuard {
+    fn drop(&mut self) {
+        STORE_LOCK_DEPTH.with(|depth| depth.set(depth.get().saturating_sub(1)));
+    }
 }
 
 pub fn default_store() -> Result<NoteStore, AppError> {
@@ -303,6 +372,64 @@ impl NoteStore {
         &self.base_dir
     }
 
+    fn with_store_lock<T>(
+        &self,
+        operation: impl FnOnce() -> Result<T, AppError>,
+    ) -> Result<T, AppError> {
+        self.with_store_lock_timeout(STORE_LOCK_TIMEOUT, operation)
+    }
+
+    fn with_store_lock_timeout<T>(
+        &self,
+        timeout: Duration,
+        operation: impl FnOnce() -> Result<T, AppError>,
+    ) -> Result<T, AppError> {
+        if STORE_LOCK_DEPTH.with(|depth| depth.get() > 0) {
+            return operation();
+        }
+
+        let started = Instant::now();
+        let _process_guard = loop {
+            match PROCESS_STORE_LOCK.try_lock() {
+                Ok(guard) => break guard,
+                Err(std::sync::TryLockError::Poisoned(error)) => break error.into_inner(),
+                Err(std::sync::TryLockError::WouldBlock) if started.elapsed() < timeout => {
+                    thread::sleep(STORE_LOCK_RETRY_DELAY);
+                }
+                Err(std::sync::TryLockError::WouldBlock) => return Err(AppError::store_busy()),
+            }
+        };
+
+        fs::create_dir_all(&self.base_dir)?;
+        let lock_file = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(self.base_dir.join(".floral-notepaper.lock"))?;
+        loop {
+            match lock_file.try_lock_exclusive() {
+                Ok(()) => break,
+                Err(error)
+                    if error.kind() == io::ErrorKind::WouldBlock && started.elapsed() < timeout =>
+                {
+                    thread::sleep(STORE_LOCK_RETRY_DELAY);
+                }
+                Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                    return Err(AppError::store_busy());
+                }
+                Err(error) => return Err(error.into()),
+            }
+        }
+
+        // Nested NoteStore calls on the same thread reuse this lock. This keeps
+        // compound operations atomic without requiring a reentrant OS file lock.
+        let _depth_guard = StoreLockDepthGuard::enter();
+        let result = operation();
+        let _ = FileExt::unlock(&lock_file);
+        result
+    }
+
     pub fn metadata_path(&self) -> PathBuf {
         self.base_dir.join("metadata.json")
     }
@@ -317,6 +444,10 @@ impl NoteStore {
     }
 
     pub fn load_config(&self) -> Result<AppConfig, AppError> {
+        self.with_store_lock(|| self.load_config_unlocked())
+    }
+
+    fn load_config_unlocked(&self) -> Result<AppConfig, AppError> {
         self.ensure_base_dir()?;
         let path = self.config_path();
         if !path.exists() {
@@ -338,7 +469,11 @@ impl NoteStore {
         Ok(config)
     }
 
-    pub fn save_config(&self, mut config: AppConfig) -> Result<AppConfig, AppError> {
+    pub fn save_config(&self, config: AppConfig) -> Result<AppConfig, AppError> {
+        self.with_store_lock(|| self.save_config_unlocked(config))
+    }
+
+    fn save_config_unlocked(&self, mut config: AppConfig) -> Result<AppConfig, AppError> {
         self.ensure_base_dir()?;
         config.notes_dir = ensure_notes_suffix(&config.notes_dir);
         config.tab_indent_size = config.tab_indent_size.clamp(1, 8);
@@ -349,6 +484,10 @@ impl NoteStore {
     }
 
     pub fn list_notes(&self) -> Result<Vec<NoteMetadata>, AppError> {
+        self.with_store_lock(|| self.list_notes_unlocked())
+    }
+
+    fn list_notes_unlocked(&self) -> Result<Vec<NoteMetadata>, AppError> {
         self.ensure_storage()?;
         let mut metadata = self.load_metadata()?.notes;
         metadata.retain(|note| {
@@ -359,7 +498,72 @@ impl NoteStore {
         Ok(metadata)
     }
 
+    pub fn search_notes(
+        &self,
+        query: &str,
+        category: Option<&str>,
+        offset: usize,
+        limit: usize,
+    ) -> Result<NoteSearchPage, AppError> {
+        self.with_store_lock(|| {
+            let normalized_query = query.trim().to_lowercase();
+            let limit = if limit == 0 {
+                DEFAULT_SEARCH_RESULTS
+            } else {
+                limit.min(MAX_SEARCH_RESULTS)
+            };
+            let mut matches = Vec::new();
+
+            for metadata in self.list_notes()? {
+                if category.is_some_and(|value| metadata.category != value) {
+                    continue;
+                }
+                let note = self.read_note(&metadata.id)?;
+                let title_matches = note.title.to_lowercase().contains(&normalized_query);
+                let preview_matches = metadata.preview.to_lowercase().contains(&normalized_query);
+                let content_matches = note.content.to_lowercase().contains(&normalized_query);
+                if normalized_query.is_empty()
+                    || title_matches
+                    || preview_matches
+                    || content_matches
+                {
+                    let match_snippet = if content_matches {
+                        clip_chars(&note.content.replace(['\r', '\n'], " "), 240)
+                    } else {
+                        metadata.preview.clone()
+                    };
+                    matches.push(NoteSearchResult {
+                        id: metadata.id,
+                        title: metadata.title,
+                        category: metadata.category,
+                        updated_at: metadata.updated_at,
+                        preview: metadata.preview,
+                        match_snippet,
+                    });
+                }
+            }
+
+            let total = matches.len();
+            let items = matches
+                .into_iter()
+                .skip(offset)
+                .take(limit)
+                .collect::<Vec<_>>();
+            Ok(NoteSearchPage {
+                truncated: offset.saturating_add(items.len()) < total,
+                items,
+                offset,
+                limit,
+                total,
+            })
+        })
+    }
+
     pub fn read_note(&self, id: &str) -> Result<Note, AppError> {
+        self.with_store_lock(|| self.read_note_unlocked(id))
+    }
+
+    fn read_note_unlocked(&self, id: &str) -> Result<Note, AppError> {
         self.ensure_storage()?;
         let metadata = self.find_metadata(id)?;
         let content = fs::read_to_string(
@@ -378,6 +582,10 @@ impl NoteStore {
     }
 
     pub fn create_note(&self, request: SaveNoteRequest) -> Result<Note, AppError> {
+        self.with_store_lock(|| self.create_note_unlocked(request))
+    }
+
+    fn create_note_unlocked(&self, request: SaveNoteRequest) -> Result<Note, AppError> {
         self.ensure_storage()?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
@@ -417,6 +625,25 @@ impl NoteStore {
     }
 
     pub fn update_note(&self, id: &str, request: SaveNoteRequest) -> Result<Note, AppError> {
+        self.with_store_lock(|| self.update_note_unlocked(id, request))
+    }
+
+    pub fn update_note_if_unchanged(
+        &self,
+        id: &str,
+        expected_updated_at: DateTime<Utc>,
+        request: SaveNoteRequest,
+    ) -> Result<Note, AppError> {
+        self.with_store_lock(|| {
+            let current = self.find_metadata(id)?;
+            if current.updated_at != expected_updated_at {
+                return Err(AppError::note_conflict(id, current.updated_at));
+            }
+            self.update_note_unlocked(id, request)
+        })
+    }
+
+    fn update_note_unlocked(&self, id: &str, request: SaveNoteRequest) -> Result<Note, AppError> {
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let note = metadata_file
@@ -469,6 +696,10 @@ impl NoteStore {
     }
 
     pub fn delete_note(&self, id: &str) -> Result<(), AppError> {
+        self.with_store_lock(|| self.delete_note_unlocked(id))
+    }
+
+    fn delete_note_unlocked(&self, id: &str) -> Result<(), AppError> {
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let index = metadata_file
@@ -497,6 +728,15 @@ impl NoteStore {
         data: &[u8],
         extension: &str,
     ) -> Result<String, AppError> {
+        self.with_store_lock(|| self.save_image_unlocked(note_id, data, extension))
+    }
+
+    fn save_image_unlocked(
+        &self,
+        note_id: &str,
+        data: &[u8],
+        extension: &str,
+    ) -> Result<String, AppError> {
         self.ensure_storage()?;
         self.find_metadata(note_id)?;
 
@@ -519,6 +759,10 @@ impl NoteStore {
     }
 
     pub fn delete_note_images(&self, note_id: &str) -> Result<(), AppError> {
+        self.with_store_lock(|| self.delete_note_images_unlocked(note_id))
+    }
+
+    fn delete_note_images_unlocked(&self, note_id: &str) -> Result<(), AppError> {
         let dir = self.images_dir(note_id);
         if dir.exists() {
             fs::remove_dir_all(&dir)?;
@@ -527,6 +771,14 @@ impl NoteStore {
     }
 
     pub fn clean_unused_images(
+        &self,
+        note_id: &str,
+        content: &str,
+    ) -> Result<Vec<String>, AppError> {
+        self.with_store_lock(|| self.clean_unused_images_unlocked(note_id, content))
+    }
+
+    fn clean_unused_images_unlocked(
         &self,
         note_id: &str,
         content: &str,
@@ -562,6 +814,10 @@ impl NoteStore {
     }
 
     pub fn import_markdown_file(&self, path: &Path, category: &str) -> Result<Note, AppError> {
+        self.with_store_lock(|| self.import_markdown_file_unlocked(path, category))
+    }
+
+    fn import_markdown_file_unlocked(&self, path: &Path, category: &str) -> Result<Note, AppError> {
         if !is_markdown_path(path) {
             return Err(AppError::unsupported_file());
         }
@@ -585,6 +841,10 @@ impl NoteStore {
     }
 
     pub fn list_categories(&self) -> Result<Vec<String>, AppError> {
+        self.with_store_lock(|| self.list_categories_unlocked())
+    }
+
+    fn list_categories_unlocked(&self) -> Result<Vec<String>, AppError> {
         let notes_dir = self.notes_dir()?;
         fs::create_dir_all(&notes_dir)?;
         let mut categories = Vec::new();
@@ -599,6 +859,10 @@ impl NoteStore {
     }
 
     pub fn create_category(&self, name: &str) -> Result<(), AppError> {
+        self.with_store_lock(|| self.create_category_unlocked(name))
+    }
+
+    fn create_category_unlocked(&self, name: &str) -> Result<(), AppError> {
         let name = name.trim();
         if name.is_empty() {
             return Err(AppError::category_name_empty());
@@ -613,6 +877,10 @@ impl NoteStore {
     }
 
     pub fn rename_category(&self, old_name: &str, new_name: &str) -> Result<(), AppError> {
+        self.with_store_lock(|| self.rename_category_unlocked(old_name, new_name))
+    }
+
+    fn rename_category_unlocked(&self, old_name: &str, new_name: &str) -> Result<(), AppError> {
         let new_name = new_name.trim();
         if new_name.is_empty() {
             return Err(AppError::category_name_empty());
@@ -646,6 +914,10 @@ impl NoteStore {
     }
 
     pub fn delete_category(&self, name: &str) -> Result<(), AppError> {
+        self.with_store_lock(|| self.delete_category_unlocked(name))
+    }
+
+    fn delete_category_unlocked(&self, name: &str) -> Result<(), AppError> {
         let notes_dir = self.notes_dir()?;
         let category_path = notes_dir.join(name);
         let dir_exists = category_path.exists();
@@ -705,6 +977,29 @@ impl NoteStore {
         id: &str,
         new_category: &str,
     ) -> Result<NoteMetadata, AppError> {
+        self.with_store_lock(|| self.move_note_to_category_unlocked(id, new_category))
+    }
+
+    pub fn move_note_to_category_if_unchanged(
+        &self,
+        id: &str,
+        expected_updated_at: DateTime<Utc>,
+        new_category: &str,
+    ) -> Result<NoteMetadata, AppError> {
+        self.with_store_lock(|| {
+            let current = self.find_metadata(id)?;
+            if current.updated_at != expected_updated_at {
+                return Err(AppError::note_conflict(id, current.updated_at));
+            }
+            self.move_note_to_category_unlocked(id, new_category)
+        })
+    }
+
+    fn move_note_to_category_unlocked(
+        &self,
+        id: &str,
+        new_category: &str,
+    ) -> Result<NoteMetadata, AppError> {
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let note = metadata_file
@@ -728,6 +1023,7 @@ impl NoteStore {
         }
 
         note.category = new_category.to_string();
+        note.updated_at = Utc::now();
         let result = note.clone();
         self.save_metadata(&metadata_file)?;
         Ok(result)
@@ -991,6 +1287,10 @@ fn safe_file_stem(title: &str) -> String {
     stem.trim_matches('_').to_string()
 }
 
+fn clip_chars(value: &str, max_chars: usize) -> String {
+    value.chars().take(max_chars).collect()
+}
+
 fn count_words(content: &str) -> usize {
     content.chars().filter(|ch| !ch.is_whitespace()).count()
 }
@@ -1135,7 +1435,7 @@ fn default_locale() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
+    use std::{fs, path::PathBuf, sync::mpsc, thread, time::Duration};
 
     fn test_root(name: &str) -> PathBuf {
         let base = std::env::var_os("FLORAL_NOTEPAPER_TEST_TEMP_DIR")
@@ -1476,5 +1776,169 @@ mod tests {
             fs::read_to_string(export_path).expect("read exported markdown"),
             content
         );
+    }
+
+    #[test]
+    fn searches_note_bodies_and_paginates_results() {
+        let store = NoteStore::new(test_root("search-notes"));
+        for title in ["First", "Second", "Third"] {
+            store
+                .create_note(SaveNoteRequest {
+                    title: title.into(),
+                    content: format!("Body with hidden needle in {title}"),
+                    category: "Work".into(),
+                })
+                .expect("create searchable note");
+        }
+
+        let page = store
+            .search_notes("needle", Some("Work"), 1, 1)
+            .expect("search notes");
+
+        assert_eq!(page.total, 3);
+        assert_eq!(page.offset, 1);
+        assert_eq!(page.limit, 1);
+        assert!(page.truncated);
+        assert_eq!(page.items.len(), 1);
+        assert!(page.items[0].match_snippet.contains("needle"));
+
+        let capped = store
+            .search_notes("needle", None, 0, 500)
+            .expect("search with capped limit");
+        assert_eq!(capped.limit, 200);
+    }
+
+    #[test]
+    fn rejects_updates_when_the_expected_timestamp_is_stale() {
+        let store = NoteStore::new(test_root("stale-update"));
+        let created = store
+            .create_note(SaveNoteRequest {
+                title: "Draft".into(),
+                content: "first".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+        let current = store
+            .update_note(
+                &created.id,
+                SaveNoteRequest {
+                    title: "Draft".into(),
+                    content: "second".into(),
+                    category: String::new(),
+                },
+            )
+            .expect("update note");
+
+        let error = store
+            .update_note_if_unchanged(
+                &created.id,
+                created.updated_at,
+                SaveNoteRequest {
+                    title: "Draft".into(),
+                    content: "stale overwrite".into(),
+                    category: String::new(),
+                },
+            )
+            .expect_err("reject stale update");
+
+        assert_eq!(error.code, "noteConflict");
+        assert_eq!(
+            error.details.get("currentUpdatedAt"),
+            Some(&current.updated_at.to_rfc3339())
+        );
+        assert_eq!(
+            store
+                .read_note(&created.id)
+                .expect("read current note")
+                .content,
+            "second"
+        );
+    }
+
+    #[test]
+    fn moving_a_note_changes_its_timestamp_and_checks_the_expected_version() {
+        let store = NoteStore::new(test_root("move-version"));
+        let created = store
+            .create_note(SaveNoteRequest {
+                title: "Draft".into(),
+                content: "body".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        let moved = store
+            .move_note_to_category_if_unchanged(&created.id, created.updated_at, "Work")
+            .expect("move current note");
+        assert!(moved.updated_at > created.updated_at);
+
+        let error = store
+            .move_note_to_category_if_unchanged(&created.id, created.updated_at, "Archive")
+            .expect_err("reject stale move");
+        assert_eq!(error.code, "noteConflict");
+    }
+
+    #[test]
+    fn returns_store_busy_when_another_writer_holds_the_lock() {
+        let root = test_root("store-lock-timeout");
+        let holder = NoteStore::new(root.clone());
+        let waiter = NoteStore::new(root);
+        let (locked_tx, locked_rx) = mpsc::channel();
+
+        let handle = thread::spawn(move || {
+            holder
+                .with_store_lock_timeout(Duration::from_secs(1), || {
+                    locked_tx.send(()).expect("notify lock held");
+                    thread::sleep(Duration::from_millis(150));
+                    Ok(())
+                })
+                .expect("hold store lock");
+        });
+        locked_rx.recv().expect("wait for lock");
+
+        let error = waiter
+            .with_store_lock_timeout(Duration::from_millis(20), || Ok(()))
+            .expect_err("lock should time out");
+
+        assert_eq!(error.code, "storeBusy");
+        handle.join().expect("join lock holder");
+    }
+
+    #[test]
+    fn concurrent_writers_do_not_lose_metadata() {
+        let root = test_root("concurrent-writers");
+        let first_store = NoteStore::new(root.clone());
+        let second_store = NoteStore::new(root.clone());
+
+        let first = thread::spawn(move || {
+            first_store
+                .create_note(SaveNoteRequest {
+                    title: "First".into(),
+                    content: "one".into(),
+                    category: String::new(),
+                })
+                .expect("create first note")
+        });
+        let second = thread::spawn(move || {
+            second_store
+                .create_note(SaveNoteRequest {
+                    title: "Second".into(),
+                    content: "two".into(),
+                    category: String::new(),
+                })
+                .expect("create second note")
+        });
+
+        let first = first.join().expect("join first writer");
+        let second = second.join().expect("join second writer");
+        let ids = NoteStore::new(root)
+            .list_notes()
+            .expect("list notes")
+            .into_iter()
+            .map(|note| note.id)
+            .collect::<Vec<_>>();
+
+        assert_eq!(ids.len(), 2);
+        assert!(ids.contains(&first.id));
+        assert!(ids.contains(&second.id));
     }
 }

@@ -33,6 +33,8 @@ jobs:
           cat > release-body.md << EOF
           建议下载安装版本 \`floral-notepaper_${ver}_x64-setup.exe\`，无法正常安装再下载可运行文件 \`floral-notepaper_${ver}.exe\`
 
+          Windows 可选 MCP Add-on：\`floral-ai-addon_${ver}_windows-x64.zip\`。普通 Floral 不依赖此组件。
+
           macOS Apple Silicon 版：\`floral-notepaper_${ver}_aarch64.dmg\`；macOS Intel 版：\`floral-notepaper_${ver}_x64.dmg\`。
 
           Linux 版：\`floral-notepaper_${ver}_amd64.deb\`（Debian/Ubuntu）、\`floral-notepaper-${ver}-1.x86_64.rpm\`（Fedora/RHEL）、\`floral-notepaper_${ver}_amd64.AppImage\`（通用 Linux）。
@@ -213,6 +215,9 @@ jobs:
       - name: Build
         run: npm run tauri build
 
+      - name: Build MCP add-on
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml --bin floral_cli_backend --features floral-ai-addon
+
       - name: Rename portable binary
         shell: pwsh
         run: |
@@ -239,9 +244,22 @@ jobs:
           Copy-Item $setupSource.FullName $setupAsset -Force
           Copy-Item "floral-notepaper_$ver.exe" $portableAsset -Force
 
+          $addonBinary = Get-Item 'src-tauri/target/release/floral_cli_backend.exe'
+          if ($addonBinary.Length -gt 12MB) {
+            throw "MCP add-on exceeds the 12 MiB limit: $($addonBinary.Length) bytes."
+          }
+
+          $addonDir = Join-Path $env:RUNNER_TEMP 'floral-ai-addon'
+          New-Item -ItemType Directory -Path $addonDir -Force | Out-Null
+          Copy-Item $addonBinary.FullName (Join-Path $addonDir 'floral_cli_backend.exe') -Force
+          Copy-Item 'agent-harness/cli_anything/floral_notepaper/MCP_ADDON.md' (Join-Path $addonDir 'README.md') -Force
+          $addonAsset = Join-Path $releaseDir "floral-ai-addon_${ver}_windows-x64.zip"
+          Compress-Archive -Path (Join-Path $addonDir '*') -DestinationPath $addonAsset -Force
+
           $files = @(
             (Resolve-Path $setupAsset).Path,
-            (Resolve-Path $portableAsset).Path
+            (Resolve-Path $portableAsset).Path,
+            (Resolve-Path $addonAsset).Path
           )
           gh release upload $env:TAG_NAME $files --clobber --repo $env:GITHUB_REPOSITORY
 

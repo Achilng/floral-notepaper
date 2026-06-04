@@ -4,6 +4,11 @@ version = "1.0.4"
 description = "A lightweight cross-platform desktop note app"
 authors = ["Achilng"]
 edition = "2021"
+default-run = "floral-notepaper"
+
+[features]
+default = []
+floral-ai-addon = ["dep:rmcp", "dep:schemars", "dep:tokio"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -13,6 +18,11 @@ edition = "2021"
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "floral_notepaper_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
+
+[[bin]]
+name = "floral_cli_backend"
+path = "src/bin/floral_cli_backend.rs"
+required-features = ["floral-ai-addon"]
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -30,3 +40,11 @@ chrono = { version = "0.4", features = ["serde"] }
 uuid = { version = "1", features = ["v4", "serde"] }
 tauri-plugin-clipboard-manager = "2"
 trash = "5"
+fs2 = "0.4"
+rmcp = { version = "1.7", default-features = false, features = ["macros", "server", "transport-io"], optional = true }
+schemars = { version = "1", optional = true }
+tokio = { version = "1", features = ["io-std", "macros", "rt-multi-thread"], optional = true }
+
+[dev-dependencies]
+rmcp = { version = "1.7", default-features = false, features = ["client", "transport-child-process"] }
+tokio = { version = "1", features = ["macros", "process", "rt-multi-thread"] }

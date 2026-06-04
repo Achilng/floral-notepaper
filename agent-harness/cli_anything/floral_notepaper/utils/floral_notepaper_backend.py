@@ -40,6 +40,8 @@ def build_backend() -> Path:
         str(manifest),
         "--bin",
         "floral_cli_backend",
+        "--features",
+        "floral-ai-addon",
     ]
     completed = subprocess.run(command, cwd=repository_root(), text=True, capture_output=True)
     if completed.returncode != 0:

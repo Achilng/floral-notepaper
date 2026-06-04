@@ -252,6 +252,9 @@ jobs:
       - name: Build
         run: npm run tauri build
 
+      - name: Build MCP add-on
+        run: cargo build --release --manifest-path src-tauri/Cargo.toml --bin floral_cli_backend --features floral-ai-addon
+
       - name: Collect artifacts
         shell: pwsh
         run: |
@@ -268,6 +271,17 @@ jobs:
           $portableAsset = Join-Path $releaseDir "floral-notepaper_${ver}.exe"
           Copy-Item $setupSource.FullName $setupAsset -Force
           Copy-Item 'src-tauri/target/release/floral-notepaper.exe' $portableAsset -Force
+
+          $addonBinary = Get-Item 'src-tauri/target/release/floral_cli_backend.exe'
+          if ($addonBinary.Length -gt 12MB) {
+            throw "MCP add-on exceeds the 12 MiB limit: $($addonBinary.Length) bytes."
+          }
+
+          $addonDir = Join-Path $env:RUNNER_TEMP 'floral-ai-addon'
+          New-Item -ItemType Directory -Path $addonDir -Force | Out-Null
+          Copy-Item $addonBinary.FullName (Join-Path $addonDir 'floral_cli_backend.exe') -Force
+          Copy-Item 'agent-harness/cli_anything/floral_notepaper/MCP_ADDON.md' (Join-Path $addonDir 'README.md') -Force
+          Compress-Archive -Path (Join-Path $addonDir '*') -DestinationPath (Join-Path $releaseDir "floral-ai-addon_${ver}_windows-x64.zip") -Force
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4

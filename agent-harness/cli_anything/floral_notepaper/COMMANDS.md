@@ -406,6 +406,8 @@ cli-anything-floral-notepaper --json notes list
 
 backend 每次运行时会收到 CLI 指定的数据根目录。通常不需要手动设置 `FLORAL_NOTEPAPER_DATA_DIR`。
 
+构建 backend 时需要启用 `floral-ai-addon` feature。MCP 模式、直接 JSON 协议和安全边界详见 [MCP_ADDON.md](MCP_ADDON.md)。
+
 ## 完整命令索引
 
 ```text

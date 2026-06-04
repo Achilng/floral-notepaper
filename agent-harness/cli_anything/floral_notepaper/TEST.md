@@ -23,6 +23,7 @@
 ## 运行
 
 ```powershell
-cargo test --manifest-path src-tauri/Cargo.toml --bin floral_cli_backend
+cargo test --manifest-path src-tauri/Cargo.toml --features floral-ai-addon --bin floral_cli_backend
+cargo test --manifest-path src-tauri/Cargo.toml --features floral-ai-addon --test floral_cli_backend_mcp
 python -m pytest agent-harness/cli_anything/floral_notepaper/tests -q
 ```

@@ -7,11 +7,13 @@
 在仓库根目录执行：
 
 ```powershell
-cargo build --manifest-path src-tauri/Cargo.toml --bin floral_cli_backend
+cargo build --manifest-path src-tauri/Cargo.toml --bin floral_cli_backend --features floral-ai-addon
 python -m pip install -e agent-harness
 ```
 
 第一次运行 CLI 时，如果找不到 backend，也会自动执行构建。
+
+MCP Add-on 的构建和接入方法见 [MCP_ADDON.md](MCP_ADDON.md)。
 
 ## 使用
 
