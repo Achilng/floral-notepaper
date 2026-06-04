@@ -2,6 +2,8 @@
 
 本文档列出 `cli-anything-floral-notepaper` 当前支持的全部命令和参数。
 
+安装、架构和测试方法见 [README.md](README.md)。Backend 直接 JSON 协议、MCP 接入和便携部署见 [MCP_ADDON.md](MCP_ADDON.md)。
+
 ## 基本用法
 
 ```powershell
@@ -388,25 +390,6 @@ cli-anything-floral-notepaper --data-dir $dataDir notes move $note.id --category
 cli-anything-floral-notepaper --data-dir $dataDir --json notes get $note.id
 cli-anything-floral-notepaper --data-dir $dataDir session undo
 ```
-
-## Backend 环境变量
-
-CLI 默认查找开发版本的 Rust backend：
-
-```text
-src-tauri/target/debug/floral_cli_backend.exe
-```
-
-使用 release backend 或已部署的 backend 时，通过 `FLORAL_CLI_BACKEND` 指定完整路径：
-
-```powershell
-$env:FLORAL_CLI_BACKEND = "D:\Floral\floral_cli_backend.exe"
-cli-anything-floral-notepaper --json notes list
-```
-
-backend 每次运行时会收到 CLI 指定的数据根目录。通常不需要手动设置 `FLORAL_NOTEPAPER_DATA_DIR`。
-
-构建 backend 时需要启用 `floral-ai-addon` feature。MCP 模式、直接 JSON 协议和安全边界详见 [MCP_ADDON.md](MCP_ADDON.md)。
 
 ## 完整命令索引
 
