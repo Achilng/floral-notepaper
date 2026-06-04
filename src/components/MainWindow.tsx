@@ -59,6 +59,9 @@ import {
   isCurrentWindowMaximized,
   startCurrentWindowDrag,
 } from "../features/windows/controls";
+
+const isMac = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
 import {
   TILE_WINDOW_CLOSED_EVENT,
   TILE_WINDOW_UNPINNED_EVENT,
@@ -1317,11 +1320,34 @@ export function MainWindow({
       <div className="relative noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
         <BackgroundLayer config={settingsConfig} />
         <div
-          className="relative z-10 flex items-center justify-between pl-5 pr-0 h-11 bg-paper/55 backdrop-blur-[1px] border-b border-paper-deep/30 shrink-0 select-none cursor-default"
+          className={`relative z-10 flex items-center justify-between ${isMac ? "pl-0" : "pl-5"} pr-0 h-11 bg-paper/55 backdrop-blur-[1px] border-b border-paper-deep/30 shrink-0 select-none cursor-default`}
           onMouseDown={handleTitleBarDrag}
           onDoubleClick={handleTitleBarDoubleClick}
         >
           <div className="flex items-center gap-3 min-w-0">
+            {isMac && (
+              <div className="mac-window-controls flex items-center gap-[7px] pl-[12px] pr-3">
+                <button
+                  onClick={handleClose}
+                  className="mac-traffic-button mac-traffic-close"
+                  aria-label={t("main.window.close", { defaultValue: "关闭" })}
+                />
+                <button
+                  onClick={handleMinimize}
+                  className="mac-traffic-button mac-traffic-minimize"
+                  aria-label={t("main.window.minimize", { defaultValue: "最小化" })}
+                />
+                <button
+                  onClick={handleMaximize}
+                  className="mac-traffic-button mac-traffic-zoom"
+                  aria-label={
+                    isMaximized
+                      ? t("main.window.restore", { defaultValue: "还原" })
+                      : t("main.window.maximize", { defaultValue: "最大化" })
+                  }
+                />
+              </div>
+            )}
             <span className="text-[13px] font-display font-medium text-ink-soft tracking-wide">
               花笺
             </span>
@@ -1377,68 +1403,71 @@ export function MainWindow({
               </svg>
             </button>
 
-            <div className="w-px h-4 bg-paper-deep/30 mx-0.5" />
-
-            <button
-              onClick={handleMinimize}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={t("main.window.minimize", { defaultValue: "最小化" })}
-            >
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
-              </svg>
-            </button>
-            <button
-              onClick={handleMaximize}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={
-                isMaximized
-                  ? t("main.window.restore", { defaultValue: "还原" })
-                  : t("main.window.maximize", { defaultValue: "最大化" })
-              }
-            >
-              {isMaximized ? (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
+            {!isMac && (
+              <>
+                <div className="w-px h-4 bg-paper-deep/30 mx-0.5" />
+                <button
+                  onClick={handleMinimize}
+                  className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
+                  title={t("main.window.minimize", { defaultValue: "最小化" })}
                 >
-                  <rect x="3" y="3" width="7" height="7" rx="1" />
-                  <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
-                </svg>
-              ) : (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
+                  <svg width="12" height="12" viewBox="0 0 12 12">
+                    <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleMaximize}
+                  className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
+                  title={
+                    isMaximized
+                      ? t("main.window.restore", { defaultValue: "还原" })
+                      : t("main.window.maximize", { defaultValue: "最大化" })
+                  }
                 >
-                  <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
-                </svg>
-              )}
-            </button>
-            <button
-              onClick={handleClose}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
-              title={t("main.window.close", { defaultValue: "关闭" })}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
-                <path d="M2 2l8 8M10 2l-8 8" />
-              </svg>
-            </button>
+                  {isMaximized ? (
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                    >
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                    >
+                      <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={handleClose}
+                  className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
+                  title={t("main.window.close", { defaultValue: "关闭" })}
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M2 2l8 8M10 2l-8 8" />
+                  </svg>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
