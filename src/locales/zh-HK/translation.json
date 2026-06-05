@@ -68,6 +68,10 @@
       "uncategorized": "未分類"
     },
     "confirm": {
+      "keepNote": "保留筆記",
+      "permanentlyDelete": "永久刪除",
+      "wslTrashUnavailableMessage": "這篇筆記儲存在 WSL 路徑中，Windows 資源回收筒不可用。要保留筆記，還是改為永久刪除？",
+      "wslTrashUnavailableTitle": "資源回收筒不可用",
       "unsavedExternalFile": "「{{title}}」有未儲存的變更，是否儲存到原檔案？"
     },
     "editor": {

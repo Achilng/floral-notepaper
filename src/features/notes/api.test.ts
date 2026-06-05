@@ -1,6 +1,43 @@
 import { i18n } from "../../locales";
-import { describe, expect, test } from "vitest";
-import { getErrorMessage } from "./api";
+import { invoke } from "@tauri-apps/api/core";
+import { beforeEach, describe, expect, test, vi } from "vitest";
+import { deleteNote, getErrorMessage, isWslTrashUnavailableError } from "./api";
+
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+}));
+
+const mockedInvoke = vi.mocked(invoke);
+
+describe("notes api commands", () => {
+  beforeEach(() => {
+    mockedInvoke.mockReset();
+  });
+
+  test("deletes a note through the trash by default", async () => {
+    mockedInvoke.mockResolvedValue(undefined);
+
+    await deleteNote("note-1");
+
+    expect(invoke).toHaveBeenCalledWith("notes_delete", { id: "note-1" });
+  });
+
+  test("passes the permanent flag when permanent deletion is requested", async () => {
+    mockedInvoke.mockResolvedValue(undefined);
+
+    await deleteNote("note-1", { permanent: true });
+
+    expect(invoke).toHaveBeenCalledWith("notes_delete", { id: "note-1", permanent: true });
+  });
+});
+
+describe("notes api error helpers", () => {
+  test("detects WSL trash errors by backend code or name", () => {
+    expect(isWslTrashUnavailableError({ code: "wslTrashUnavailable" })).toBe(true);
+    expect(isWslTrashUnavailableError({ name: "wslTrashUnavailable" })).toBe(true);
+    expect(isWslTrashUnavailableError({ code: "noteNotFound" })).toBe(false);
+  });
+});
 
 describe("notes api error localization", () => {
   test("localizes structured backend errors with interpolation details", () => {

@@ -68,7 +68,11 @@
       "uncategorized": "Uncategorized"
     },
     "confirm": {
-      "unsavedExternalFile": "\"{{title}}\" has unsaved changes. Save to the original file?"
+      "keepNote": "Keep Note",
+      "permanentlyDelete": "Permanently Delete",
+      "unsavedExternalFile": "\"{{title}}\" has unsaved changes. Save to the original file?",
+      "wslTrashUnavailableMessage": "This note is stored in a WSL path, where the Windows Recycle Bin is unavailable. Keep the note, or permanently delete it instead?",
+      "wslTrashUnavailableTitle": "Recycle Bin unavailable"
     },
     "editor": {
       "confirmDelete": "Confirm delete?",

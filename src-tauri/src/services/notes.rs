@@ -417,6 +417,15 @@ impl NoteStore {
     }
 
     pub fn update_note(&self, id: &str, request: SaveNoteRequest) -> Result<Note, AppError> {
+        self.update_note_with(id, request, |path| trash::delete(path))
+    }
+
+    fn update_note_with<E: fmt::Display>(
+        &self,
+        id: &str,
+        request: SaveNoteRequest,
+        delete_stale_to_trash: impl FnOnce(&Path) -> Result<(), E>,
+    ) -> Result<Note, AppError> {
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let note = metadata_file
@@ -441,8 +450,11 @@ impl NoteStore {
         if old_file_name != new_file_name || old_category != new_category {
             let old_path = self.note_path_in_category(&old_file_name, &old_category);
             if old_path.exists() && old_path != new_path {
-                trash::delete(&old_path)
-                    .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
+                delete_note_file_with(
+                    &old_path,
+                    NoteFileDeleteMode::StaleRenameCleanup,
+                    delete_stale_to_trash,
+                )?;
             }
         }
 
@@ -468,7 +480,16 @@ impl NoteStore {
         Ok(result)
     }
 
-    pub fn delete_note(&self, id: &str) -> Result<(), AppError> {
+    pub fn delete_note(&self, id: &str, permanent: bool) -> Result<(), AppError> {
+        self.delete_note_with(id, permanent, |path| trash::delete(path))
+    }
+
+    fn delete_note_with<E: fmt::Display>(
+        &self,
+        id: &str,
+        permanent: bool,
+        delete_to_trash: impl FnOnce(&Path) -> Result<(), E>,
+    ) -> Result<(), AppError> {
         self.ensure_storage()?;
         let mut metadata_file = self.load_metadata()?;
         let index = metadata_file
@@ -476,12 +497,16 @@ impl NoteStore {
             .iter()
             .position(|note| note.id == id)
             .ok_or_else(|| AppError::note_not_found(id))?;
-        let metadata = metadata_file.notes.remove(index);
+        let metadata = metadata_file.notes[index].clone();
         let path = self.note_path_in_category(&metadata.file_name, &metadata.category);
         if path.exists() {
-            trash::delete(&path)
-                .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
+            delete_note_file_with(
+                &path,
+                NoteFileDeleteMode::Explicit { permanent },
+                delete_to_trash,
+            )?;
         }
+        metadata_file.notes.remove(index);
         self.save_metadata(&metadata_file)?;
         let _ = self.delete_note_images(id);
         Ok(())
@@ -1036,6 +1061,76 @@ fn is_markdown_path(path: &Path) -> bool {
         .unwrap_or(false)
 }
 
+#[derive(Clone, Copy)]
+enum NoteFileDeleteMode {
+    Explicit { permanent: bool },
+    StaleRenameCleanup,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NoteFileTrashFailure {
+    RemoveFile,
+    WslTrashUnavailable,
+    TrashUnavailable,
+}
+
+fn classify_note_file_trash_failure(path: &Path, mode: NoteFileDeleteMode) -> NoteFileTrashFailure {
+    if matches!(mode, NoteFileDeleteMode::StaleRenameCleanup) && is_wsl_markdown_path(path) {
+        return NoteFileTrashFailure::RemoveFile;
+    }
+
+    if is_wsl_markdown_path(path) {
+        NoteFileTrashFailure::WslTrashUnavailable
+    } else {
+        NoteFileTrashFailure::TrashUnavailable
+    }
+}
+
+fn delete_note_file_with<E: fmt::Display>(
+    path: &Path,
+    mode: NoteFileDeleteMode,
+    delete_to_trash: impl FnOnce(&Path) -> Result<(), E>,
+) -> Result<(), AppError> {
+    if matches!(mode, NoteFileDeleteMode::Explicit { permanent: true }) {
+        fs::remove_file(path)?;
+        return Ok(());
+    }
+
+    // EN: Rename cleanup can remove stale WSL files because the new note was already written.
+    // ZH: 重命名清理可以直接删除旧 WSL 文件，因为新笔记已经写入完成。
+    let trash_failure = classify_note_file_trash_failure(path, mode);
+
+    match delete_to_trash(path) {
+        Ok(()) => Ok(()),
+        Err(_) if matches!(trash_failure, NoteFileTrashFailure::RemoveFile) => {
+            fs::remove_file(path)?;
+            Ok(())
+        }
+        Err(error) if matches!(trash_failure, NoteFileTrashFailure::WslTrashUnavailable) => Err(AppError::new(
+            "wslTrashUnavailable",
+            "Windows 回收站无法处理 WSL 路径。请确认后使用永久删除，或先把笔记移到 Windows 文件夹。",
+        )
+        .with_detail("path", path.to_string_lossy())
+        .with_detail("trashError", error.to_string())),
+        Err(error) => Err(AppError::new(
+            "trash",
+            format!("移入回收站失败: {error}"),
+        )),
+    }
+}
+
+fn is_wsl_markdown_path(path: &Path) -> bool {
+    is_markdown_path(path) && is_windows_wsl_unc_path(path)
+}
+
+fn is_windows_wsl_unc_path(path: &Path) -> bool {
+    let normalized = path
+        .to_string_lossy()
+        .replace('/', "\\")
+        .to_ascii_lowercase();
+    normalized.starts_with(r"\\wsl.localhost\") || normalized.starts_with(r"\\wsl$\")
+}
+
 fn imported_markdown_title(path: &Path, content: &str) -> String {
     let first_line = content.lines().next().unwrap_or_default();
     let first_line = first_line.trim_start_matches('\u{feff}').trim_start();
@@ -1135,7 +1230,10 @@ fn default_locale() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
 
     fn test_root(name: &str) -> PathBuf {
         let base = std::env::var_os("FLORAL_NOTEPAPER_TEST_TEMP_DIR")
@@ -1147,6 +1245,187 @@ mod tests {
         }
         fs::create_dir_all(&root).expect("create test root");
         root
+    }
+
+    #[test]
+    fn recognizes_windows_wsl_unc_note_paths() {
+        assert!(is_windows_wsl_unc_path(Path::new(
+            r"\\wsl.localhost\Ubuntu-22.04\home\me\notes\a.md"
+        )));
+        assert!(is_windows_wsl_unc_path(Path::new(
+            r"\\wsl$\Ubuntu-22.04\home\me\notes\a.md"
+        )));
+        assert!(!is_windows_wsl_unc_path(Path::new(
+            r"\\server\share\home\me\notes\a.md"
+        )));
+        assert!(!is_wsl_markdown_path(Path::new(
+            r"\\wsl.localhost\Ubuntu-22.04\home\me\notes\a.txt"
+        )));
+    }
+
+    #[test]
+    fn classifies_wsl_trash_failures_without_touching_unc_share() {
+        let wsl_note = Path::new(r"\\wsl.localhost\Ubuntu-22.04\home\me\notes\a.md");
+        let local_note = Path::new("notes/a.md");
+
+        assert_eq!(
+            classify_note_file_trash_failure(
+                wsl_note,
+                NoteFileDeleteMode::Explicit { permanent: false }
+            ),
+            NoteFileTrashFailure::WslTrashUnavailable
+        );
+        assert_eq!(
+            classify_note_file_trash_failure(wsl_note, NoteFileDeleteMode::StaleRenameCleanup),
+            NoteFileTrashFailure::RemoveFile
+        );
+        assert_eq!(
+            classify_note_file_trash_failure(local_note, NoteFileDeleteMode::StaleRenameCleanup),
+            NoteFileTrashFailure::TrashUnavailable
+        );
+    }
+
+    #[test]
+    fn permanently_removes_note_file_when_permanent_is_requested() {
+        let root = test_root("permanent-delete");
+        let note_path = root.join("note.md");
+        fs::write(&note_path, "hello").expect("write note");
+
+        delete_note_file_with(
+            &note_path,
+            NoteFileDeleteMode::Explicit { permanent: true },
+            |_| -> Result<(), &str> { panic!("trash should not be used for permanent delete") },
+        )
+        .expect("permanent delete removes note");
+
+        assert!(!note_path.exists());
+    }
+
+    #[test]
+    fn returns_trash_error_and_keeps_note_file_when_non_wsl_trash_fails() {
+        let root = test_root("trash-error-no-fallback");
+        let note_path = root.join("note.md");
+        fs::write(&note_path, "hello").expect("write note");
+
+        let error = delete_note_file_with(
+            &note_path,
+            NoteFileDeleteMode::Explicit { permanent: false },
+            |_| Err("simulated trash failure"),
+        )
+        .expect_err("trash failure is returned");
+
+        assert_eq!(error.code, "trash");
+        assert_eq!(error.message, "移入回收站失败: simulated trash failure");
+        assert!(note_path.exists());
+    }
+
+    #[test]
+    fn normal_delete_reports_wsl_trash_unavailable_for_synthetic_wsl_path() {
+        let wsl_note = Path::new(r"\\wsl.localhost\Ubuntu-22.04\home\me\notes\a.md");
+
+        let error = delete_note_file_with(
+            wsl_note,
+            NoteFileDeleteMode::Explicit { permanent: false },
+            |_| Err("simulated trash failure"),
+        )
+        .expect_err("WSL trash failure is returned");
+
+        assert_eq!(error.code, "wslTrashUnavailable");
+        assert_eq!(
+            error.details.get("path").map(String::as_str),
+            Some(wsl_note.to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            error.details.get("trashError").map(String::as_str),
+            Some("simulated trash failure")
+        );
+    }
+
+    #[test]
+    fn normal_delete_keeps_note_and_metadata_when_trash_fails() {
+        let store = NoteStore::new(test_root("trash-unavailable-keeps-note"));
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "Local note".into(),
+                content: "hello".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+        let note_path = store.note_path_in_category(&note.file_name, &note.category);
+
+        let error = store
+            .delete_note_with(&note.id, false, |_| Err("simulated trash failure"))
+            .expect_err("trash failure is returned");
+
+        assert_eq!(error.code, "trash");
+        assert!(note_path.exists());
+        assert_eq!(
+            store
+                .read_note(&note.id)
+                .expect("note metadata remains")
+                .content,
+            "hello"
+        );
+        assert_eq!(store.list_notes().expect("list notes").len(), 1);
+    }
+
+    #[test]
+    fn update_note_removes_stale_note_when_delete_callback_succeeds() {
+        let store = NoteStore::new(test_root("update-cleanup"));
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "Local note".into(),
+                content: "hello".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+        let old_path = store.note_path_in_category(&note.file_name, &note.category);
+
+        let updated = store
+            .update_note_with(
+                &note.id,
+                SaveNoteRequest {
+                    title: "Renamed local note".into(),
+                    content: "new body".into(),
+                    category: String::new(),
+                },
+                |path| fs::remove_file(path).map_err(|error| error.to_string()),
+            )
+            .expect("rename cleanup removes stale note");
+        let new_path = store.note_path_in_category(&updated.file_name, &updated.category);
+
+        assert_ne!(old_path, new_path);
+        assert!(!old_path.exists());
+        assert!(new_path.exists());
+        assert_eq!(
+            store
+                .read_note(&note.id)
+                .expect("updated metadata remains")
+                .content,
+            "new body"
+        );
+        assert_eq!(store.list_notes().expect("list notes").len(), 1);
+    }
+
+    #[test]
+    fn permanent_delete_removes_note_and_metadata() {
+        let store = NoteStore::new(test_root("permanent-delete-note"));
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "Local note".into(),
+                content: "hello".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+        let note_path = store.note_path_in_category(&note.file_name, &note.category);
+
+        store
+            .delete_note(&note.id, true)
+            .expect("permanent delete note");
+
+        assert!(!note_path.exists());
+        assert!(store.read_note(&note.id).is_err());
+        assert!(store.list_notes().expect("list after delete").is_empty());
     }
 
     #[test]
@@ -1190,7 +1469,7 @@ mod tests {
         assert_eq!(updated.content, "# 新标题\nsecond line");
         assert_ne!(updated.file_name, created.file_name);
 
-        store.delete_note(&created.id).expect("delete note");
+        store.delete_note(&created.id, false).expect("delete note");
         assert!(store.read_note(&created.id).is_err());
         assert!(store.list_notes().expect("list after delete").is_empty());
     }
