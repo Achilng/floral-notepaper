@@ -1,17 +1,9 @@
 import { useCallback, useRef } from "react";
 import type { TFunction } from "i18next";
 import { saveImage } from "./api";
+import { imageExtensionFromFile } from "./insertImage";
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024; // 20 MB
-
-const MIME_TO_EXT: Record<string, string> = {
-  "image/png": "png",
-  "image/jpeg": "jpg",
-  "image/gif": "gif",
-  "image/webp": "webp",
-  "image/bmp": "bmp",
-  "image/svg+xml": "svg",
-};
 
 interface UseImagePasteOptions {
   noteId: string | null;
@@ -32,7 +24,7 @@ async function processImageFile(file: File, noteId: string, t?: TFunction): Prom
     );
   }
 
-  const ext = MIME_TO_EXT[file.type];
+  const ext = imageExtensionFromFile(file);
   if (!ext) return null;
 
   const buffer = await file.arrayBuffer();
@@ -64,10 +56,10 @@ function getImageFiles(dataTransfer: DataTransfer): File[] {
   const files: File[] = [];
   for (let i = 0; i < dataTransfer.items.length; i++) {
     const item = dataTransfer.items[i];
-    if (item.kind === "file" && item.type in MIME_TO_EXT) {
-      const file = item.getAsFile();
-      if (file) files.push(file);
-    }
+    if (item.kind !== "file") continue;
+
+    const file = item.getAsFile();
+    if (file && imageExtensionFromFile(file)) files.push(file);
   }
   return files;
 }
@@ -150,7 +142,7 @@ export function useImagePaste({
     (event: React.DragEvent<HTMLTextAreaElement>) => {
       if (disabled) return;
       const hasImage = Array.from(event.dataTransfer.items).some(
-        (item) => item.kind === "file" && item.type in MIME_TO_EXT,
+        (item) => item.kind === "file" && imageExtensionFromFile({ name: "", type: item.type }),
       );
       if (hasImage) {
         event.preventDefault();
