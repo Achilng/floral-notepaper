@@ -24,6 +24,26 @@ export async function importMarkdownNote(category = ""): Promise<Note | null> {
   return invoke("notes_import_markdown", { path, category });
 }
 
+export async function importMarkdownNotes(category = ""): Promise<Note[]> {
+  const paths = await open({
+    multiple: true,
+    directory: false,
+    filters: markdownFilters,
+  });
+
+  if (!paths) {
+    return [];
+  }
+
+  const selectedPaths = Array.isArray(paths) ? paths : [paths];
+  const notes: Note[] = [];
+  for (const path of selectedPaths) {
+    notes.push(await invoke("notes_import_markdown", { path, category }));
+  }
+
+  return notes;
+}
+
 export async function exportMarkdownNote(note: ExportableNote): Promise<boolean> {
   const path = await save({
     defaultPath: markdownFileName(note.title),
