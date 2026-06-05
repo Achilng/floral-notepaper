@@ -38,8 +38,8 @@ fn notes_update(app: AppHandle, id: String, request: SaveNoteRequest) -> Result<
 }
 
 #[tauri::command]
-fn notes_delete(app: AppHandle, id: String) -> Result<(), AppError> {
-    default_store()?.delete_note(&id)?;
+fn notes_delete(app: AppHandle, id: String, permanent: Option<bool>) -> Result<(), AppError> {
+    default_store()?.delete_note(&id, permanent.unwrap_or(false))?;
     let _ = app.emit("notes-changed", ());
     Ok(())
 }

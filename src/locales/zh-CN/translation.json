@@ -68,6 +68,10 @@
       "uncategorized": "未分类"
     },
     "confirm": {
+      "keepNote": "保留笔记",
+      "permanentlyDelete": "永久删除",
+      "wslTrashUnavailableMessage": "这篇笔记存储在 WSL 路径中，Windows 回收站不可用。要保留笔记，还是改为永久删除？",
+      "wslTrashUnavailableTitle": "回收站不可用",
       "unsavedExternalFile": "「{{title}}」有未保存的更改，是否保存到原文件？"
     },
     "editor": {
