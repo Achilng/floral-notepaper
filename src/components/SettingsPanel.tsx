@@ -87,7 +87,9 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             ? t("settings.locale.zhCN", { defaultValue: "简体中文" })
             : locale === "en-US"
               ? t("settings.locale.enUS", { defaultValue: "English" })
-              : t("settings.locale.zhHK", { defaultValue: "繁體中文" }),
+              : locale === "ja-JP" // 💡 日本語の判定を追加
+                ? "日本語"
+                : t("settings.locale.zhHK", { defaultValue: "繁體中文" }),
       })),
     [t],
   );
