@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { exportMarkdownNote, importMarkdownNote } from "./api";
+import { exportMarkdownNote, importMarkdownNote, importMarkdownNotes } from "./api";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -49,10 +49,52 @@ describe("importExport api", () => {
     expect(note?.id).toBe("note-1");
   });
 
-  test("returns null when the file picker is cancelled", async () => {
+  test("imports multiple selected markdown paths through Rust", async () => {
+    mockedOpen.mockResolvedValue(["D:\\notes\\one.md", "D:\\notes\\two.md"]);
+    mockedInvoke
+      .mockResolvedValueOnce({
+        id: "note-1",
+        title: "one",
+        fileName: "note-1.md",
+        createdAt: "2026-04-28T00:00:00Z",
+        updatedAt: "2026-04-28T00:00:00Z",
+        wordCount: 1,
+        content: "# One",
+      })
+      .mockResolvedValueOnce({
+        id: "note-2",
+        title: "two",
+        fileName: "note-2.md",
+        createdAt: "2026-04-28T00:00:00Z",
+        updatedAt: "2026-04-28T00:00:00Z",
+        wordCount: 1,
+        content: "# Two",
+      });
+
+    const notes = await importMarkdownNotes("work");
+
+    expect(notes.map((note) => note.id)).toEqual(["note-1", "note-2"]);
+    expect(invoke).toHaveBeenNthCalledWith(1, "notes_import_markdown", {
+      path: "D:\\notes\\one.md",
+      category: "work",
+    });
+    expect(invoke).toHaveBeenNthCalledWith(2, "notes_import_markdown", {
+      path: "D:\\notes\\two.md",
+      category: "work",
+    });
+  });
+
+  test("returns null when the single file picker is cancelled", async () => {
     mockedOpen.mockResolvedValue(null);
 
     await expect(importMarkdownNote()).resolves.toBeNull();
+    expect(invoke).not.toHaveBeenCalled();
+  });
+
+  test("returns empty results when the bulk file picker is cancelled", async () => {
+    mockedOpen.mockResolvedValue(null);
+
+    await expect(importMarkdownNotes()).resolves.toEqual([]);
     expect(invoke).not.toHaveBeenCalled();
   });
 
