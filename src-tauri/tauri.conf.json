@@ -49,8 +49,7 @@
         "installMode": "both",
         "languages": ["SimpChinese"],
         "displayLanguageSelector": false,
-        "installerIcon": "icons/icon.ico",
-        "installerHooks": "nsis-hooks.nsh"
+        "installerIcon": "icons/icon.ico"
       }
     },
     "fileAssociations": [
