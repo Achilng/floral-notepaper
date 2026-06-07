@@ -1003,9 +1003,17 @@ export function MainWindow({
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+      if (!(event.ctrlKey || event.metaKey)) return;
+
+      if (event.key === "s") {
         event.preventDefault();
         void saveCurrentNote();
+        return;
+      }
+
+      if (event.key === "w") {
+        event.preventDefault();
+        void closeCurrentWindow();
       }
     }
 

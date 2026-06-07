@@ -440,18 +440,6 @@ export function NotePad({
     }
   }, [saveNote]);
 
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
-        event.preventDefault();
-        void handleSave();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave]);
-
   const handleOpenNote = async (noteId: string) => {
     try {
       const note = await getNote(noteId);
@@ -481,6 +469,26 @@ export function NotePad({
       showToast(getErrorMessage(error));
     });
   }, [surfaceMode]);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (!(event.ctrlKey || event.metaKey)) return;
+
+      if (event.key === "s") {
+        event.preventDefault();
+        void handleSave();
+        return;
+      }
+
+      if (event.key === "w") {
+        event.preventDefault();
+        handleClose();
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleClose, handleSave]);
 
   const copyTileContent = useCallback(async () => {
     try {
