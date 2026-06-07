@@ -13,6 +13,8 @@ const MIME_TO_EXT: Record<string, string> = {
   "image/svg+xml": "svg",
 };
 
+const IMAGE_EXTENSIONS = new Set(["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg"]);
+
 interface UseImagePasteOptions {
   noteId: string | null;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -32,12 +34,24 @@ async function processImageFile(file: File, noteId: string, t?: TFunction): Prom
     );
   }
 
-  const ext = MIME_TO_EXT[file.type];
+  const ext = imageExtensionFromFile(file);
   if (!ext) return null;
 
   const buffer = await file.arrayBuffer();
   const data = Array.from(new Uint8Array(buffer));
   return saveImage(noteId, data, ext);
+}
+
+export function imageExtensionFromFile(file: Pick<File, "name" | "type">): string | null {
+  const mimeExt = MIME_TO_EXT[file.type];
+  if (mimeExt) return mimeExt;
+
+  const extension = file.name.split(".").pop()?.toLowerCase();
+  return extension && IMAGE_EXTENSIONS.has(extension) ? extension : null;
+}
+
+function isImageFile(file: Pick<File, "name" | "type">): boolean {
+  return imageExtensionFromFile(file) !== null;
 }
 
 function insertTextAtCursor(
@@ -60,15 +74,27 @@ function insertTextAtCursor(
   });
 }
 
-function getImageFiles(dataTransfer: DataTransfer): File[] {
+export function getImageFiles(dataTransfer: DataTransfer): File[] {
   const files: File[] = [];
+  const seen = new Set<File>();
+
   for (let i = 0; i < dataTransfer.items.length; i++) {
     const item = dataTransfer.items[i];
-    if (item.kind === "file" && item.type in MIME_TO_EXT) {
-      const file = item.getAsFile();
-      if (file) files.push(file);
+    if (item.kind !== "file") continue;
+
+    const file = item.getAsFile();
+    if (file && isImageFile(file)) {
+      files.push(file);
+      seen.add(file);
     }
   }
+
+  for (let i = 0; i < dataTransfer.files.length; i++) {
+    const file = dataTransfer.files[i];
+    if (seen.has(file) || !isImageFile(file)) continue;
+    files.push(file);
+  }
+
   return files;
 }
 
@@ -149,9 +175,12 @@ export function useImagePaste({
   const handleDragOver = useCallback(
     (event: React.DragEvent<HTMLTextAreaElement>) => {
       if (disabled) return;
-      const hasImage = Array.from(event.dataTransfer.items).some(
-        (item) => item.kind === "file" && item.type in MIME_TO_EXT,
-      );
+      const hasImage =
+        Array.from(event.dataTransfer.items).some((item) => {
+          if (item.kind !== "file") return false;
+          const file = item.getAsFile();
+          return file ? isImageFile(file) : item.type in MIME_TO_EXT;
+        }) || Array.from(event.dataTransfer.files).some(isImageFile);
       if (hasImage) {
         event.preventDefault();
         event.dataTransfer.dropEffect = "copy";
