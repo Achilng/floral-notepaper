@@ -1,3 +1,4 @@
+import { X } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
@@ -100,17 +101,7 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
           className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer"
           title={t("settings.closeTitle", { defaultValue: "关闭设置" })}
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          >
-            <path d="M2 2l8 8M10 2l-8 8" />
-          </svg>
+          <X size={12} />
         </button>
       </div>
 
