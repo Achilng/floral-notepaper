@@ -14,6 +14,7 @@ export interface AppConfig {
   defaultViewMode: string;
   noteAutoSave: boolean;
   noteSurfaceAutoSave: boolean;
+  deleteEmptyNote: boolean;
   tileColor: string;
   tileColorMode: TileColorMode;
   theme: ThemeOption;

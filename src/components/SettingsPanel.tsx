@@ -184,6 +184,11 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             onChange={(checked) => setConfigValue("noteSurfaceAutoSave", checked)}
           />
           <ToggleRow
+            label={t("settings.autoSave.deleteEmpty", { defaultValue: "清空内容后自动删除" })}
+            checked={config.deleteEmptyNote}
+            onChange={(checked) => setConfigValue("deleteEmptyNote", checked)}
+          />
+          <ToggleRow
             label={t("settings.autoSave.externalFile", { defaultValue: "外部文件自动保存" })}
             checked={config.externalFileAutoSave}
             onChange={(checked) => setConfigValue("externalFileAutoSave", checked)}

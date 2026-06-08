@@ -2,7 +2,14 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { createNote, getErrorMessage, getNote, listNotes, updateNote } from "../features/notes/api";
+import {
+  createNote,
+  deleteNote,
+  getErrorMessage,
+  getNote,
+  listNotes,
+  updateNote,
+} from "../features/notes/api";
 import { useImagePaste } from "../features/images/useImagePaste";
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
 import { reportInstallPreparation } from "../features/update/api";
@@ -126,6 +133,7 @@ export function NotePad({
   const [hoveredNote, setHoveredNote] = useState<string | null>(null);
   const [status, setStatus] = useState<NotePadStatus>("empty");
   const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] = useState(initialAutoSave);
+  const [deleteEmptyNote, setDeleteEmptyNote] = useState(true);
   const [tileColorRaw, setTileColorRaw] = useState(normalizeTileColor(initialTileColor));
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
   const [surfaceFontSize, setSurfaceFontSize] = useState(14);
@@ -190,6 +198,7 @@ export function NotePad({
         const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
         if (!cancelled) {
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
+          setDeleteEmptyNote(loadedConfig.deleteEmptyNote ?? true);
           setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
           setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
           setTileColorRaw(normalizeTileColor(loadedConfig.tileColor));
@@ -246,6 +255,8 @@ export function NotePad({
       tileColorMode?: TileColorMode;
       surfaceFontSize?: number;
       tileRenderMarkdown?: boolean;
+      noteSurfaceAutoSave?: boolean;
+      deleteEmptyNote?: boolean;
     }>("config-changed", (event) => {
       const mode = event.payload.tileColorMode ?? tileColorMode;
       const raw = event.payload.tileColor ?? tileColorRaw;
@@ -255,6 +266,9 @@ export function NotePad({
       if (event.payload.surfaceFontSize != null) setSurfaceFontSize(event.payload.surfaceFontSize);
       if (event.payload.tileRenderMarkdown != null)
         setTileRenderMarkdown(event.payload.tileRenderMarkdown);
+      if (event.payload.noteSurfaceAutoSave != null)
+        setNoteSurfaceAutoSave(event.payload.noteSurfaceAutoSave);
+      if (event.payload.deleteEmptyNote != null) setDeleteEmptyNote(event.payload.deleteEmptyNote);
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -364,8 +378,8 @@ export function NotePad({
   }, [saveNote]);
 
   const hasDraftContent = useCallback(
-    () => Boolean(editingNoteId || title.trim() || content.trim()),
-    [content, editingNoteId, title],
+    () => Boolean(title.trim() || content.trim()),
+    [content, title],
   );
 
   const imageBaseDir = useImageBaseDir();
@@ -529,31 +543,64 @@ export function NotePad({
     };
   }, [copyTileContent, handleClose, handleSave, switchSurfaceMode]);
 
-  useEffect(() => {
-    if (!noteSurfaceAutoSave || mode !== "new" || status !== "dirty") {
-      return undefined;
-    }
-    if (!hasDraftContent()) return undefined;
-
-    const timer = window.setTimeout(() => {
-      void handleSave();
-    }, 900);
-
-    return () => window.clearTimeout(timer);
-  }, [handleSave, hasDraftContent, mode, noteSurfaceAutoSave, status]);
-
-  const handleDrag = (event: MouseEvent<HTMLElement>) => {
-    const target = event.target as HTMLElement;
-    if (target.closest("button,input,textarea")) return;
-    void startCurrentWindowDrag().catch(() => undefined);
-  };
-
   const resetDraft = () => {
     setEditingNoteId(null);
     setTitle("");
     setContent("");
     setMode("new");
     setStatus("empty");
+  };
+
+  const handleClear = () => {
+    // 清空按钮：如果之前已自动保存且开启了自动删除，先删笔记再重置
+    if (deleteEmptyNote && editingNoteId) {
+      const noteIdToDelete = editingNoteId;
+      void deleteNote(noteIdToDelete).then(() => {
+        resetDraft();
+        void refreshNotes();
+      });
+      return;
+    }
+    resetDraft();
+  };
+
+  useEffect(() => {
+    if (!noteSurfaceAutoSave || mode !== "new" || status !== "dirty") {
+      return undefined;
+    }
+
+    if (!hasDraftContent()) {
+      // 根据用户设置决定：清空内容后是否自动删除已保存的笔记
+      if (deleteEmptyNote && editingNoteId) {
+        void deleteNote(editingNoteId).then(() => {
+          resetDraft();
+          void refreshNotes();
+        });
+      }
+      return undefined;
+    }
+
+    const timer = window.setTimeout(() => {
+      void handleSave();
+    }, 900);
+
+    return () => window.clearTimeout(timer);
+  }, [
+    handleSave,
+    hasDraftContent,
+    mode,
+    noteSurfaceAutoSave,
+    status,
+    editingNoteId,
+    deleteEmptyNote,
+    resetDraft,
+    refreshNotes,
+  ]);
+
+  const handleDrag = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target as HTMLElement;
+    if (target.closest("button,input,textarea")) return;
+    void startCurrentWindowDrag().catch(() => undefined);
   };
 
   const isTile = surfaceMode === "tile";
@@ -739,7 +786,7 @@ export function NotePad({
                   </span>
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={resetDraft}
+                      onClick={handleClear}
                       className="px-4 py-1.5 text-[12px] text-ink-faint hover:text-ink-soft rounded-lg hover:bg-paper-warm transition-all duration-200 cursor-pointer"
                     >
                       {t("notepad.button.clear", { defaultValue: "清空" })}

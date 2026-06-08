@@ -34,6 +34,8 @@ pub struct AppConfig {
     pub note_auto_save: bool,
     #[serde(default = "default_note_surface_auto_save")]
     pub note_surface_auto_save: bool,
+    #[serde(default = "default_delete_empty_note")]
+    pub delete_empty_note: bool,
     #[serde(default = "default_tile_color")]
     pub tile_color: String,
     #[serde(default = "default_tile_color_mode")]
@@ -803,6 +805,7 @@ impl NoteStore {
             default_view_mode: "split".into(),
             note_auto_save: true,
             note_surface_auto_save: true,
+            delete_empty_note: true,
             tile_color: default_tile_color(),
             tile_color_mode: default_tile_color_mode(),
             theme: default_theme(),
@@ -1177,6 +1180,10 @@ fn default_note_surface_auto_save() -> bool {
     true
 }
 
+fn default_delete_empty_note() -> bool {
+    true
+}
+
 fn default_tile_color() -> String {
     "#f6f3ec".into()
 }
@@ -1356,6 +1363,7 @@ mod tests {
         assert_eq!(default_config.global_shortcut, "Ctrl+Space");
         assert!(default_config.note_auto_save);
         assert!(default_config.note_surface_auto_save);
+        assert!(default_config.delete_empty_note);
         assert_eq!(default_config.tile_color, "#f6f3ec");
         assert_eq!(default_config.tile_color_mode, "system");
         assert_eq!(default_config.theme, "system");
@@ -1372,6 +1380,7 @@ mod tests {
             default_view_mode: "preview".into(),
             note_auto_save: false,
             note_surface_auto_save: false,
+            delete_empty_note: false,
             tile_color: "#efe8dc".into(),
             tile_color_mode: "custom".into(),
             theme: "dark".into(),
@@ -1500,6 +1509,7 @@ mod tests {
 
         assert!(loaded.note_auto_save);
         assert!(loaded.note_surface_auto_save);
+        assert!(loaded.delete_empty_note);
         assert_eq!(loaded.tile_color, "#f6f3ec");
         assert_eq!(loaded.tile_color_mode, "system");
         assert_eq!(loaded.theme, "system");
