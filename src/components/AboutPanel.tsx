@@ -1,3 +1,4 @@
+import { Bug, ExternalLink, ScrollText, X } from "lucide-react";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -58,17 +59,7 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
           className="w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer"
           title={t("about.closeTitle", { defaultValue: "关闭关于" })}
         >
-          <svg
-            width="12"
-            height="12"
-            viewBox="0 0 12 12"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            strokeLinecap="round"
-          >
-            <path d="M2 2l8 8M10 2l-8 8" />
-          </svg>
+          <X size={12} />
         </button>
       </div>
 
@@ -116,18 +107,7 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
                 </span>
               </span>
               <span className="inline-flex items-center">
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M6 3h7v7M13 3L3 13" />
-                </svg>
+                <ExternalLink size={12} />
               </span>
             </button>
             <button
@@ -136,32 +116,13 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
               className="w-full h-8 px-1 flex items-center justify-between text-[11px] text-ink-faint hover:text-bamboo cursor-pointer transition-colors"
             >
               <span className="inline-flex items-center gap-1.5">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  className="shrink-0"
-                >
-                  <path d="M8 1.5a6.5 6.5 0 100 13 6.5 6.5 0 000-13zM0 8a8 8 0 1116 0A8 8 0 010 8zm9 3a1 1 0 11-2 0 1 1 0 012 0zm-.25-6.25a.75.75 0 00-1.5 0v3.5a.75.75 0 001.5 0v-3.5z" />
-                </svg>
+                <Bug size={14} className="shrink-0" />
                 <span className="leading-none">
                   {t("about.feedback", { defaultValue: "反馈问题" })}
                 </span>
               </span>
               <span className="inline-flex items-center">
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M6 3h7v7M13 3L3 13" />
-                </svg>
+                <ExternalLink size={12} />
               </span>
             </button>
             <button
@@ -172,32 +133,13 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
               className="w-full h-8 px-1 flex items-center justify-between text-[11px] text-ink-faint hover:text-bamboo cursor-pointer transition-colors"
             >
               <span className="inline-flex items-center gap-1.5">
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 16 16"
-                  fill="currentColor"
-                  className="shrink-0"
-                >
-                  <path d="M4 1.5c-.83 0-1.5.67-1.5 1.5v10c0 .83.67 1.5 1.5 1.5h8c.83 0 1.5-.67 1.5-1.5V5.5L9.5 1.5H4zm0 1h5v3.5h3.5V13a.5.5 0 01-.5.5H4a.5.5 0 01-.5-.5V3a.5.5 0 01.5-.5zm5.5.707L11.793 5.5H9.5V3.207zM5.5 7.5v1h5v-1h-5zm0 2v1h5v-1h-5zm0 2v1h3v-1h-3z" />
-                </svg>
+                <ScrollText size={14} className="shrink-0" />
                 <span className="leading-none">
                   {t("about.license", { defaultValue: "许可证" })}
                 </span>
               </span>
               <span className="inline-flex items-center">
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 16 16"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <path d="M6 3h7v7M13 3L3 13" />
-                </svg>
+                <ExternalLink size={12} />
               </span>
             </button>
           </section>
@@ -247,18 +189,7 @@ export function AboutPanel({ onClose }: AboutPanelProps) {
                   className="inline-flex items-center gap-0.5 text-ink-faint hover:text-bamboo cursor-pointer transition-colors"
                 >
                   {seg.text}
-                  <svg
-                    width="9"
-                    height="9"
-                    viewBox="0 0 16 16"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M6 3h7v7M13 3L3 13" />
-                  </svg>
+                  <ExternalLink size={9} />
                 </button>
               ) : (
                 <span key={i}>{seg.text}</span>
