@@ -1,4 +1,4 @@
-import { Copy, Minus, NotebookPen, Settings, Square } from "lucide-react";
+import { Copy, Minus, NotebookPen, Settings, Square, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
@@ -1709,17 +1709,7 @@ export function MainWindow({
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
               title={t("main.window.close", { defaultValue: "关闭" })}
             >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
-                <path d="M2 2l8 8M10 2l-8 8" />
-              </svg>
+              <X size={12} />
             </button>
           </div>
         </div>
