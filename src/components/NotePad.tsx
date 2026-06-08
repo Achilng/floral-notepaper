@@ -1,3 +1,4 @@
+import { ExternalLink, Pin, X } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useMemo } from "react";
@@ -588,17 +589,7 @@ export function NotePad({
             onClick={() => void handleClose()}
             className="absolute top-2 right-2 z-10 w-6 h-6 flex items-center justify-center rounded-full text-ink-ghost/70 hover:text-red-400 hover:bg-danger-bg/80 transition-colors cursor-pointer"
           >
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2.5"
-              strokeLinecap="round"
-            >
-              <path d="M18 6L6 18M6 6l12 12" />
-            </svg>
+            <X size={12} />
           </button>
           <SurfaceResizeHandles />
         </Tile>
@@ -644,19 +635,7 @@ export function NotePad({
                   className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
                   title={t("notepad.tooltip.pinToTile", { defaultValue: "转为磁贴" })}
                 >
-                  <svg
-                    width="14"
-                    height="14"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 17v5" />
-                    <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z" />
-                  </svg>
+                  <Pin size={14} />
                 </button>
 
                 <button
@@ -664,17 +643,7 @@ export function NotePad({
                   className="group w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:bg-danger-bg hover:text-red-400 transition-all duration-200 cursor-pointer"
                   title={t("notepad.tooltip.close", { defaultValue: "关闭" })}
                 >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  >
-                    <path d="M18 6L6 18M6 6l12 12" />
-                  </svg>
+                  <X size={13} />
                 </button>
               </div>
             </div>
@@ -779,20 +748,7 @@ export function NotePad({
                               defaultValue: "在编辑器中打开",
                             })}
                           >
-                            <svg
-                              width="13"
-                              height="13"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                              <polyline points="15 3 21 3 21 9" />
-                              <line x1="10" y1="14" x2="21" y2="3" />
-                            </svg>
+                            <ExternalLink size={13} />
                           </button>
                           <span className="text-[11px] text-ink-ghost font-mono tabular-nums">
                             {formatShortDate(note.updatedAt)}
