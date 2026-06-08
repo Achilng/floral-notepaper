@@ -1,4 +1,4 @@
-import { NotebookPen, Settings } from "lucide-react";
+import { Minus, NotebookPen, Settings } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
@@ -1691,9 +1691,7 @@ export function MainWindow({
               className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
               title={t("main.window.minimize", { defaultValue: "最小化" })}
             >
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
-              </svg>
+              <Minus size={12} />
             </button>
             <button
               onClick={handleMaximize}
