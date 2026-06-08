@@ -1,4 +1,4 @@
-import { Minus, NotebookPen, Settings } from "lucide-react";
+import { Copy, Minus, NotebookPen, Settings, Square } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
@@ -1702,30 +1702,7 @@ export function MainWindow({
                   : t("main.window.maximize", { defaultValue: "最大化" })
               }
             >
-              {isMaximized ? (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                >
-                  <rect x="3" y="3" width="7" height="7" rx="1" />
-                  <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
-                </svg>
-              ) : (
-                <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="1.2"
-                >
-                  <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
-                </svg>
-              )}
+              {isMaximized ? <Copy size={12} /> : <Square size={12} />}
             </button>
             <button
               onClick={handleClose}
