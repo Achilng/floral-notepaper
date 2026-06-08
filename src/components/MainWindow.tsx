@@ -1,4 +1,14 @@
-import { Copy, Minus, NotebookPen, Search, Settings, Square, X } from "lucide-react";
+import {
+  Copy,
+  Download,
+  Minus,
+  NotebookPen,
+  Plus,
+  Search,
+  Settings,
+  Square,
+  X,
+} from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
@@ -1747,38 +1757,17 @@ export function MainWindow({
                   onClick={handleNewNote}
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-body text-bamboo hover:bg-bamboo-mist/60 transition-all cursor-pointer group"
                 >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
+                  <Plus
+                    size={13}
                     className="group-hover:rotate-90 transition-transform duration-200"
-                  >
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
+                  />
                   <span>{t("main.sidebar.newNote", { defaultValue: "新建笔记" })}</span>
                 </button>
                 <button
                   onClick={() => void handleImportNote()}
                   className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-[12px] font-body text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer group"
                 >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.2"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M12 3v12" />
-                    <path d="m7 10 5 5 5-5" />
-                    <path d="M5 21h14" />
-                  </svg>
+                  <Download size={13} />
                   <span>{t("main.sidebar.importMarkdown", { defaultValue: "导入 Markdown" })}</span>
                 </button>
               </div>
@@ -1801,17 +1790,7 @@ export function MainWindow({
                   className="text-[10px] text-ink-ghost hover:text-bamboo transition-colors cursor-pointer"
                   title={t("main.category.new", { defaultValue: "新建分类" })}
                 >
-                  <svg
-                    width="12"
-                    height="12"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="currentColor"
-                    strokeWidth="2.5"
-                    strokeLinecap="round"
-                  >
-                    <path d="M12 5v14M5 12h14" />
-                  </svg>
+                  <Plus size={12} />
                 </button>
               </div>
 
