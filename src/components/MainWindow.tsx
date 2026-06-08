@@ -1,10 +1,12 @@
 import {
+  ArrowUpCircle,
   ChevronLeft,
   ChevronRight,
   Copy,
   Download,
   File,
   Folder,
+  Info,
   Minus,
   NotebookPen,
   PanelLeft,
@@ -1657,37 +1659,9 @@ export function MainWindow({
               aria-label={aboutButtonTitle}
             >
               {aboutUpdateReminder.hasPendingUpdate ? (
-                <svg
-                  data-testid="main-about-update-icon"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="12" r="9" />
-                  <path d="M12 16V8" />
-                  <path d="m8.5 11.5 3.5-3.5 3.5 3.5" />
-                </svg>
+                <ArrowUpCircle data-testid="main-about-update-icon" size={14} />
               ) : (
-                <svg
-                  data-testid="main-about-info-icon"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <circle cx="12" cy="12" r="10" />
-                  <path d="M12 16v-4" />
-                  <path d="M12 8h.01" />
-                </svg>
+                <Info data-testid="main-about-info-icon" size={14} />
               )}
               {aboutUpdateReminder.hasPendingUpdate ? (
                 <span
