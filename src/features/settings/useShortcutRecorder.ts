@@ -23,6 +23,12 @@ interface HookKeyEvent {
 
 const MODIFIER_EVENT_KEYS = new Set(["Control", "Alt", "Shift", "Meta"]);
 
+let shortcutRecordingActive = false;
+
+export function isShortcutRecordingActive(): boolean {
+  return shortcutRecordingActive;
+}
+
 const CODE_TO_KEY: Record<string, string> = {
   BracketLeft: "[",
   BracketRight: "]",
@@ -71,12 +77,14 @@ export function useShortcutRecorder({
   const [heldKeys, setHeldKeys] = useState<string[]>([]);
 
   const finishRecording = useCallback((shortcut: string) => {
+    shortcutRecordingActive = false;
     setIsRecording(false);
     setHeldKeys([]);
     onRecordRef.current(shortcut);
   }, []);
 
   const cancelRecording = useCallback(() => {
+    shortcutRecordingActive = false;
     setIsRecording(false);
     setHeldKeys([]);
   }, []);
@@ -191,7 +199,10 @@ export function useShortcutRecorder({
     };
   }, [isRecording]);
 
-  const startRecording = useCallback(() => setIsRecording(true), []);
+  const startRecording = useCallback(() => {
+    shortcutRecordingActive = true;
+    setIsRecording(true);
+  }, []);
 
   return { isRecording, heldKeys, startRecording, cancelRecording };
 }

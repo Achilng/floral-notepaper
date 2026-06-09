@@ -15,6 +15,7 @@ import {
   saveConfig,
 } from "../features/settings/api";
 import type { AppConfig, ViewMode } from "../features/settings/types";
+import { isShortcutRecordingActive } from "../features/settings/useShortcutRecorder";
 import { normalizeTileColor } from "../features/settings/tileColor";
 import { getUpdateStatus, reportInstallPreparation } from "../features/update/api";
 import {
@@ -277,6 +278,12 @@ function runEditorCommand(textarea: HTMLTextAreaElement | null, command: "undo" 
   if (!textarea || textarea.disabled) return false;
   textarea.focus();
   return document.execCommand(command);
+}
+
+function isEditableTarget(target: EventTarget | null): boolean {
+  if (!(target instanceof HTMLElement)) return false;
+  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement) return true;
+  return target.isContentEditable;
 }
 
 export function pinTileButtonTitle(isPinned: boolean): string {
@@ -1058,18 +1065,6 @@ export function MainWindow({
   }, [saveCurrentNote, t]);
 
   useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
-        event.preventDefault();
-        void saveCurrentNote();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [saveCurrentNote]);
-
-  useEffect(() => {
     if (!selectedId || saveState !== "dirty") return undefined;
     if (isExternal) {
       if (!settingsConfig?.externalFileAutoSave) return undefined;
@@ -1295,6 +1290,33 @@ export function MainWindow({
       showToast(getErrorMessage(error));
     }
   };
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if ((event.ctrlKey || event.metaKey) && event.key === "s") {
+        event.preventDefault();
+        void saveCurrentNote();
+        return;
+      }
+
+      if (event.key !== "Delete") return;
+      if (isEditableTarget(event.target)) return;
+      if (noteMenu || categoryMenu || isShortcutRecordingActive()) return;
+
+      const currentId = selectedIdRef.current;
+      if (!currentId) return;
+
+      event.preventDefault();
+      if (isExternalRef.current) {
+        void handleRemoveExternalFile(currentId);
+      } else {
+        void handleDeleteNote(currentId);
+      }
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [categoryMenu, handleDeleteNote, handleRemoveExternalFile, noteMenu, saveCurrentNote]);
 
   const handleOpenNoteMenu = (event: MouseEvent<HTMLElement>, noteId: string) => {
     event.preventDefault();
