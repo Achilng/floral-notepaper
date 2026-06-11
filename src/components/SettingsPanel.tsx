@@ -81,7 +81,7 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
   );
   const localeOptions = useMemo(
     () =>
-　　　　LOCALE_OPTIONS.map(({ value, labelKey, defaultLabel }) => ({
+      LOCALE_OPTIONS.map(({ value, labelKey, defaultLabel }) => ({
         value,
         label: t(labelKey, { defaultValue: defaultLabel }),
       })),
