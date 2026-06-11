@@ -8,6 +8,7 @@ import {
   normalizeViewMode,
   saveConfig,
 } from "./api";
+import { DEFAULT_EDITOR_SHORTCUTS } from "../editorShortcuts/markdownShortcuts";
 import type { AppConfig } from "./types";
 
 vi.mock("@tauri-apps/api/core", () => ({
@@ -50,6 +51,7 @@ describe("settings api", () => {
       tileRenderMarkdown: false,
       renderHtmlMarkdown: false,
       openAtCursor: true,
+      editorShortcuts: DEFAULT_EDITOR_SHORTCUTS,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -81,6 +83,7 @@ describe("settings api", () => {
       tileRenderMarkdown: false,
       renderHtmlMarkdown: false,
       openAtCursor: true,
+      editorShortcuts: DEFAULT_EDITOR_SHORTCUTS,
     };
     mockedInvoke.mockResolvedValue(config);
 
