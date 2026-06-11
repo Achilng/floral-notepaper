@@ -303,7 +303,7 @@ export function MarkdownPreview({
     [imageBaseDir],
   );
   return (
-    <div className="font-body" style={{ fontSize: `${fontSize}px` }}>
+    <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>
       {content.trim() ? (
         <Markdown
           remarkPlugins={remarkPlugins}

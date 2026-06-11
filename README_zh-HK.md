@@ -11,7 +11,8 @@
 輕巧、優雅、現代化的本機便箋工具<br>
 基於 Tauri 2 + React 構建
 
-[回報問題](https://github.com/Achilng/floral-notepaper/issues) · [更新日誌](https://github.com/Achilng/floral-notepaper/releases)
+[回報問題](https://github.com/Achilng/floral-notepaper/issues) · [更新日誌](https://github.com/Achilng/floral-notepaper/releases) <br>
+[快速開始](#快速開始) · [FAQ](https://github.com/Achilng/floral-notepaper/wiki) · [構建指南](#從原始碼構建)
 
 [![Version](https://img.shields.io/github/v/release/Achilng/floral-notepaper)](https://github.com/Achilng/floral-notepaper/releases/latest)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
@@ -54,34 +55,45 @@
 - 臨時記錄思路或靈感
 - 桌面待辦清單
 
-## 下載安裝
+## 快速開始
 
-前往 [GitHub Releases](https://github.com/Achilng/floral-notepaper/releases) 下載最新版本。
+### 下載安裝
 
-## 從原始碼構建
+#### 透過 Mirror 醬下載
 
-### 環境需求
+> [!TIP]
+> 如您的網絡不便訪問 GitHub，或下載速度過慢，您可以嘗試透過 Mirror 醬下載花箋<br>
+> 此外，您也可以透過使用 Mirror 醬下載花箋來贊助花箋的開發者，詳見 [Mirror 醬官網](https://mirrorchyan.com/)
 
-- [Node.js](https://nodejs.org/) 18+
-- [Rust](https://www.rust-lang.org/tools/install)
-- [Tauri CLI 2](https://tauri.app/)
+| 系統    | 架構                    | 下載連結                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
+| ------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Windows | x64                     | [![Windows x64 Setup](https://img.shields.io/badge/Setup-x64-blue?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgyNDJ2MjQySDB6TTI3MCAwaDI0MnYyNDJIMjcwek0wIDI3MGgyNDJ2MjQySDB6TTI3MCAyNzBoMjQydjI0MkgyNzB6Ii8%2BPC9zdmc%2B)](https://mirrorchyan.com/zh/projects?rid=floral&os=windows&arch=x64&channel=stable) |
+| macOS   | AArch64 (Apple Silicon) | [![macOS Apple Silicon](https://img.shields.io/badge/DMG-Apple%20Silicon-%23000000.svg?logo=apple)](https://mirrorchyan.com/zh/projects?rid=floral&os=macos&channel=stable&arch=arm64)                                                                                                                                                                                                                                                                             |
+| macOS   | x64 (Intel)             | [![macOS Intel](https://img.shields.io/badge/DMG-Intel%20X64-%2300A9E0.svg?logo=apple)](https://mirrorchyan.com/zh/projects?rid=floral&os=macos&channel=stable&arch=x64)                                                                                                                                                                                                                                                                                           |
 
-### 步驟
+#### 透過 GitHub 下載
 
-```bash
-git clone https://github.com/Achilng/floral-notepaper.git
-cd floral-notepaper
+請前往 [Release 頁](https://github.com/Achilng/floral-notepaper/releases/latest) 下載花箋
 
-npm install
+##### 下載參考
 
-# 開發模式
-npm run tauri dev
+| 系統    | 架構                    | 類型     | 檔案名稱                                |
+| ------- | ----------------------- | -------- | --------------------------------------- |
+| Windows | x64                     | 安裝程式 | floral-notepaper\_版本號\_x64-setup.exe |
+| Windows | x64                     | 可攜版   | floral-notepaper\_版本號.exe            |
+| macOS   | AArch64 (Apple Silicon) | DMG      | floral-notepaper\_版本號\_aarch64.dmg   |
+| macOS   | x64 (Intel)             | DMG      | floral-notepaper\_版本號\_x64.dmg       |
 
-# 構建發佈版本
-npm run tauri build
-```
+#### macOS 版安裝指引
 
-構建產物輸出至 `src-tauri/target/release/bundle/`。
+如遇安裝問題，請參考：
+
+- Wiki 中的 [macOS 安裝指引](https://github.com/Achilng/floral-notepaper/wiki/macOS-%E5%AE%89%E8%A3%85%E6%8C%87%E5%BC%95-%7C-macOS-Installation-Guidance)
+- 或影片（Bilibili）：[Mac雲課堂 - 在 Mac 上裝軟件，要學會和蘋果鬥智鬥勇](https://www.bilibili.com/video/BV1tg411t7hN)
+
+### 從原始碼構建
+
+請參考 [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Star History
 

@@ -4,6 +4,7 @@ import { ContextMenuProvider } from "./components/ContextMenu";
 import { MainWindow } from "./components/MainWindow";
 import { NotePad } from "./components/NotePad";
 import { TileShowcase } from "./components/TileShowcase";
+import { ToastContainer } from "./components/Toast";
 import { tabToIndentListener } from "indent-textarea";
 import { getConfig } from "./features/settings/api";
 import { applyTheme, watchSystemTheme } from "./features/settings/theme";
@@ -87,6 +88,7 @@ function App() {
         ) : (
           <TileShowcase noteId={route.noteId} />
         )}
+        <ToastContainer />
       </div>
     </ContextMenuProvider>
   );

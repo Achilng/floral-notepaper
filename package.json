@@ -1,16 +1,17 @@
 {
   "name": "floral-notepaper",
-  "version": "1.0.4",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
+    "dev": "node scripts/fetch-contributors.mjs && vite",
+    "build": "node scripts/fetch-contributors.mjs && tsc && vite build",
     "test": "vitest run",
     "lint": "oxlint",
     "fmt": "oxfmt",
     "preview": "vite preview",
     "tauri": "tauri",
+    "version:sync": "node scripts/set-version.mjs",
     "prepare": "husky"
   },
   "dependencies": {

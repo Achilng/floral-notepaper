@@ -3,6 +3,8 @@ use crate::{
     services::notes::{default_store, AppConfig, AppError},
 };
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "macos")]
+use std::sync::OnceLock;
 use std::{
     error::Error,
     sync::{
@@ -405,18 +407,26 @@ use tauri::{
 };
 use uuid::Uuid;
 
+#[cfg(target_os = "macos")]
+use tauri::menu::Submenu;
+
 #[cfg(desktop)]
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
 #[cfg(desktop)]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const OPEN_ABOUT_PANEL_EVENT: &str = "open-about-panel";
+const MACOS_APP_ABOUT_ID: &str = "macos-about";
 const TRAY_ID: &str = "main-tray";
 const TRAY_SHOW_MAIN_ID: &str = "show-main";
 const TRAY_QUICK_NOTE_ID: &str = "quick-note";
 const TRAY_TOGGLE_CLOSE_TO_TRAY_ID: &str = "toggle-close-to-tray";
 const TRAY_TOGGLE_AUTOSTART_ID: &str = "toggle-autostart";
 const TRAY_QUIT_ID: &str = "quit";
+
+#[cfg(target_os = "macos")]
+static FULLSCREEN_HIDING: AtomicBool = AtomicBool::new(false);
 const NOTEPAD_POOL_CAPACITY: usize = 2;
 
 /// Stores the file path passed as a command-line argument on cold start.
@@ -432,6 +442,11 @@ pub enum TrayMenuAction {
     ToggleCloseToTray,
     ToggleAutostart,
     Quit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AppMenuAction {
+    ShowAboutPanel,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -665,6 +680,13 @@ pub fn tray_menu_action(id: &str) -> Option<TrayMenuAction> {
     }
 }
 
+fn app_menu_action(id: &str) -> Option<AppMenuAction> {
+    match id {
+        MACOS_APP_ABOUT_ID => Some(AppMenuAction::ShowAboutPanel),
+        _ => None,
+    }
+}
+
 pub fn tray_menu_specs(locale: Locale, close_to_tray: bool, autostart: bool) -> Vec<TrayMenuSpec> {
     vec![
         TrayMenuSpec {
@@ -744,6 +766,118 @@ fn build_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<Menu<Wry>, Box
     )?)
 }
 
+#[cfg(target_os = "macos")]
+fn build_app_menu(app: &AppHandle, config: &AppConfig) -> Result<Menu<Wry>, Box<dyn Error>> {
+    let locale = locale_from_config(config);
+
+    let about = MenuItem::with_id(
+        app,
+        MACOS_APP_ABOUT_ID,
+        locales::macos_menu_about_label(locale),
+        true,
+        None::<&str>,
+    )?;
+    let services =
+        PredefinedMenuItem::services(app, Some(locales::macos_menu_services_label(locale)))?;
+    let hide = PredefinedMenuItem::hide(app, Some(&locales::macos_menu_hide_app_label(locale)))?;
+    let hide_others =
+        PredefinedMenuItem::hide_others(app, Some(locales::macos_menu_hide_others_label(locale)))?;
+    let quit = PredefinedMenuItem::quit(app, Some(&locales::macos_menu_quit_app_label(locale)))?;
+    let file_close_window = PredefinedMenuItem::close_window(
+        app,
+        Some(locales::macos_menu_close_window_label(locale)),
+    )?;
+    let window_close_window = PredefinedMenuItem::close_window(
+        app,
+        Some(locales::macos_menu_close_window_label(locale)),
+    )?;
+    let undo = PredefinedMenuItem::undo(app, Some(locales::macos_menu_undo_label(locale)))?;
+    let redo = PredefinedMenuItem::redo(app, Some(locales::macos_menu_redo_label(locale)))?;
+    let cut = PredefinedMenuItem::cut(app, Some(locales::macos_menu_cut_label(locale)))?;
+    let copy = PredefinedMenuItem::copy(app, Some(locales::macos_menu_copy_label(locale)))?;
+    let paste = PredefinedMenuItem::paste(app, Some(locales::macos_menu_paste_label(locale)))?;
+    let select_all =
+        PredefinedMenuItem::select_all(app, Some(locales::macos_menu_select_all_label(locale)))?;
+    let fullscreen =
+        PredefinedMenuItem::fullscreen(app, Some(locales::macos_menu_fullscreen_label(locale)))?;
+    let minimize =
+        PredefinedMenuItem::minimize(app, Some(locales::macos_menu_minimize_label(locale)))?;
+    let zoom = PredefinedMenuItem::maximize(app, Some(locales::macos_menu_zoom_label(locale)))?;
+    let separator = PredefinedMenuItem::separator(app)?;
+
+    let app_menu = Submenu::with_items(
+        app,
+        locales::app_name(locale),
+        true,
+        &[
+            &about,
+            &PredefinedMenuItem::separator(app)?,
+            &services,
+            &PredefinedMenuItem::separator(app)?,
+            &hide,
+            &hide_others,
+            &PredefinedMenuItem::separator(app)?,
+            &quit,
+        ],
+    )?;
+    let file_menu = Submenu::with_items(
+        app,
+        locales::macos_menu_file_label(locale),
+        true,
+        &[&file_close_window],
+    )?;
+    let edit_menu = Submenu::with_items(
+        app,
+        locales::macos_menu_edit_label(locale),
+        true,
+        &[&undo, &redo, &separator, &cut, &copy, &paste, &select_all],
+    )?;
+    let view_menu = Submenu::with_items(
+        app,
+        locales::macos_menu_view_label(locale),
+        true,
+        &[&fullscreen],
+    )?;
+    let window_menu = Submenu::with_items(
+        app,
+        locales::macos_menu_window_label(locale),
+        true,
+        &[
+            &minimize,
+            &zoom,
+            &PredefinedMenuItem::separator(app)?,
+            &window_close_window,
+        ],
+    )?;
+    let help_menu = Submenu::new(app, locales::macos_menu_help_label(locale), true)?;
+
+    let menu = Menu::with_items(
+        app,
+        &[
+            &app_menu,
+            &file_menu,
+            &edit_menu,
+            &view_menu,
+            &window_menu,
+            &help_menu,
+        ],
+    )?;
+
+    Ok(menu)
+}
+
+#[cfg(target_os = "macos")]
+fn refresh_app_menu(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
+    let menu = build_app_menu(app, config)?;
+    let _ = app.set_menu(menu)?;
+    Ok(())
+}
+
+#[cfg(not(target_os = "macos"))]
+fn refresh_app_menu(_app: &AppHandle, _config: &AppConfig) -> Result<(), Box<dyn Error>> {
+    Ok(())
+}
+
 fn refresh_tray_menu(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
     let Some(tray) = app.tray_by_id(TRAY_ID) else {
         return Ok(());
@@ -775,6 +909,7 @@ fn refresh_window_titles(app: &AppHandle, config: &AppConfig) -> Result<(), AppE
 
 pub fn refresh_shell_state(app: &AppHandle, config: &AppConfig) -> Result<(), Box<dyn Error>> {
     refresh_window_titles(app, config)?;
+    refresh_app_menu(app, config)?;
     refresh_tray_menu(app, config)?;
     Ok(())
 }
@@ -922,6 +1057,14 @@ fn toggle_app_visibility(app: &AppHandle) {
             let _ = window.hide();
         }
     }
+
+    if labels.is_empty() {
+        if let Err(error) = show_main_window(app) {
+            eprintln!("failed to show main window from visibility toggle: {error}");
+        }
+        return;
+    }
+
     state.hide_windows(labels);
 }
 
@@ -986,10 +1129,16 @@ pub fn take_startup_file() -> Option<String> {
 pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     app.manage(RuntimeState::default());
     app.manage(NotepadPool::default());
+    app.on_menu_event(|app, event| {
+        if let Err(error) = handle_app_menu_event(app, event.id.as_ref()) {
+            eprintln!("failed to handle app menu event {:?}: {error}", event.id);
+        }
+    });
     setup_autostart_plugin(app.handle())?;
     setup_global_shortcut_plugin(app.handle())?;
     sync_autostart_to_config(app.handle());
     register_configured_global_shortcut(app.handle());
+    setup_app_menu(app)?;
     setup_tray(app)?;
     schedule_notepad_prewarm(app.handle());
 
@@ -1039,6 +1188,11 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         MainWindowCloseAction::AllowClose => {}
         MainWindowCloseAction::HideToTray => {
             api.prevent_close();
+            #[cfg(target_os = "macos")]
+            if window.is_fullscreen().unwrap_or(false) {
+                hide_fullscreen_window(window);
+                return;
+            }
             if let Err(error) = window.hide() {
                 eprintln!("failed to hide main window to tray: {error}");
             }
@@ -1049,6 +1203,65 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
             window.app_handle().exit(0);
         }
     }
+}
+
+/// Exit fullscreen and hide the window once the fullscreen exit animation completes.
+#[cfg(target_os = "macos")]
+fn hide_fullscreen_window(window: &Window) {
+    use block2::RcBlock;
+    use objc2_app_kit::NSView;
+    use objc2_foundation::{NSNotificationCenter, NSString};
+    use raw_window_handle::{HasWindowHandle as _, RawWindowHandle};
+    use std::rc::Rc;
+
+    let Ok(handle) = window.window_handle() else {
+        let _ = window.hide();
+        return;
+    };
+    let RawWindowHandle::AppKit(app_kit) = handle.as_raw() else {
+        let _ = window.hide();
+        return;
+    };
+
+    // SAFETY: ns_view is a valid pointer from the window handle, on the main thread.
+    let ns_view: objc2::rc::Retained<NSView> =
+        unsafe { objc2::rc::Retained::retain(app_kit.ns_view.as_ptr().cast()) }
+            .expect("failed to retain NSView");
+    let Some(ns_window) = ns_view.window() else {
+        let _ = window.hide();
+        return;
+    };
+
+    let retained = window.app_handle().clone();
+    let label = window.label().to_string();
+    let observer_holder: Rc<OnceLock<objc2::rc::Retained<objc2::runtime::AnyObject>>> =
+        Rc::new(OnceLock::new());
+    let observer_ref = Rc::clone(&observer_holder);
+    let block = RcBlock::new(move |_notification: std::ptr::NonNull<_>| {
+        if FULLSCREEN_HIDING.swap(false, Ordering::SeqCst) {
+            if let Some(w) = retained.get_webview_window(&label) {
+                let _ = w.hide();
+            }
+        }
+        if let Some(obs) = observer_ref.get() {
+            unsafe {
+                NSNotificationCenter::defaultCenter().removeObserver(obs);
+            }
+        }
+    });
+    let name = NSString::from_str("NSWindowDidExitFullScreenNotification");
+    let observer = unsafe {
+        NSNotificationCenter::defaultCenter().addObserverForName_object_queue_usingBlock(
+            Some(&name),
+            Some(&ns_window),
+            None,
+            &block,
+        )
+    };
+    let _ = observer_holder.set(observer.into());
+
+    FULLSCREEN_HIDING.store(true, Ordering::SeqCst);
+    let _ = window.set_fullscreen(false);
 }
 
 fn main_window_close_action(app_is_exiting: bool, close_to_tray: bool) -> MainWindowCloseAction {
@@ -1097,6 +1310,17 @@ fn setup_tray(app: &mut App) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+#[cfg(target_os = "macos")]
+fn setup_app_menu(app: &mut App) -> Result<(), Box<dyn Error>> {
+    let config = load_config()?;
+    refresh_app_menu(app.handle(), &config)
+}
+
+#[cfg(not(target_os = "macos"))]
+fn setup_app_menu(_app: &mut App) -> Result<(), Box<dyn Error>> {
+    Ok(())
+}
+
 fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error>> {
     match tray_menu_action(id) {
         Some(TrayMenuAction::ShowMain) => show_main_window(app)?,
@@ -1122,6 +1346,31 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
             app.exit(0);
         }
         None => {}
+    }
+
+    Ok(())
+}
+
+fn handle_app_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error>> {
+    match app_menu_action(id) {
+        Some(AppMenuAction::ShowAboutPanel) => open_about_panel(app)?,
+        None => {}
+    }
+    Ok(())
+}
+
+fn open_about_panel(app: &AppHandle) -> Result<(), Box<dyn Error>> {
+    let had_window = app.get_webview_window(MAIN_WINDOW_LABEL).is_some();
+    show_main_window(app)?;
+
+    if had_window {
+        let _ = app.emit(OPEN_ABOUT_PANEL_EVENT, ());
+    } else {
+        let handle = app.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            let _ = handle.emit(OPEN_ABOUT_PANEL_EVENT, ());
+        });
     }
 
     Ok(())
@@ -1159,7 +1408,9 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
                 min_width: 900.0,
                 min_height: 620.0,
             },
-            decorations: false,
+            // On macOS, tauri.macos.conf.json sets titleBarStyle: "Overlay"
+            // with native traffic lights; decorations: false would conflict.
+            decorations: !cfg!(target_os = "macos"),
             always_on_top: false,
             shadow: true,
             skip_taskbar: false,
@@ -1539,7 +1790,7 @@ fn open_or_focus_window(
         return Ok(label.to_string());
     }
 
-    let window = WebviewWindowBuilder::new(app, label, WebviewUrl::App(opts.url.into()))
+    let builder = WebviewWindowBuilder::new(app, label, WebviewUrl::App(opts.url.into()))
         .title(opts.title)
         .inner_size(opts.specs.width, opts.specs.height)
         .min_inner_size(opts.specs.min_width, opts.specs.min_height)
@@ -1549,8 +1800,17 @@ fn open_or_focus_window(
         .always_on_top(opts.always_on_top)
         .shadow(opts.shadow)
         .skip_taskbar(opts.skip_taskbar)
-        .visible(false)
-        .build()?;
+        .visible(false);
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .traffic_light_position(tauri::Position::Logical(tauri::LogicalPosition::new(
+            14.0, 23.0,
+        )));
+
+    let window = builder.build()?;
 
     apply_window_bounds(&window, opts.bounds)?;
 
@@ -1620,7 +1880,7 @@ fn app_is_exiting(app: &AppHandle) -> bool {
         .unwrap_or(false)
 }
 
-fn mark_app_exiting(app: &AppHandle) {
+pub(crate) fn mark_app_exiting(app: &AppHandle) {
     if let Some(state) = app.try_state::<RuntimeState>() {
         state.allow_exit();
     }
@@ -1837,7 +2097,15 @@ fn parse_configured_shortcut(field: &str, value: &str) -> Result<Shortcut, Box<d
 
 #[cfg(desktop)]
 fn shortcut_bindings_from_config(config: &AppConfig) -> Result<ShortcutBindings, Box<dyn Error>> {
-    let open_notepad = parse_configured_shortcut("globalShortcut", &config.global_shortcut)?;
+    // 允许用户主动清空快捷键；空值表示不注册对应的全局快捷键。
+    let open_notepad = if config.global_shortcut.is_empty() {
+        None
+    } else {
+        Some(parse_configured_shortcut(
+            "globalShortcut",
+            &config.global_shortcut,
+        )?)
+    };
     let toggle_visibility = if config.toggle_visibility_shortcut.is_empty() {
         None
     } else {
@@ -1847,9 +2115,11 @@ fn shortcut_bindings_from_config(config: &AppConfig) -> Result<ShortcutBindings,
         )?)
     };
 
-    if toggle_visibility
+    // 只有两个快捷键都已设置时才需要检查重复，避免清空快捷键时误报配置冲突。
+    if open_notepad
         .as_ref()
-        .is_some_and(|shortcut| shortcut == &open_notepad)
+        .zip(toggle_visibility.as_ref())
+        .is_some_and(|(open_notepad, toggle_visibility)| open_notepad == toggle_visibility)
     {
         return Err(Box::new(AppError {
             code: "duplicateShortcut".into(),
@@ -1859,7 +2129,7 @@ fn shortcut_bindings_from_config(config: &AppConfig) -> Result<ShortcutBindings,
     }
 
     Ok(ShortcutBindings {
-        open_notepad: Some(open_notepad),
+        open_notepad,
         toggle_visibility,
     })
 }
@@ -2129,6 +2399,15 @@ mod tests {
     }
 
     #[test]
+    fn maps_app_menu_ids_to_actions() {
+        assert_eq!(
+            app_menu_action("macos-about"),
+            Some(AppMenuAction::ShowAboutPanel)
+        );
+        assert_eq!(app_menu_action("unknown"), None);
+    }
+
+    #[test]
     fn builds_tray_menu_specs_with_configured_checked_state() {
         let specs = tray_menu_specs(Locale::ZhCn, true, false);
         let ids: Vec<_> = specs.iter().map(|spec| spec.id).collect();
@@ -2240,12 +2519,11 @@ mod tests {
     }
 
     #[cfg(desktop)]
-    #[test]
-    fn rejects_duplicate_shortcut_bindings() {
-        let config = AppConfig {
+    fn test_app_config(global_shortcut: &str, toggle_visibility_shortcut: &str) -> AppConfig {
+        AppConfig {
             locale: "zh-CN".into(),
             notes_dir: "D:\\notes".into(),
-            global_shortcut: "Ctrl+Shift+K".into(),
+            global_shortcut: global_shortcut.into(),
             close_to_tray: true,
             autostart: false,
             default_view_mode: "split".into(),
@@ -2272,8 +2550,15 @@ mod tests {
             open_at_cursor: true,
             surface_width: None,
             surface_height: None,
-            toggle_visibility_shortcut: "Ctrl+Shift+K".into(),
-        };
+            toggle_visibility_shortcut: toggle_visibility_shortcut.into(),
+            last_known_base_dir: None,
+        }
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn rejects_duplicate_shortcut_bindings() {
+        let config = test_app_config("Ctrl+Shift+K", "Ctrl+Shift+K");
 
         let error = match shortcut_bindings_from_config(&config) {
             Ok(_) => panic!("expected duplicate shortcut error"),
@@ -2281,6 +2566,29 @@ mod tests {
         };
 
         assert!(error.to_string().contains("must differ"));
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn accepts_empty_shortcut_bindings() {
+        let config = test_app_config("", "");
+
+        let bindings = shortcut_bindings_from_config(&config).expect("empty shortcuts are valid");
+
+        assert!(bindings.open_notepad.is_none());
+        assert!(bindings.toggle_visibility.is_none());
+    }
+
+    #[cfg(desktop)]
+    #[test]
+    fn accepts_visibility_shortcut_when_quick_note_shortcut_is_empty() {
+        let config = test_app_config("", "Ctrl+Shift+H");
+
+        let bindings =
+            shortcut_bindings_from_config(&config).expect("single visibility shortcut is valid");
+
+        assert!(bindings.open_notepad.is_none());
+        assert!(bindings.toggle_visibility.is_some());
     }
 
     #[test]
@@ -2324,6 +2632,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            last_known_base_dir: None,
         };
         let next = AppConfig {
             locale: "en-US".into(),
@@ -2356,6 +2665,7 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),
+            last_known_base_dir: None,
         };
 
         assert_eq!(

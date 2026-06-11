@@ -5,13 +5,11 @@ import { useTranslation } from "react-i18next";
 import { createNote, getErrorMessage, getNote, listNotes, updateNote } from "../features/notes/api";
 import { useImagePaste } from "../features/images/useImagePaste";
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
+import { reportInstallPreparation } from "../features/update/api";
+import type { UpdateInstallPrepareRequest } from "../features/update/types";
+import { showToast } from "./Toast";
 import type { Note, NoteMetadata } from "../features/notes/types";
-import {
-  countNoteChars,
-  formatShortDate,
-  getDisplayTitle,
-  metadataFromNote,
-} from "../features/notes/noteUtils";
+import { countNoteChars, metadataFromNote } from "../features/notes/noteUtils";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
@@ -24,7 +22,6 @@ import {
   startCurrentWindowDrag,
   startCurrentWindowResize,
 } from "../features/windows/controls";
-import { openNoteInEditor } from "../features/windows/api";
 import type { ResizeDirection } from "../features/windows/controls";
 import { getConfig } from "../features/settings/api";
 import {
@@ -48,6 +45,7 @@ import {
   emitTileWindowUnpinned,
   tileSurfaceModeUnpinNoteId,
 } from "../features/windows/tileWindowEvents";
+import { NotepadOpenPanel } from "./NotepadOpenPanel";
 import { Tile } from "./Tile";
 
 type OpenMode = "new" | "open";
@@ -120,9 +118,7 @@ export function NotePad({
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
-  const [hoveredNote, setHoveredNote] = useState<string | null>(null);
   const [status, setStatus] = useState<NotePadStatus>("empty");
-  const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] = useState(initialAutoSave);
   const [tileColorRaw, setTileColorRaw] = useState(normalizeTileColor(initialTileColor));
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
@@ -134,6 +130,12 @@ export function NotePad({
   const [isExiting, setIsExiting] = useState(false);
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const windowLabelRef = useRef("");
+  const statusRef = useRef<NotePadStatus>("empty");
+  const contentValueRef = useRef(content);
+  contentValueRef.current = content;
+  const titleValueRef = useRef(title);
+  titleValueRef.current = title;
   const isStandby = useRef(
     typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("standby") === "1",
@@ -158,6 +160,7 @@ export function NotePad({
     }),
     [t],
   );
+  statusRef.current = status;
 
   const refreshNotes = useCallback(async () => {
     const loadedNotes = await listNotes();
@@ -194,7 +197,7 @@ export function NotePad({
           if (!cancelled) applyNote(note);
         }
       } catch (error) {
-        if (!cancelled) setErrorMessage(getErrorMessage(error));
+        if (!cancelled) showToast(getErrorMessage(error));
       }
     }
 
@@ -268,6 +271,7 @@ export function NotePad({
     let myLabel = "";
     try {
       myLabel = getCurrentWindow().label;
+      windowLabelRef.current = myLabel;
     } catch {
       // not in Tauri environment (tests)
     }
@@ -282,7 +286,6 @@ export function NotePad({
       setContent("");
       setMode("new");
       setStatus("empty");
-      setErrorMessage(null);
       setIsExiting(false);
       setSurfaceMode("pad");
       void refreshNotes().catch(() => undefined);
@@ -311,9 +314,48 @@ export function NotePad({
         : [metadata, ...current];
       return [...next].sort((left, right) => right.updatedAt.localeCompare(left.updatedAt));
     });
-    setStatus("saved");
+    const contentChanged = contentValueRef.current !== content || titleValueRef.current !== title;
+    setStatus(contentChanged ? "dirty" : "saved");
     return note;
   }, [content, editingNoteId, title]);
+
+  useEffect(() => {
+    const unlisten = listen<UpdateInstallPrepareRequest>("update://prepare-install", (event) => {
+      const respond = async () => {
+        const windowLabel = windowLabelRef.current || "notepad";
+        if (statusRef.current !== "dirty") {
+          await reportInstallPreparation(event.payload.requestId, windowLabel, "ready");
+          return;
+        }
+
+        try {
+          await saveNote();
+          await reportInstallPreparation(event.payload.requestId, windowLabel, "ready");
+        } catch (error) {
+          setStatus("saveFailed");
+          showToast(getErrorMessage(error));
+          await reportInstallPreparation(
+            event.payload.requestId,
+            windowLabel,
+            "failed",
+            getErrorMessage(error),
+          );
+        }
+      };
+
+      void respond().catch(async (error) => {
+        await reportInstallPreparation(
+          event.payload.requestId,
+          windowLabelRef.current || "notepad",
+          "failed",
+          getErrorMessage(error),
+        ).catch(() => undefined);
+      });
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [saveNote]);
 
   const hasDraftContent = useCallback(
     () => Boolean(editingNoteId || title.trim() || content.trim()),
@@ -342,7 +384,7 @@ export function NotePad({
     setContent,
     markDirty: () => setStatus("dirty"),
     onEnsureNoteSaved: ensureNoteSaved,
-    onError: setErrorMessage,
+    onError: showToast,
     t,
   });
 
@@ -364,7 +406,7 @@ export function NotePad({
         const currentBounds = await getCurrentWindowBounds();
         await animateCurrentWindowBounds(getSurfaceTargetBounds(nextMode, currentBounds));
       } catch (error) {
-        setErrorMessage(getErrorMessage(error));
+        showToast(getErrorMessage(error));
       }
     },
     [surfaceMode, tileNoteId],
@@ -389,12 +431,11 @@ export function NotePad({
   }, [surfaceMode]);
 
   const handleSave = useCallback(async () => {
-    setErrorMessage(null);
     try {
       await saveNote();
     } catch (error) {
       setStatus("saveFailed");
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   }, [saveNote]);
 
@@ -411,25 +452,23 @@ export function NotePad({
   }, [handleSave]);
 
   const handleOpenNote = async (noteId: string) => {
-    setErrorMessage(null);
     try {
       const note = await getNote(noteId);
       applyNote(note);
       await switchSurfaceMode("pad");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
   const handlePin = async () => {
-    setErrorMessage(null);
     try {
       if (shouldSaveBeforeSwitchingToTile(noteSurfaceAutoSave)) {
         await saveNote();
       }
       await switchSurfaceMode("tile");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -438,12 +477,11 @@ export function NotePad({
     const closeSurface = surfaceMode === "tile" ? closeCurrentWindow : recycleCurrentNotepad;
     void closeSurface().catch((error) => {
       setIsExiting(false);
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     });
   }, [surfaceMode]);
 
   const copyTileContent = useCallback(async () => {
-    setErrorMessage(null);
     try {
       const clipboard = navigator.clipboard;
       if (!clipboard?.writeText) {
@@ -452,7 +490,7 @@ export function NotePad({
       await clipboard.writeText(content);
       setStatus("copied");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   }, [content, t]);
 
@@ -510,7 +548,6 @@ export function NotePad({
     setContent("");
     setMode("new");
     setStatus("empty");
-    setErrorMessage(null);
   };
 
   const isTile = surfaceMode === "tile";
@@ -525,10 +562,10 @@ export function NotePad({
       {isTile ? (
         <Tile
           title={tileTitle || undefined}
-          content={errorMessage || content}
+          content={content}
           color={tileColor}
           fontSize={surfaceFontSize}
-          renderMarkdown={!errorMessage && tileRenderMarkdown}
+          renderMarkdown={tileRenderMarkdown}
           imageBaseDir={imageBaseDir ?? undefined}
           width="100%"
           className="h-full cursor-default"
@@ -692,8 +729,7 @@ export function NotePad({
 
                 <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">
                   <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
-                    {errorMessage ??
-                      `${countNoteChars(content)} ${t("common.wordCountUnit", { defaultValue: "字" })} · ${statusLabel[status]}`}
+                    {`${countNoteChars(content)} ${t("common.wordCountUnit", { defaultValue: "字" })} · ${statusLabel[status]}`}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
@@ -712,66 +748,10 @@ export function NotePad({
                 </div>
               </div>
             ) : (
-              <div className="p-2 flex-1 min-h-0 overflow-y-auto">
-                <div className="space-y-0.5">
-                  {notes.map((note) => (
-                    <button
-                      key={note.id}
-                      onClick={() => void handleOpenNote(note.id)}
-                      onMouseEnter={() => setHoveredNote(note.id)}
-                      onMouseLeave={() => setHoveredNote(null)}
-                      className="w-full text-left px-3.5 py-3 rounded-xl transition-all duration-200 cursor-pointer group hover:bg-paper-warm/70"
-                    >
-                      <div className="flex items-center justify-between mb-0.5">
-                        <span className="text-[13px] font-display font-medium text-ink-soft group-hover:text-ink transition-colors truncate pr-2">
-                          {getDisplayTitle(note)}
-                        </span>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              void openNoteInEditor(note.id);
-                            }}
-                            className="w-6 h-6 flex items-center justify-center rounded-md text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all duration-200 opacity-0 group-hover:opacity-100 cursor-pointer"
-                            title={t("notepad.tooltip.openInEditor", {
-                              defaultValue: "在编辑器中打开",
-                            })}
-                          >
-                            <svg
-                              width="13"
-                              height="13"
-                              viewBox="0 0 24 24"
-                              fill="none"
-                              stroke="currentColor"
-                              strokeWidth="2"
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                            >
-                              <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
-                              <polyline points="15 3 21 3 21 9" />
-                              <line x1="10" y1="14" x2="21" y2="3" />
-                            </svg>
-                          </button>
-                          <span className="text-[11px] text-ink-ghost font-mono tabular-nums">
-                            {formatShortDate(note.updatedAt)}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="text-[12px] text-ink-ghost leading-relaxed line-clamp-1 group-hover:text-ink-faint transition-colors">
-                        {note.preview || t("common.blankNote", { defaultValue: "空白笔记" })}
-                      </p>
-                      {hoveredNote === note.id && (
-                        <div className="mt-1.5 h-px bg-bamboo/10 transition-all duration-300" />
-                      )}
-                    </button>
-                  ))}
-                  {notes.length === 0 && (
-                    <div className="px-4 py-8 text-center text-[12px] text-ink-ghost">
-                      {t("notepad.emptyState", { defaultValue: "还没有可打开的笔记" })}
-                    </div>
-                  )}
-                </div>
-              </div>
+              <NotepadOpenPanel
+                notes={notes}
+                onOpenNote={(noteId) => void handleOpenNote(noteId)}
+              />
             )}
           </>
           <SurfaceResizeHandles />

@@ -8,6 +8,22 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Source Han Serif SC";
+  src: url("./assets/fonts/SourceHanSerifSC-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Source Han Serif SC";
+  src: url("./assets/fonts/SourceHanSerifSC-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-paper: #f6f3ec;
   --color-paper-warm: #f0ebe0;
@@ -32,6 +48,7 @@
   --font-body:
     "HarmonyOS Sans SC", -apple-system, BlinkMacSystemFont, "SF Pro Text", "PingFang SC",
     "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-serif: "Source Han Serif SC", "Songti SC", "Noto Serif CJK SC", "STSong", "SimSun", serif;
   --font-mono: "SF Mono", "Menlo", "JetBrains Mono", "Fira Code", "HarmonyOS Sans SC", monospace;
 }
 
@@ -108,6 +125,9 @@ body {
   background: transparent;
   overflow: hidden;
   font-family: var(--font-body);
+  -webkit-user-select: none;
+  user-select: none;
+  cursor: default;
 }
 
 .app-window-shell {
@@ -233,15 +253,37 @@ body {
 }
 
 textarea,
-input {
+input,
+select,
+[contenteditable="true"],
+[contenteditable="plaintext-only"] {
   resize: none;
   outline: none;
   border: none;
   background: transparent;
+  -webkit-user-select: text;
+  user-select: text;
+  cursor: text;
 }
 textarea::placeholder,
 input::placeholder {
   color: var(--color-ink-ghost);
+}
+
+.markdown-selectable,
+.markdown-selectable * {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+.markdown-selectable {
+  cursor: text;
+}
+
+.markdown-selectable button,
+.markdown-selectable svg {
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Noise texture overlay for paper feel */
@@ -369,6 +411,23 @@ input::placeholder {
   animation: menu-exit 0.15s cubic-bezier(0.22, 1, 0.36, 1) forwards;
   pointer-events: none;
 }
+@keyframes tip-marquee {
+  0%,
+  12% {
+    transform: translateX(0);
+  }
+  42%,
+  58% {
+    transform: translateX(var(--tip-scroll-offset));
+  }
+  88%,
+  100% {
+    transform: translateX(0);
+  }
+}
+.animate-tip-marquee {
+  animation: tip-marquee 12s ease-in-out infinite;
+}
 @keyframes menu-slide-left {
   from {
     opacity: 0;
@@ -477,6 +536,22 @@ input::placeholder {
   pointer-events: none;
 }
 
+.popup-menu button {
+  outline: none;
+}
+.popup-menu button:focus-visible {
+  outline: none;
+}
+.popup-menu[data-hover-suppressed] button:hover {
+  background-color: transparent !important;
+}
+.popup-menu[data-hover-suppressed] button.text-red-400:hover {
+  color: rgb(248 113 113) !important;
+}
+.popup-menu[data-hover-suppressed] button.text-ink-soft:hover {
+  color: var(--color-ink-soft) !important;
+}
+
 /* Save status crossfade */
 @keyframes status-fade {
   from {
@@ -488,6 +563,51 @@ input::placeholder {
 }
 .animate-status-fade {
   animation: status-fade 0.25s ease-out forwards;
+}
+
+/* Toast notifications */
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateX(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateX(20px) scale(0.96);
+  }
+}
+.toast-entry {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  max-width: 340px;
+  min-width: 200px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--color-paper-warm) 85%, transparent);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--color-paper-deep) 60%, transparent);
+  box-shadow:
+    0 4px 16px var(--color-shadow-deep),
+    0 1px 3px var(--color-shadow);
+}
+.toast-enter {
+  animation: toast-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.toast-exit {
+  animation: toast-out 0.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  pointer-events: none;
 }
 
 /* KaTeX math rendering */

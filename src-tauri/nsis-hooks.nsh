@@ -5,4 +5,6 @@
   StrCpy $R1 "$INSTDIR" "" $R0
   StrCmp $R1 "\${PRODUCTNAME}" +2
     StrCpy $INSTDIR "$INSTDIR\${PRODUCTNAME}"
+  ; Refresh output path so files are extracted to the (possibly updated) $INSTDIR
+  SetOutPath $INSTDIR
 !macroend

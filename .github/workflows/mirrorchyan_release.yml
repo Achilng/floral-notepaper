@@ -1,0 +1,44 @@
+name: mirrorchyan_release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        default: ""
+        required: false
+  release:
+    types: [published]
+
+jobs:
+  mirrorchyan:
+    if: ${{ github.repository_owner == 'Achilng' }}
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: win
+            arch: x64
+            filename: "floral-notepaper_*_x64-setup.exe"
+          - os: macos
+            arch: x64
+            filename: "floral-notepaper_*_x64.dmg"
+          - os: macos
+            arch: arm64
+            filename: "floral-notepaper_*_aarch64.dmg"
+
+    steps:
+      - uses: MirrorChyan/uploading-action@v1
+        with:
+          filetype: latest-release
+          filename: ${{ matrix.filename }}
+          mirrorchyan_rid: floral
+          tag: ${{ inputs.tag }}
+
+          os: ${{ matrix.os }}
+          arch: ${{ matrix.arch }}
+
+          owner: Achilng
+          repo: floral-notepaper
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}

@@ -2,10 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { emit, listen } from "@tauri-apps/api/event";
+import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { AboutPanel } from "./AboutPanel";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
+import { showToast } from "./Toast";
 import {
   chooseNotesDirectory,
   getConfig,
@@ -14,6 +16,19 @@ import {
 } from "../features/settings/api";
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
+import { getUpdateStatus, reportInstallPreparation } from "../features/update/api";
+import {
+  ABOUT_UPDATE_LABEL_DURATION_MS,
+  applyAboutUpdateStatus,
+  createAboutUpdateReminderState,
+  dismissAboutUpdateReminderText,
+  type AboutUpdateReminderState,
+} from "../features/update/presentation";
+import type {
+  UpdateErrorPayload,
+  UpdateInstallPrepareRequest,
+  UpdateState,
+} from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
@@ -33,8 +48,8 @@ import {
   saveExternalFile,
   updateNote,
 } from "../features/notes/api";
-import { cleanUnusedImages } from "../features/images/api";
-import { useImagePaste } from "../features/images/useImagePaste";
+import { cleanUnusedImages, saveImageFromPath } from "../features/images/api";
+import { useImagePaste, insertTextAtCursor } from "../features/images/useImagePaste";
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
 import type { ExternalFile, Note, NoteMetadata } from "../features/notes/types";
 import {
@@ -66,6 +81,7 @@ import {
 } from "../features/windows/tileWindowEvents";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
+type SidePanelMode = "about" | "settings";
 
 interface NoteMenuState {
   x: number;
@@ -270,13 +286,11 @@ export function pinTileButtonTitle(isPinned: boolean): string {
 interface MainWindowProps {
   initialSettingsOpen?: boolean;
   initialConfig?: AppConfig;
-  initialErrorMessage?: string | null;
 }
 
 export function MainWindow({
   initialSettingsOpen = false,
   initialConfig = undefined,
-  initialErrorMessage = null,
 }: MainWindowProps = {}) {
   const { t } = useTranslation();
   const [notes, setNotes] = useState<NoteMetadata[]>([]);
@@ -292,10 +306,19 @@ export function MainWindow({
   const [saveState, setSaveState] = useState<SaveState>("idle");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState<string | null>(initialErrorMessage);
   const [noteMenu, setNoteMenu] = useState<NoteMenuState | null>(null);
   const [noteMenuClosing, setNoteMenuClosing] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(initialSettingsOpen);
+  const [aboutOpen, setAboutOpen] = useState(false);
+  const [mountedSidePanel, setMountedSidePanel] = useState<SidePanelMode | null>(
+    initialSettingsOpen && initialConfig ? "settings" : null,
+  );
+  const [sidePanelContentVisible, setSidePanelContentVisible] = useState(
+    Boolean(initialSettingsOpen && initialConfig),
+  );
+  const [aboutUpdateReminder, setAboutUpdateReminder] = useState<AboutUpdateReminderState>(() =>
+    createAboutUpdateReminderState(null),
+  );
   const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(initialConfig ?? null);
   const [savedNotesDir, setSavedNotesDir] = useState<string | null>(
     initialConfig?.notesDir ?? null,
@@ -313,7 +336,9 @@ export function MainWindow({
   const [renamingCategory, setRenamingCategory] = useState<string | null>(null);
   const [renameCategoryValue, setRenameCategoryValue] = useState("");
   const [dragOverCategory, setDragOverCategory] = useState<string | null>(null);
-  const [settingsOverlay, setSettingsOverlay] = useState(() => window.innerWidth < 1080);
+  const [settingsOverlay, setSettingsOverlay] = useState(() =>
+    typeof window !== "undefined" ? window.innerWidth < 1080 : true,
+  );
   const [sidebarWidth, setSidebarWidth] = useState(280);
   const [isResizingSidebar, setIsResizingSidebar] = useState(false);
   const [splitRatio, setSplitRatio] = useState(0.5);
@@ -322,14 +347,26 @@ export function MainWindow({
   const [categoryMenu, setCategoryMenu] = useState<CategoryMenuState | null>(null);
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
+  const [categoryMenuHoverSuppressed, setCategoryMenuHoverSuppressed] = useState(false);
   const contentRef = useRef<HTMLTextAreaElement>(null);
+  const windowLabelRef = useRef("main");
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
   const imageBaseDir = useImageBaseDir();
   const saveStateRef = useRef(saveState);
+  const isMacOS = useMemo(() => {
+    return (
+      typeof navigator !== "undefined" &&
+      (/Mac|iPhone|iPad/.test(navigator.platform) || navigator.userAgent.includes("Mac"))
+    );
+  }, []);
   saveStateRef.current = saveState;
   const selectedIdRef = useRef(selectedId);
   selectedIdRef.current = selectedId;
+  const contentValueRef = useRef(content);
+  contentValueRef.current = content;
+  const titleValueRef = useRef(title);
+  titleValueRef.current = title;
 
   const selectedNote = useMemo(
     () => notes.find((note) => note.id === selectedId) ?? null,
@@ -342,8 +379,11 @@ export function MainWindow({
     () => externalFiles.find((f) => f.id === selectedId) ?? null,
     [externalFiles, selectedId],
   );
+  const updateStatusHydratedRef = useRef(false);
 
   const isExternal = selectedExternalFile !== null;
+  const isExternalRef = useRef(isExternal);
+  isExternalRef.current = isExternal;
 
   const noteMenuTarget = useMemo(
     () => notes.find((note) => note.id === noteMenu?.noteId) ?? null,
@@ -444,6 +484,29 @@ export function MainWindow({
     ],
     [t],
   );
+  const syncUpdateStatus = useCallback((nextStatus: UpdateState) => {
+    const shouldHydrate = !updateStatusHydratedRef.current;
+    if (shouldHydrate) {
+      updateStatusHydratedRef.current = true;
+    }
+
+    setAboutUpdateReminder((current) =>
+      shouldHydrate
+        ? createAboutUpdateReminderState(nextStatus)
+        : applyAboutUpdateStatus(current, nextStatus),
+    );
+  }, []);
+  const visibleSidePanel: SidePanelMode | null = aboutOpen
+    ? "about"
+    : settingsOpen && settingsConfig
+      ? "settings"
+      : null;
+  const sidePanelExpanded = visibleSidePanel !== null;
+  const openAboutPanel = useCallback(() => {
+    setSettingsOpen(false);
+    setAboutOpen(true);
+    setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
+  }, []);
 
   const filteredNotes = useMemo(() => filterNotes(notes, searchQuery), [notes, searchQuery]);
 
@@ -464,7 +527,6 @@ export function MainWindow({
     setTitle(note.title);
     setContent(note.content);
     setSaveState("saved");
-    setErrorMessage(null);
     setNoteTransitionKey((k) => k + 1);
   }, []);
 
@@ -481,7 +543,6 @@ export function MainWindow({
 
   const loadNote = useCallback(
     async (id: string) => {
-      setErrorMessage(null);
       const note = await getNote(id);
       applyNote(note);
       replaceNoteMetadata(note);
@@ -504,7 +565,6 @@ export function MainWindow({
   }, []);
 
   const loadExternalFile = useCallback(async (filePath: string) => {
-    setErrorMessage(null);
     try {
       const [fileContent, mtime] = await Promise.all([
         readExternalFile(filePath),
@@ -534,7 +594,15 @@ export function MainWindow({
       setNoteTransitionKey((k) => k + 1);
       externalFileMtimeRef.current = mtime;
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
+    }
+  }, []);
+
+  useEffect(() => {
+    try {
+      windowLabelRef.current = getCurrentWindow().label;
+    } catch {
+      windowLabelRef.current = "main";
     }
   }, []);
 
@@ -570,7 +638,7 @@ export function MainWindow({
           }
         }
       } catch (error) {
-        if (!cancelled) setErrorMessage(getErrorMessage(error));
+        if (!cancelled) showToast(getErrorMessage(error));
       } finally {
         if (!cancelled) setIsLoading(false);
       }
@@ -583,6 +651,133 @@ export function MainWindow({
   }, [applyNote, clearCurrentNote]);
 
   useEffect(() => {
+    let active = true;
+
+    void getUpdateStatus()
+      .then((status) => {
+        if (!active) return;
+        syncUpdateStatus(status);
+      })
+      .catch((error) => {
+        console.error("failed to load update status", error);
+      });
+
+    const bindEvents = async () => {
+      const unlistenFns: UnlistenFn[] = [];
+      const disposeAll = () => {
+        for (const unlisten of unlistenFns.splice(0)) {
+          unlisten();
+        }
+      };
+
+      try {
+        unlistenFns.push(
+          await listen<UpdateState>("update://checking", (event) => {
+            if (!active) return;
+            syncUpdateStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://checked", (event) => {
+            if (!active) return;
+            syncUpdateStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://download-finished", (event) => {
+            if (!active) return;
+            syncUpdateStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateState>("update://install-finished", (event) => {
+            if (!active) return;
+            syncUpdateStatus(event.payload);
+          }),
+        );
+
+        unlistenFns.push(
+          await listen("update://error", () => {
+            if (!active) return;
+            void getUpdateStatus()
+              .then((status) => {
+                if (!active) return;
+                syncUpdateStatus(status);
+              })
+              .catch((error) => {
+                console.error("failed to refresh update status after error event", error);
+              });
+          }),
+        );
+
+        unlistenFns.push(
+          await listen<UpdateErrorPayload>("update://auto-check-error", (event) => {
+            if (!active) return;
+            console.error("automatic update check failed", event.payload);
+            void getUpdateStatus()
+              .then((status) => {
+                if (!active) return;
+                syncUpdateStatus(status);
+              })
+              .catch((error) => {
+                console.error("failed to refresh update status after automatic check error", error);
+              });
+          }),
+        );
+
+        return disposeAll;
+      } catch (error) {
+        disposeAll();
+        console.error("failed to bind update event listeners", error);
+        return () => undefined;
+      }
+    };
+
+    const promise = bindEvents();
+
+    return () => {
+      active = false;
+      void promise
+        .then((dispose) => dispose())
+        .catch((error) => {
+          console.error("failed to dispose update event listeners", error);
+        });
+    };
+  }, [syncUpdateStatus]);
+
+  useEffect(() => {
+    if (!aboutUpdateReminder.showText) return;
+    const timer = window.setTimeout(() => {
+      setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
+    }, ABOUT_UPDATE_LABEL_DURATION_MS);
+    return () => window.clearTimeout(timer);
+  }, [aboutUpdateReminder.showText]);
+  useEffect(() => {
+    if (visibleSidePanel) {
+      setMountedSidePanel(visibleSidePanel);
+      setSidePanelContentVisible(false);
+
+      const frame = window.requestAnimationFrame(() => {
+        setSidePanelContentVisible(true);
+      });
+
+      return () => window.cancelAnimationFrame(frame);
+    }
+
+    setSidePanelContentVisible(false);
+    if (!mountedSidePanel) return;
+
+    const timer = window.setTimeout(() => {
+      setMountedSidePanel((current) => (current === mountedSidePanel ? null : current));
+    }, 320);
+
+    return () => window.clearTimeout(timer);
+  }, [mountedSidePanel, visibleSidePanel]);
+
+  useEffect(() => {
     const unlisten = listen("notes-changed", () => {
       void refreshNotes().then((loaded) => {
         const currentId = selectedIdRef.current;
@@ -593,6 +788,7 @@ export function MainWindow({
             void getNote(currentId)
               .then((note) => {
                 if (selectedIdRef.current !== currentId) return;
+                if (saveStateRef.current === "dirty") return;
                 setTitle(note.title);
                 setContent(note.content);
                 setSaveState("saved");
@@ -637,6 +833,46 @@ export function MainWindow({
   }, [loadExternalFile]);
 
   useEffect(() => {
+    const TEXT_RE = /\.(md|markdown|txt)$/i;
+    const IMAGE_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+
+    const unlisten = getCurrentWindow().onDragDropEvent((event) => {
+      if (event.payload.type !== "drop") return;
+      const textPaths: string[] = [];
+      const imagePaths: string[] = [];
+
+      for (const p of event.payload.paths) {
+        if (TEXT_RE.test(p)) textPaths.push(p);
+        else if (IMAGE_RE.test(p)) imagePaths.push(p);
+      }
+
+      for (const p of textPaths) {
+        void loadExternalFile(p);
+      }
+
+      if (imagePaths.length > 0 && selectedIdRef.current && !isExternalRef.current) {
+        const noteId = selectedIdRef.current;
+        void (async () => {
+          const textarea = contentRef.current;
+          if (!textarea) return;
+          try {
+            const rels = await Promise.all(imagePaths.map((p) => saveImageFromPath(noteId, p)));
+            const markdown = rels.map((rel) => `![](${rel})`).join("\n");
+            insertTextAtCursor(textarea, setContent, markdown);
+            setSaveState("dirty");
+          } catch (error) {
+            showToast(getErrorMessage(error));
+          }
+        })();
+      }
+    });
+
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [loadExternalFile, setContent]);
+
+  useEffect(() => {
     const unlisten = listen<string>("open-note", (event) => {
       void loadNote(event.payload);
     });
@@ -646,8 +882,17 @@ export function MainWindow({
   }, [loadNote]);
 
   useEffect(() => {
+    const unlisten = listen("open-about-panel", () => {
+      openAboutPanel();
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [openAboutPanel]);
+
+  useEffect(() => {
     const unlisten = listen<string>("shortcut-register-failed", (event) => {
-      setErrorMessage(event.payload);
+      showToast(event.payload, "warning");
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -727,9 +972,27 @@ export function MainWindow({
       setCategoryMenu(null);
       setCategoryMenuClosing(false);
       setCategoryMenuConfirmDelete(false);
+      setCategoryMenuHoverSuppressed(false);
     }, 150);
     return () => window.clearTimeout(timer);
   }, [categoryMenuClosing, categoryMenu]);
+
+  useEffect(() => {
+    if (!categoryMenuHoverSuppressed || !categoryMenu) return;
+    const releaseHover = () => setCategoryMenuHoverSuppressed(false);
+    window.addEventListener("mousemove", releaseHover, { once: true });
+    window.addEventListener("mousedown", releaseHover, { once: true });
+    return () => {
+      window.removeEventListener("mousemove", releaseHover);
+      window.removeEventListener("mousedown", releaseHover);
+    };
+  }, [categoryMenuHoverSuppressed, categoryMenu]);
+
+  const switchCategoryMenuPanel = useCallback((confirmDelete: boolean) => {
+    setCategoryMenuHoverSuppressed(true);
+    setCategoryMenuConfirmDelete(confirmDelete);
+    (document.activeElement as HTMLElement | null)?.blur();
+  }, []);
 
   const saveCurrentNote = useCallback(async () => {
     if (!selectedId) return null;
@@ -741,12 +1004,11 @@ export function MainWindow({
         lastExternalSaveRef.current = Date.now();
         const mtime = await getFileModifiedTime(selectedExternalFile.filePath);
         externalFileMtimeRef.current = mtime;
-        setSaveState("saved");
-        setErrorMessage(null);
+        setSaveState(contentValueRef.current === content ? "saved" : "dirty");
         return { id: selectedId, title, content } as Note;
       } catch (error) {
         setSaveState("error");
-        setErrorMessage(getErrorMessage(error));
+        showToast(getErrorMessage(error));
         return null;
       }
     }
@@ -756,12 +1018,12 @@ export function MainWindow({
       const category = selectedNote?.category ?? "";
       const note = await updateNote(selectedId, { title, content, category });
       replaceNoteMetadata(note);
-      setSaveState("saved");
-      setErrorMessage(null);
+      const contentChanged = contentValueRef.current !== content || titleValueRef.current !== title;
+      setSaveState(contentChanged ? "dirty" : "saved");
       return note;
     } catch (error) {
       setSaveState("error");
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
       return null;
     }
   }, [
@@ -773,6 +1035,46 @@ export function MainWindow({
     selectedNote,
     title,
   ]);
+
+  useEffect(() => {
+    const unlisten = listen<UpdateInstallPrepareRequest>("update://prepare-install", (event) => {
+      const respond = async () => {
+        const windowLabel = windowLabelRef.current;
+        if (saveStateRef.current !== "dirty") {
+          await reportInstallPreparation(event.payload.requestId, windowLabel, "ready");
+          return;
+        }
+
+        const saved = await saveCurrentNote();
+        await reportInstallPreparation(
+          event.payload.requestId,
+          windowLabel,
+          saved ? "ready" : "failed",
+          saved
+            ? undefined
+            : t("settings.update.error.installSaveFailed", {
+                defaultValue: "安装前自动保存失败，请先处理当前笔记后重试",
+              }),
+        );
+      };
+
+      void respond().catch(async (error) => {
+        await reportInstallPreparation(
+          event.payload.requestId,
+          windowLabelRef.current,
+          "failed",
+          error instanceof Error
+            ? error.message
+            : t("settings.update.error.installSaveFailed", {
+                defaultValue: "安装前自动保存失败，请先处理当前笔记后重试",
+              }),
+        ).catch(() => undefined);
+      });
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, [saveCurrentNote, t]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -809,7 +1111,6 @@ export function MainWindow({
   ]);
 
   const handleNewNote = async () => {
-    setErrorMessage(null);
     if (saveState === "dirty") {
       await saveCurrentNote();
     }
@@ -818,7 +1119,7 @@ export function MainWindow({
       replaceNoteMetadata(note);
       applyNote(note);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -828,29 +1129,26 @@ export function MainWindow({
       return;
     }
     setSettingsOpen(true);
+    setAboutOpen(false);
     if (settingsConfig) return;
-
-    setErrorMessage(null);
     try {
       const config = await getConfig();
       setSettingsConfig(config);
       setSavedNotesDir(config.notesDir);
       setViewMode(normalizeViewMode(config.defaultViewMode));
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
   const handleChooseNotesDir = async () => {
     if (!settingsConfig) return;
-
-    setErrorMessage(null);
     try {
       const notesDir = await chooseNotesDirectory();
       if (!notesDir) return;
       handleSettingsChange({ ...settingsConfig, notesDir });
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -883,7 +1181,7 @@ export function MainWindow({
             }
           }
         } catch (error) {
-          setErrorMessage(getErrorMessage(error));
+          showToast(getErrorMessage(error));
         }
       }, 300);
     },
@@ -903,8 +1201,22 @@ export function MainWindow({
     setSettingsOpen(false);
   }, []);
 
+  const handleOpenAbout = useCallback(() => {
+    setAboutOpen((open) => {
+      const nextOpen = !open;
+      if (nextOpen) {
+        setSettingsOpen(false);
+        setAboutUpdateReminder((current) => dismissAboutUpdateReminderText(current));
+      }
+      return nextOpen;
+    });
+  }, []);
+
+  const handleCloseAbout = useCallback(() => {
+    setAboutOpen(false);
+  }, []);
+
   const handleImportNote = async () => {
-    setErrorMessage(null);
     try {
       if (selectedId && saveState === "dirty") {
         const saved = await saveCurrentNote();
@@ -917,7 +1229,7 @@ export function MainWindow({
       replaceNoteMetadata(note);
       applyNote(note);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -932,7 +1244,7 @@ export function MainWindow({
     try {
       await loadNote(id);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
@@ -958,11 +1270,10 @@ export function MainWindow({
       setTitle(file.title);
       setContent(fileContent);
       setSaveState("saved");
-      setErrorMessage(null);
       setNoteTransitionKey((k) => k + 1);
       externalFileMtimeRef.current = mtime;
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     } finally {
       setIsLoading(false);
     }
@@ -991,7 +1302,6 @@ export function MainWindow({
     if (!noteId) return;
 
     setDeleteConfirm(false);
-    setErrorMessage(null);
     try {
       await deleteNote(noteId);
       const remaining = await refreshNotes();
@@ -1001,7 +1311,7 @@ export function MainWindow({
         clearCurrentNote();
       }
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -1024,7 +1334,6 @@ export function MainWindow({
   };
 
   const handleExportNote = async (note: NoteMetadata) => {
-    setErrorMessage(null);
     try {
       if (note.id === selectedId && saveState === "dirty") {
         const saved = await saveCurrentNote();
@@ -1036,7 +1345,7 @@ export function MainWindow({
         title: note.id === selectedId ? title : note.title,
       });
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -1061,12 +1370,11 @@ export function MainWindow({
 
   const handleMoveNote = async (noteId: string, targetCategory: string) => {
     setNoteMenuClosing(true);
-    setErrorMessage(null);
     try {
       await moveNoteCategory(noteId, targetCategory);
       await refreshNotes();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -1076,14 +1384,13 @@ export function MainWindow({
       setShowCategoryInput(false);
       return;
     }
-    setErrorMessage(null);
     try {
       await createCategory(name);
       setCategories((prev) => [...prev, name].sort());
       setShowCategoryInput(false);
       setCategoryInputValue("");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -1093,19 +1400,18 @@ export function MainWindow({
       setRenamingCategory(null);
       return;
     }
-    setErrorMessage(null);
+
     try {
       await renameCategory(oldName, newName);
       await refreshNotes();
       setRenamingCategory(null);
       setRenameCategoryValue("");
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
   const handleDeleteCategory = async (name: string) => {
-    setErrorMessage(null);
     try {
       await deleteCategory(name);
       await refreshNotes();
@@ -1113,7 +1419,7 @@ export function MainWindow({
         setActiveCategory("");
       }
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -1156,7 +1462,7 @@ export function MainWindow({
     markDirty,
     onEnsureNoteSaved: ensureNoteSaved,
     disabled: isExternal,
-    onError: setErrorMessage,
+    onError: showToast,
     t,
   });
 
@@ -1165,18 +1471,18 @@ export function MainWindow({
     try {
       const removed = await cleanUnusedImages(selectedId, content);
       if (removed.length > 0) {
-        setErrorMessage(
+        showToast(
           t("main.images.cleaned", {
             count: removed.length,
             defaultValue: "已清理 {{count}} 张图片",
           }),
+          "info",
         );
       } else {
-        setErrorMessage(t("main.images.cleanedNone", { defaultValue: "没有需要清理的图片" }));
+        showToast(t("main.images.cleanedNone", { defaultValue: "没有需要清理的图片" }), "info");
       }
-      setTimeout(() => setErrorMessage(null), 3000);
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -1199,11 +1505,10 @@ export function MainWindow({
   };
 
   const handleOpenNotepad = async () => {
-    setErrorMessage(null);
     try {
       await openNotepadWindow();
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
@@ -1272,32 +1577,30 @@ export function MainWindow({
     if (!isPinned && saveState === "dirty") {
       await saveCurrentNote();
     }
-
-    setErrorMessage(null);
     try {
       const pinned = await toggleTileWindow(selectedId);
       setPinnedTileIds((previous) => {
         return syncPinnedTileIds(previous, selectedId, pinned);
       });
     } catch (error) {
-      setErrorMessage(getErrorMessage(error));
+      showToast(getErrorMessage(error));
     }
   };
 
   const selectedTilePinned = selectedId ? pinnedTileIds.has(selectedId) : false;
 
-  const handleTitleBarDrag = (event: MouseEvent<HTMLDivElement>) => {
-    if ((event.target as HTMLElement).closest("button")) return;
-    void startCurrentWindowDrag().catch(() => undefined);
-  };
-
   const toggleMaximize = () => {
     void toggleMaximizeCurrentWindow().then(() => isCurrentWindowMaximized().then(setIsMaximized));
   };
 
-  const handleTitleBarDoubleClick = (event: MouseEvent<HTMLDivElement>) => {
+  const handleTitleBarMouseDown = (event: MouseEvent<HTMLDivElement>) => {
     if ((event.target as HTMLElement).closest("button")) return;
-    toggleMaximize();
+    if (event.button !== 0) return;
+    if (event.detail === 2) {
+      toggleMaximize();
+      return;
+    }
+    void startCurrentWindowDrag().catch(() => undefined);
   };
 
   const handleMinimize = () => {
@@ -1311,33 +1614,34 @@ export function MainWindow({
   const handleClose = () => {
     void closeCurrentWindow();
   };
+  const aboutButtonLabel = t("settings.update.title", { defaultValue: "更新" });
+  const aboutButtonExpanded = aboutUpdateReminder.showText;
+  const aboutButtonTitle = aboutUpdateReminder.hasPendingUpdate
+    ? aboutButtonLabel
+    : t("main.window.about", { defaultValue: "关于" });
 
   return (
     <div className="w-full h-screen flex flex-col">
       <div className="relative noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
         <BackgroundLayer config={settingsConfig} />
         <div
-          className="relative z-10 flex items-center justify-between pl-5 pr-0 h-11 bg-paper/55 backdrop-blur-[1px] border-b border-paper-deep/30 shrink-0 select-none cursor-default"
-          onMouseDown={handleTitleBarDrag}
-          onDoubleClick={handleTitleBarDoubleClick}
+          className={`relative z-10 flex items-center justify-between h-11 bg-paper/55 backdrop-blur-[1px] border-b border-paper-deep/30 shrink-0 select-none cursor-default ${
+            isMacOS ? "pl-20 pr-5" : "pl-5 pr-0"
+          }`}
+          onMouseDown={handleTitleBarMouseDown}
         >
           <div className="flex items-center gap-3 min-w-0">
-            <span className="text-[13px] font-display font-medium text-ink-soft tracking-wide">
+            <span className="text-[15px] font-serif font-medium text-ink-soft tracking-wide leading-none">
               花笺
             </span>
-            <span className="text-[11px] text-ink-ghost font-body">—</span>
-            <span className="text-[11px] text-ink-faint font-body truncate max-w-[240px]">
+            <span className="text-[11px] text-ink-ghost font-body leading-none">—</span>
+            <span className="text-[11px] text-ink-faint font-body truncate max-w-[240px] leading-none">
               {title ||
                 selectedNote?.preview ||
                 t("common.untitledNote", { defaultValue: "无标题笔记" })}
             </span>
           </div>
           <div className="flex items-center">
-            {errorMessage && (
-              <span className="max-w-[200px] truncate text-[11px] text-red-400 mr-2">
-                {errorMessage}
-              </span>
-            )}
             <button
               onClick={() => void handleOpenNotepad()}
               className="w-10 h-11 flex items-center justify-center text-ink-ghost hover:text-bamboo hover:bg-bamboo-mist/50 transition-all cursor-pointer"
@@ -1376,69 +1680,127 @@ export function MainWindow({
                 <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
               </svg>
             </button>
-
-            <div className="w-px h-4 bg-paper-deep/30 mx-0.5" />
-
             <button
-              onClick={handleMinimize}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={t("main.window.minimize", { defaultValue: "最小化" })}
+              onClick={handleOpenAbout}
+              className={`h-11 flex items-center justify-center overflow-hidden text-ink-ghost hover:text-ink-faint hover:bg-paper-warm transition-[width,padding,gap,background-color,color] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] cursor-pointer ${
+                aboutButtonExpanded ? "w-[72px] gap-1.5 px-3" : "w-10 gap-0 px-0"
+              }`}
+              title={aboutButtonTitle}
+              aria-label={aboutButtonTitle}
             >
-              <svg width="12" height="12" viewBox="0 0 12 12">
-                <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
-              </svg>
-            </button>
-            <button
-              onClick={handleMaximize}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
-              title={
-                isMaximized
-                  ? t("main.window.restore", { defaultValue: "还原" })
-                  : t("main.window.maximize", { defaultValue: "最大化" })
-              }
-            >
-              {isMaximized ? (
+              {aboutUpdateReminder.hasPendingUpdate ? (
                 <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
+                  data-testid="main-about-update-icon"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="1.2"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  <rect x="3" y="3" width="7" height="7" rx="1" />
-                  <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
+                  <circle cx="12" cy="12" r="9" />
+                  <path d="M12 16V8" />
+                  <path d="m8.5 11.5 3.5-3.5 3.5 3.5" />
                 </svg>
               ) : (
                 <svg
-                  width="12"
-                  height="12"
-                  viewBox="0 0 12 12"
+                  data-testid="main-about-info-icon"
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
                   fill="none"
                   stroke="currentColor"
-                  strokeWidth="1.2"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
                 >
-                  <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
+                  <circle cx="12" cy="12" r="10" />
+                  <path d="M12 16v-4" />
+                  <path d="M12 8h.01" />
                 </svg>
               )}
+              {aboutUpdateReminder.hasPendingUpdate ? (
+                <span
+                  data-testid="main-about-update-label"
+                  className={`overflow-hidden whitespace-nowrap text-[11px] font-body leading-none transition-[max-width,opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                    aboutButtonExpanded
+                      ? "max-w-[24px] translate-x-0 opacity-100"
+                      : "max-w-0 translate-x-1 opacity-0"
+                  }`}
+                >
+                  {aboutButtonLabel}
+                </span>
+              ) : null}
             </button>
-            <button
-              onClick={handleClose}
-              className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
-              title={t("main.window.close", { defaultValue: "关闭" })}
-            >
-              <svg
-                width="12"
-                height="12"
-                viewBox="0 0 12 12"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="1.5"
-                strokeLinecap="round"
-              >
-                <path d="M2 2l8 8M10 2l-8 8" />
-              </svg>
-            </button>
+
+            {!isMacOS && (
+              <>
+                <div className="w-px h-4 bg-paper-deep/30 mx-0.5" />
+
+                <button
+                  onClick={handleMinimize}
+                  className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
+                  title={t("main.window.minimize", { defaultValue: "最小化" })}
+                >
+                  <svg width="12" height="12" viewBox="0 0 12 12">
+                    <rect x="1" y="5.5" width="10" height="1" fill="currentColor" rx="0.5" />
+                  </svg>
+                </button>
+                <button
+                  onClick={handleMaximize}
+                  className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-ink-soft hover:bg-paper-warm transition-all cursor-pointer"
+                  title={
+                    isMaximized
+                      ? t("main.window.restore", { defaultValue: "还原" })
+                      : t("main.window.maximize", { defaultValue: "最大化" })
+                  }
+                >
+                  {isMaximized ? (
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                    >
+                      <rect x="3" y="3" width="7" height="7" rx="1" />
+                      <path d="M3 5H2V2a1 1 0 0 1 1-1h5v1" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.2"
+                    >
+                      <rect x="1.5" y="1.5" width="9" height="9" rx="1.5" />
+                    </svg>
+                  )}
+                </button>
+                <button
+                  onClick={handleClose}
+                  className="w-11 h-11 flex items-center justify-center text-ink-ghost hover:text-red-500 hover:bg-danger-bg transition-all cursor-pointer"
+                  title={t("main.window.close", { defaultValue: "关闭" })}
+                >
+                  <svg
+                    width="12"
+                    height="12"
+                    viewBox="0 0 12 12"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                    strokeLinecap="round"
+                  >
+                    <path d="M2 2l8 8M10 2l-8 8" />
+                  </svg>
+                </button>
+              </>
+            )}
           </div>
         </div>
 
@@ -1547,7 +1909,14 @@ export function MainWindow({
                     : ""}
                 </span>
                 <button
-                  onClick={() => setShowCategoryInput(true)}
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => {
+                    if (showCategoryInput && categoryInputValue.trim()) {
+                      void handleCreateCategory();
+                      return;
+                    }
+                    setShowCategoryInput(true);
+                  }}
                   className="text-[10px] text-ink-ghost hover:text-bamboo transition-colors cursor-pointer"
                   title={t("main.category.new", { defaultValue: "新建分类" })}
                 >
@@ -2094,6 +2463,7 @@ export function MainWindow({
                       {t("main.editor.confirmDelete", { defaultValue: "确认删除？" })}
                     </span>
                     <button
+                      onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
                         setDeleteExiting(true);
                         setTimeout(() => {
@@ -2102,11 +2472,12 @@ export function MainWindow({
                           void handleDeleteNote();
                         }, 150);
                       }}
-                      className="px-2 h-6 rounded-md text-[11px] text-cloud bg-red-400 hover:bg-red-500 transition-colors cursor-pointer whitespace-nowrap"
+                      className="px-2 h-6 rounded-md text-[11px] text-cloud bg-red-400 hover:bg-red-500 transition-colors cursor-pointer whitespace-nowrap outline-none"
                     >
                       {t("common.delete", { defaultValue: "删除" })}
                     </button>
                     <button
+                      onMouseDown={(event) => event.preventDefault()}
                       onClick={() => {
                         setDeleteExiting(true);
                         setTimeout(() => {
@@ -2114,7 +2485,7 @@ export function MainWindow({
                           setDeleteConfirm(false);
                         }, 150);
                       }}
-                      className="px-2 h-6 rounded-md text-[11px] text-ink-faint hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer"
+                      className="px-2 h-6 rounded-md text-[11px] text-ink-faint hover:text-ink-soft hover:bg-paper-warm transition-colors cursor-pointer outline-none"
                     >
                       {t("common.cancel", { defaultValue: "取消" })}
                     </button>
@@ -2356,29 +2727,50 @@ export function MainWindow({
           {settingsConfig && settingsOpen && settingsOverlay && (
             <div className="absolute inset-0 z-20" onClick={handleCloseSettings} />
           )}
-          {settingsConfig && (
+          <div
+            className={`relative shrink-0 overflow-hidden h-full transition-[width] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+              sidePanelExpanded || mountedSidePanel ? "border-l border-paper-deep/20" : "border-l-0"
+            } ${
+              settingsOverlay
+                ? `absolute right-0 top-0 bottom-0 z-30 ${visibleSidePanel ? "w-[360px] shadow-xl" : "w-0"}`
+                : `${sidePanelExpanded ? "w-[360px]" : "w-0"}`
+            }`}
+          >
             <div
-              className={`transition-all duration-[600ms] overflow-hidden h-full ${
-                settingsOverlay
-                  ? `absolute right-0 top-0 bottom-0 z-30 ${settingsOpen ? "w-[360px] shadow-xl" : "w-0"}`
-                  : `relative shrink-0 ${settingsOpen ? "w-[360px]" : "w-0"}`
+              className={`absolute inset-0 w-[360px] h-full transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                mountedSidePanel === "about"
+                  ? sidePanelContentVisible && visibleSidePanel === "about"
+                    ? "translate-x-0 opacity-100"
+                    : "pointer-events-none translate-x-4 opacity-0"
+                  : "pointer-events-none translate-x-4 opacity-0"
               }`}
             >
-              <div className="w-[360px] h-full">
+              {mountedSidePanel === "about" ? <AboutPanel onClose={handleCloseAbout} /> : null}
+            </div>
+            <div
+              className={`absolute inset-0 w-[360px] h-full transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                mountedSidePanel === "settings"
+                  ? sidePanelContentVisible && visibleSidePanel === "settings"
+                    ? "translate-x-0 opacity-100"
+                    : "pointer-events-none translate-x-4 opacity-0"
+                  : "pointer-events-none translate-x-4 opacity-0"
+              }`}
+            >
+              {mountedSidePanel === "settings" && settingsConfig ? (
                 <SettingsPanel
                   config={settingsConfig}
                   onChange={handleSettingsChange}
                   onChooseNotesDir={() => void handleChooseNotesDir()}
                   onClose={handleCloseSettings}
                 />
-              </div>
+              ) : null}
             </div>
-          )}
+          </div>
         </div>
       </div>
       {noteMenu && noteMenuTarget && (
         <div
-          className={`fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${noteMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
+          className={`popup-menu fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${noteMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
           style={{ left: noteMenu.x, top: noteMenu.y }}
           onMouseDown={(event) => event.stopPropagation()}
         >
@@ -2440,12 +2832,13 @@ export function MainWindow({
 
       {categoryMenu && (
         <div
-          className={`fixed z-[9999] min-w-[140px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${categoryMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
+          className={`popup-menu fixed z-[9999] min-w-[140px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${categoryMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
+          data-hover-suppressed={categoryMenuHoverSuppressed ? "" : undefined}
           style={{ left: categoryMenu.x, top: categoryMenu.y }}
           onMouseDown={(event) => event.stopPropagation()}
         >
           {categoryMenuConfirmDelete ? (
-            <div className="animate-menu-slide-left">
+            <div key="category-confirm" className="animate-menu-slide-left">
               <div className="px-3 py-1.5 text-[11px] font-body text-ink-faint border-b border-paper-deep/20">
                 {t("main.category.confirmDelete", {
                   category: categoryMenu.category,
@@ -2453,23 +2846,25 @@ export function MainWindow({
                 })}
               </div>
               <button
+                onMouseDown={(event) => event.preventDefault()}
                 onClick={() => {
                   void handleDeleteCategory(categoryMenu.category);
                   setCategoryMenuClosing(true);
                 }}
-                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer"
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer outline-none"
               >
                 {t("main.category.confirmDeleteAction", { defaultValue: "确认删除" })}
               </button>
               <button
-                onClick={() => setCategoryMenuConfirmDelete(false)}
-                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => switchCategoryMenuPanel(false)}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-ink-soft hover:bg-bamboo-mist/60 hover:text-bamboo transition-colors cursor-pointer outline-none"
               >
                 {t("common.cancel", { defaultValue: "取消" })}
               </button>
             </div>
           ) : (
-            <div className="animate-menu-slide-right">
+            <div key="category-main" className="animate-menu-slide-right">
               <button
                 onClick={() => {
                   setCategoryMenuClosing(true);
@@ -2481,8 +2876,9 @@ export function MainWindow({
                 {t("main.category.rename", { defaultValue: "重命名" })}
               </button>
               <button
-                onClick={() => setCategoryMenuConfirmDelete(true)}
-                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer border-t border-paper-deep/20"
+                onMouseDown={(event) => event.preventDefault()}
+                onClick={() => switchCategoryMenuPanel(true)}
+                className="w-full text-left px-3 py-1.5 text-[12px] font-body text-red-400 hover:bg-danger-bg hover:text-red-500 transition-colors cursor-pointer border-t border-paper-deep/20 outline-none"
               >
                 {t("main.category.delete", { defaultValue: "删除分类" })}
               </button>

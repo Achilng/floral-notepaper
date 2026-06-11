@@ -17,6 +17,8 @@ obj/
 [Rr]elease/
 x64/
 x86/
+*.dmg
+*.app
 
 ## Node / Tauri
 node_modules/
@@ -28,14 +30,20 @@ src-tauri/gen/
 .husky/pre-push
 
 ## agent文档
-PLAN.md
+*PLAN.md
+PLAN*.md
 PROGRESS.md
 AGENTS.md
 CLAUDE.md
 .codex
+*ANALYSIS.md
+.claude
+
+src/assets/fonts/SourceHanSerifSC-Bold.woff2
 
 ## IDE
 .idea/
+.vscode/
 *.swp
 *~
 
@@ -50,6 +58,11 @@ Desktop.ini
 *.icon
 src-tauri/icons/macOS
 
+## Generated
+src/generated/contributors.json
+
 ## Temp
 temp/
 nul
+tsconfig.tsbuildinfo
+Docs/windows-install-chain-code-review.md

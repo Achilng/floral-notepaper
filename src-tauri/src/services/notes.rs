@@ -1,3 +1,4 @@
+use crate::json_io::write_json_atomic;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -17,7 +18,6 @@ const LEGACY_MACOS_GLOBAL_SHORTCUTS: [&str; 5] = [
     "Control+Option+Space",
     "Ctrl+Alt+Space",
 ];
-#[cfg(target_os = "macos")]
 const MACOS_SHORTCUT_MIGRATION_MARKER: &str = ".macos-shortcut-default-v3";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -76,6 +76,8 @@ pub struct AppConfig {
     pub surface_height: Option<u32>,
     #[serde(default = "default_toggle_visibility_shortcut")]
     pub toggle_visibility_shortcut: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_known_base_dir: Option<String>,
     #[serde(default = "default_open_at_cursor")]
     pub open_at_cursor: bool,
 }
@@ -216,18 +218,68 @@ fn default_base_dir() -> Result<PathBuf, AppError> {
     }
 
     #[cfg(target_os = "macos")]
-    if let Ok(home) = env::var("HOME") {
-        return Ok(PathBuf::from(home)
-            .join("Library")
-            .join("Application Support")
-            .join("花笺"));
+    if let Some(dir) = dirs::data_dir() {
+        return Ok(dir.join("花笺"));
     }
 
-    if let Ok(user_profile) = env::var("USERPROFILE") {
-        return Ok(PathBuf::from(user_profile).join("Documents").join("花笺"));
+    if let Some(dir) = dirs::document_dir() {
+        return Ok(dir.join("花笺"));
     }
 
     Ok(env::current_dir()?.join("data"))
+}
+
+fn known_data_migration_candidates() -> Vec<PathBuf> {
+    known_data_migration_candidates_for(env::var("HOME").ok(), env::var("USERPROFILE").ok())
+}
+
+fn known_data_migration_candidates_for(
+    home: Option<String>,
+    userprofile: Option<String>,
+) -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(home) = home {
+        let home = PathBuf::from(home);
+        candidates.push(home.join("Documents").join("花笺"));
+        candidates.push(
+            home.join("Library")
+                .join("Application Support")
+                .join("花笺"),
+        );
+    }
+    if let Some(profile) = userprofile {
+        let profile = PathBuf::from(profile);
+        candidates.push(profile.join("Documents").join("花笺"));
+    }
+
+    candidates
+}
+
+fn move_or_copy_dir(from: &Path, to: &Path) -> Result<(), AppError> {
+    if fs::rename(from, to).is_ok() {
+        return Ok(());
+    }
+    // cross-filesystem fallback
+    if let Some(parent) = to.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    copy_dir_recursive(from, to)?;
+    fs::remove_dir_all(from)?;
+    Ok(())
+}
+
+fn copy_dir_recursive(from: &Path, to: &Path) -> Result<(), AppError> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_recursive(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), &target)?;
+        }
+    }
+    Ok(())
 }
 
 fn is_filesystem_root(path: &Path) -> bool {
@@ -319,6 +371,9 @@ impl NoteStore {
     pub fn load_config(&self) -> Result<AppConfig, AppError> {
         self.ensure_base_dir()?;
         let path = self.config_path();
+        if !path.exists() && self.is_default_base_dir() {
+            self.migrate_from_known_locations()?;
+        }
         if !path.exists() {
             let config = self.default_config();
             self.save_config(config.clone())?;
@@ -327,10 +382,12 @@ impl NoteStore {
         }
 
         let mut config: AppConfig = serde_json::from_str(&fs::read_to_string(&path)?)?;
+        self.migrate_base_dir_if_changed(&mut config)?;
         if is_safe_notes_dir(Path::new(&config.notes_dir)).is_err() {
             config.notes_dir = self.default_config().notes_dir;
-            write_json_atomic(&path, &config)?;
         }
+        config.last_known_base_dir = Some(self.base_dir.to_string_lossy().to_string());
+        write_json_atomic(&path, &config)?;
         fs::create_dir_all(&config.notes_dir)?;
         if self.migrate_macos_shortcut_default(&mut config)? {
             write_json_atomic(&path, &config)?;
@@ -767,8 +824,74 @@ impl NoteStore {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
+            last_known_base_dir: Some(self.base_dir.to_string_lossy().to_string()),
             open_at_cursor: default_open_at_cursor(),
         }
+    }
+
+    fn migrate_from_known_locations(&self) -> Result<(), AppError> {
+        let current = &self.base_dir;
+        if current.join("config.json").exists() {
+            return Ok(());
+        }
+        for old_dir in known_data_migration_candidates() {
+            if old_dir != *current && old_dir.join("config.json").exists() {
+                eprintln!(
+                    "migrating data from {} to {}",
+                    old_dir.display(),
+                    current.display()
+                );
+                return move_or_copy_dir(&old_dir, current);
+            }
+        }
+        Ok(())
+    }
+
+    fn is_default_base_dir(&self) -> bool {
+        default_base_dir()
+            .map(|default_dir| default_dir == self.base_dir)
+            .unwrap_or(false)
+    }
+
+    fn migrate_base_dir_if_changed(&self, config: &mut AppConfig) -> Result<(), AppError> {
+        let Some(ref last_known) = config.last_known_base_dir else {
+            return Ok(());
+        };
+        if Path::new(last_known.as_str()) == self.base_dir.as_path() {
+            return Ok(());
+        }
+        let old_dir = Path::new(last_known);
+        if !old_dir.exists() {
+            return Ok(());
+        }
+        if self.base_dir_has_user_data()? {
+            return Ok(());
+        }
+        eprintln!(
+            "migrating data from {last_known} to {}",
+            self.base_dir.display()
+        );
+        move_or_copy_dir(old_dir, &self.base_dir)
+    }
+
+    fn base_dir_has_user_data(&self) -> Result<bool, AppError> {
+        if !self.base_dir.exists() {
+            return Ok(false);
+        }
+
+        for entry in fs::read_dir(&self.base_dir)? {
+            let entry = entry?;
+            let file_name = entry.file_name();
+            let Some(name) = file_name.to_str() else {
+                return Ok(true);
+            };
+            if name == "config.json" || name == MACOS_SHORTCUT_MIGRATION_MARKER {
+                continue;
+            }
+            return Ok(true);
+        }
+
+        Ok(false)
     }
 
     fn ensure_base_dir(&self) -> Result<(), AppError> {
@@ -939,16 +1062,6 @@ impl NoteStore {
         }
         Ok(())
     }
-}
-
-fn write_json_atomic<T: Serialize>(path: &Path, value: &T) -> Result<(), AppError> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)?;
-    }
-    let temp_path = path.with_extension("json.tmp");
-    fs::write(&temp_path, serde_json::to_string_pretty(value)?)?;
-    fs::rename(&temp_path, path)?;
-    Ok(())
 }
 
 #[cfg(target_os = "macos")]
@@ -1250,7 +1363,7 @@ mod tests {
         assert!(default_config.notes_dir.ends_with("notes"));
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
-        let saved = AppConfig {
+        let mut saved = AppConfig {
             locale: "en-US".into(),
             notes_dir: custom_notes_dir.join("notes").to_string_lossy().to_string(),
             global_shortcut: "Alt+Space".into(),
@@ -1280,14 +1393,87 @@ mod tests {
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
+            last_known_base_dir: None,
             open_at_cursor: true,
         };
 
         store.save_config(saved.clone()).expect("save config");
 
         let loaded = store.load_config().expect("reload config");
+        saved.last_known_base_dir = Some(store.base_dir().to_string_lossy().to_string());
         assert_eq!(loaded, saved);
         assert!(custom_notes_dir.exists());
+    }
+
+    #[test]
+    fn data_migration_candidates_include_legacy_chinese_dirs() {
+        let candidates = known_data_migration_candidates_for(
+            Some("/Users/alice".into()),
+            Some(r"C:\Users\Alice".into()),
+        );
+
+        assert!(candidates.contains(&PathBuf::from("/Users/alice").join("Documents").join("花笺")));
+        assert!(candidates.contains(
+            &PathBuf::from("/Users/alice")
+                .join("Library")
+                .join("Application Support")
+                .join("花笺")
+        ));
+        assert!(candidates.contains(
+            &PathBuf::from(r"C:\Users\Alice")
+                .join("Documents")
+                .join("花笺")
+        ));
+    }
+
+    #[test]
+    fn migrates_last_known_base_dir_when_current_dir_only_has_config() {
+        let root = test_root("last-known-base-dir-migration");
+        let old_store = NoteStore::new(root.join("old"));
+        fs::create_dir_all(old_store.base_dir()).expect("create old base");
+        fs::write(old_store.metadata_path(), r#"{"notes":[]}"#).expect("write old metadata");
+        fs::write(old_store.base_dir().join("legacy.txt"), "legacy").expect("write legacy file");
+
+        let new_store = NoteStore::new(root.join("new"));
+        fs::create_dir_all(new_store.base_dir()).expect("create new base");
+        let mut config = new_store.default_config();
+        config.last_known_base_dir = Some(old_store.base_dir().to_string_lossy().to_string());
+        write_json_atomic(&new_store.config_path(), &config).expect("write copied config");
+
+        let loaded = new_store.load_config().expect("load copied config");
+
+        assert_eq!(
+            loaded.last_known_base_dir.as_deref(),
+            Some(new_store.base_dir().to_string_lossy().as_ref())
+        );
+        assert_eq!(
+            fs::read_to_string(new_store.base_dir().join("legacy.txt"))
+                .expect("read migrated legacy file"),
+            "legacy"
+        );
+        assert!(new_store.metadata_path().exists());
+        assert!(!old_store.base_dir().exists());
+    }
+
+    #[test]
+    fn does_not_merge_last_known_base_dir_into_non_empty_current_dir() {
+        let root = test_root("last-known-base-dir-non-empty");
+        let old_store = NoteStore::new(root.join("old"));
+        fs::create_dir_all(old_store.base_dir()).expect("create old base");
+        fs::write(old_store.base_dir().join("legacy.txt"), "legacy").expect("write legacy file");
+
+        let new_store = NoteStore::new(root.join("new"));
+        fs::create_dir_all(new_store.base_dir()).expect("create new base");
+        fs::write(new_store.metadata_path(), r#"{"notes":[]}"#).expect("write current metadata");
+        let mut config = new_store.default_config();
+        config.last_known_base_dir = Some(old_store.base_dir().to_string_lossy().to_string());
+        write_json_atomic(&new_store.config_path(), &config).expect("write copied config");
+
+        new_store.load_config().expect("load copied config");
+
+        assert!(old_store.base_dir().exists());
+        assert!(!new_store.base_dir().join("legacy.txt").exists());
+        assert!(new_store.metadata_path().exists());
     }
 
     #[test]

@@ -10,6 +10,10 @@ function resolveTheme(option: ThemeOption): "light" | "dark" {
 export function applyTheme(option: ThemeOption): void {
   const root = document.documentElement;
   const resolved = resolveTheme(option);
+  // Cache to localStorage so the blocking script in index.html can set
+  // data-theme before first paint, preventing a flash of wrong theme.
+  localStorage.setItem("theme-option", option);
+  localStorage.setItem("theme-resolved", resolved);
   if (root.getAttribute("data-theme") !== resolved) {
     root.classList.add("theme-transition");
     root.setAttribute("data-theme", resolved);
