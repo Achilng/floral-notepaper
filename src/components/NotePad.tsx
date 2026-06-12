@@ -29,7 +29,13 @@ import {
   normalizeTileColor,
   resolveTileColor,
 } from "../features/settings/tileColor";
-import type { TileColorMode } from "../features/settings/types";
+import type { EditorShortcuts, TileColorMode } from "../features/settings/types";
+import {
+  commandForKeyboardEvent,
+  DEFAULT_EDITOR_SHORTCUTS,
+  normalizeEditorShortcuts,
+  runMarkdownShortcutOnTextarea,
+} from "../features/editorShortcuts/markdownShortcuts";
 import { shouldSaveBeforeSwitchingToTile } from "../features/windows/noteSurfaceSavePolicy";
 import {
   NOTE_SURFACE_ACTION_EVENT,
@@ -124,6 +130,7 @@ export function NotePad({
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
   const [surfaceFontSize, setSurfaceFontSize] = useState(14);
   const [tileRenderMarkdown, setTileRenderMarkdown] = useState(false);
+  const [editorShortcuts, setEditorShortcuts] = useState(DEFAULT_EDITOR_SHORTCUTS);
   const [tileColor, setTileColor] = useState(() =>
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
@@ -186,6 +193,7 @@ export function NotePad({
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
           setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
           setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
+          setEditorShortcuts(normalizeEditorShortcuts(loadedConfig.editorShortcuts));
           setTileColorRaw(normalizeTileColor(loadedConfig.tileColor));
           setTileColorMode(loadedConfig.tileColorMode ?? "system");
           setTileColor(
@@ -240,6 +248,7 @@ export function NotePad({
       tileColorMode?: TileColorMode;
       surfaceFontSize?: number;
       tileRenderMarkdown?: boolean;
+      editorShortcuts?: Partial<EditorShortcuts>;
     }>("config-changed", (event) => {
       const mode = event.payload.tileColorMode ?? tileColorMode;
       const raw = event.payload.tileColor ?? tileColorRaw;
@@ -249,6 +258,8 @@ export function NotePad({
       if (event.payload.surfaceFontSize != null) setSurfaceFontSize(event.payload.surfaceFontSize);
       if (event.payload.tileRenderMarkdown != null)
         setTileRenderMarkdown(event.payload.tileRenderMarkdown);
+      if (event.payload.editorShortcuts != null)
+        setEditorShortcuts(normalizeEditorShortcuts(event.payload.editorShortcuts));
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -711,6 +722,16 @@ export function NotePad({
                   onDrop={imageDropHandler}
                   onDragOver={imageDragOverHandler}
                   onKeyDown={(event) => {
+                    const command = commandForKeyboardEvent(event, editorShortcuts);
+                    if (command && contentRef.current) {
+                      event.preventDefault();
+                      event.stopPropagation();
+                      runMarkdownShortcutOnTextarea(contentRef.current, command, setContent, () =>
+                        setStatus("dirty"),
+                      );
+                      return;
+                    }
+
                     if (event.key === "ArrowUp") {
                       const ta = contentRef.current;
                       if (ta && ta.selectionStart === ta.selectionEnd) {

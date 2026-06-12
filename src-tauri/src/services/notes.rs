@@ -80,6 +80,27 @@ pub struct AppConfig {
     pub last_known_base_dir: Option<String>,
     #[serde(default = "default_open_at_cursor")]
     pub open_at_cursor: bool,
+    #[serde(default = "default_editor_shortcuts")]
+    pub editor_shortcuts: EditorShortcuts,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct EditorShortcuts {
+    pub paragraph: String,
+    pub heading1: String,
+    pub heading2: String,
+    pub heading3: String,
+    pub heading4: String,
+    pub heading5: String,
+    pub heading6: String,
+    pub bold: String,
+    pub italic: String,
+    pub strike: String,
+    pub quote: String,
+    pub unordered_list: String,
+    pub ordered_list: String,
+    pub code_block: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -826,6 +847,7 @@ impl NoteStore {
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
             last_known_base_dir: Some(self.base_dir.to_string_lossy().to_string()),
             open_at_cursor: default_open_at_cursor(),
+            editor_shortcuts: default_editor_shortcuts(),
         }
     }
 
@@ -1237,6 +1259,26 @@ fn default_toggle_visibility_shortcut() -> String {
     String::new()
 }
 
+fn default_editor_shortcuts() -> EditorShortcuts {
+    EditorShortcuts {
+        // 备注：这些是编辑器内的局部快捷键，不会注册为系统全局快捷键。
+        paragraph: "Ctrl+0".into(),
+        heading1: "Ctrl+1".into(),
+        heading2: "Ctrl+2".into(),
+        heading3: "Ctrl+3".into(),
+        heading4: "Ctrl+4".into(),
+        heading5: "Ctrl+5".into(),
+        heading6: "Ctrl+6".into(),
+        bold: "Ctrl+B".into(),
+        italic: "Ctrl+I".into(),
+        strike: "Ctrl+Shift+X".into(),
+        quote: "Ctrl+Shift+Q".into(),
+        unordered_list: "Ctrl+Shift+L".into(),
+        ordered_list: "Ctrl+Shift+O".into(),
+        code_block: "Ctrl+Shift+K".into(),
+    }
+}
+
 fn default_open_at_cursor() -> bool {
     true
 }
@@ -1361,6 +1403,8 @@ mod tests {
         assert_eq!(default_config.theme, "system");
         assert_eq!(default_config.locale, "zh-CN");
         assert!(default_config.notes_dir.ends_with("notes"));
+        assert_eq!(default_config.editor_shortcuts.heading1, "Ctrl+1");
+        assert_eq!(default_config.editor_shortcuts.code_block, "Ctrl+Shift+K");
 
         let custom_notes_dir = store.base_dir().join("custom-notes");
         let mut saved = AppConfig {
@@ -1395,6 +1439,7 @@ mod tests {
             toggle_visibility_shortcut: String::new(),
             last_known_base_dir: None,
             open_at_cursor: true,
+            editor_shortcuts: default_editor_shortcuts(),
         };
 
         store.save_config(saved.clone()).expect("save config");

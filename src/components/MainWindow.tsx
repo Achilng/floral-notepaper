@@ -14,6 +14,11 @@ import {
   normalizeViewMode,
   saveConfig,
 } from "../features/settings/api";
+import {
+  commandForKeyboardEvent,
+  normalizeEditorShortcuts,
+  runMarkdownShortcutOnTextarea,
+} from "../features/editorShortcuts/markdownShortcuts";
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
 import { getUpdateStatus, reportInstallPreparation } from "../features/update/api";
@@ -2626,6 +2631,22 @@ export function MainWindow({
                           onPaste={imagePasteHandler}
                           onDrop={imageDropHandler}
                           onDragOver={imageDragOverHandler}
+                          onKeyDown={(event) => {
+                            const command = commandForKeyboardEvent(
+                              event,
+                              normalizeEditorShortcuts(settingsConfig?.editorShortcuts),
+                            );
+                            if (!command || !contentRef.current) return;
+
+                            event.preventDefault();
+                            event.stopPropagation();
+                            runMarkdownShortcutOnTextarea(
+                              contentRef.current,
+                              command,
+                              setContent,
+                              markDirty,
+                            );
+                          }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-body placeholder:text-ink-ghost/40"
                           style={{
                             fontSize: `${settingsConfig?.fontSize ?? 14}px`,

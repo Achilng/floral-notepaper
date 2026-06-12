@@ -2519,6 +2519,26 @@ mod tests {
     }
 
     #[cfg(desktop)]
+    fn test_editor_shortcuts() -> crate::services::notes::EditorShortcuts {
+        crate::services::notes::EditorShortcuts {
+            paragraph: "Ctrl+0".into(),
+            heading1: "Ctrl+1".into(),
+            heading2: "Ctrl+2".into(),
+            heading3: "Ctrl+3".into(),
+            heading4: "Ctrl+4".into(),
+            heading5: "Ctrl+5".into(),
+            heading6: "Ctrl+6".into(),
+            bold: "Ctrl+B".into(),
+            italic: "Ctrl+I".into(),
+            strike: "Ctrl+Shift+X".into(),
+            quote: "Ctrl+Shift+Q".into(),
+            unordered_list: "Ctrl+Shift+L".into(),
+            ordered_list: "Ctrl+Shift+O".into(),
+            code_block: "Ctrl+Shift+K".into(),
+        }
+    }
+
+    #[cfg(desktop)]
     fn test_app_config(global_shortcut: &str, toggle_visibility_shortcut: &str) -> AppConfig {
         AppConfig {
             locale: "zh-CN".into(),
@@ -2552,6 +2572,7 @@ mod tests {
             surface_height: None,
             toggle_visibility_shortcut: toggle_visibility_shortcut.into(),
             last_known_base_dir: None,
+            editor_shortcuts: test_editor_shortcuts(),
         }
     }
 
@@ -2633,6 +2654,7 @@ mod tests {
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
             last_known_base_dir: None,
+            editor_shortcuts: test_editor_shortcuts(),
         };
         let next = AppConfig {
             locale: "en-US".into(),
@@ -2666,6 +2688,7 @@ mod tests {
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),
             last_known_base_dir: None,
+            editor_shortcuts: test_editor_shortcuts(),
         };
 
         assert_eq!(
