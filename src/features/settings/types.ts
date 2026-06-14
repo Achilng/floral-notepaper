@@ -13,13 +13,6 @@ export interface EditorShortcuts {
   heading4: string;
   heading5: string;
   heading6: string;
-  bold: string;
-  italic: string;
-  strike: string;
-  quote: string;
-  unorderedList: string;
-  orderedList: string;
-  codeBlock: string;
 }
 
 export interface AppConfig {

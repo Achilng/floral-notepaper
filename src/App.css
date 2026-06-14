@@ -16,6 +16,14 @@
   font-display: swap;
 }
 
+@font-face {
+  font-family: "Source Han Serif SC";
+  src: url("./assets/fonts/SourceHanSerifSC-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
   --color-paper: #f6f3ec;
   --color-paper-warm: #f0ebe0;

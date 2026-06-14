@@ -40,7 +40,7 @@ import {
   commandForKeyboardEvent,
   DEFAULT_EDITOR_SHORTCUTS,
   normalizeEditorShortcuts,
-  runMarkdownShortcutOnTextarea,
+  runEditorShortcutOnTextarea,
 } from "../features/editorShortcuts/markdownShortcuts";
 import { shouldSaveBeforeSwitchingToTile } from "../features/windows/noteSurfaceSavePolicy";
 import {
@@ -732,7 +732,7 @@ export function NotePad({
                     if (command && contentRef.current) {
                       event.preventDefault();
                       event.stopPropagation();
-                      runMarkdownShortcutOnTextarea(contentRef.current, command, setContent, () =>
+                      runEditorShortcutOnTextarea(contentRef.current, command, setContent, () =>
                         setStatus("dirty"),
                       );
                       return;

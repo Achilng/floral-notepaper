@@ -2,13 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { checkGlobalShortcut, chooseBackgroundImage } from "../features/settings/api";
-import {
-  DEFAULT_EDITOR_SHORTCUTS,
-  MARKDOWN_SHORTCUTS,
-  editorShortcutConflicts,
-  normalizeEditorShortcuts,
-  type MarkdownShortcutCommand,
-} from "../features/editorShortcuts/markdownShortcuts";
 import { UpdateSettingsSection } from "../features/update/UpdateSettingsSection";
 import type {
   AppConfig,
@@ -40,23 +33,8 @@ interface SettingsPanelProps {
 
 export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: SettingsPanelProps) {
   const { t } = useTranslation();
-  const [editorShortcutsOpen, setEditorShortcutsOpen] = useState(false);
   const setConfigValue = <Key extends keyof AppConfig>(key: Key, value: AppConfig[Key]) => {
     onChange({ ...config, [key]: value });
-  };
-  const editorShortcuts = useMemo(
-    () => normalizeEditorShortcuts(config.editorShortcuts),
-    [config.editorShortcuts],
-  );
-  const conflictingEditorShortcuts = useMemo(
-    () => editorShortcutConflicts(editorShortcuts),
-    [editorShortcuts],
-  );
-  const setEditorShortcut = (command: MarkdownShortcutCommand, value: string) => {
-    setConfigValue("editorShortcuts", { ...editorShortcuts, [command]: value });
-  };
-  const resetEditorShortcuts = () => {
-    setConfigValue("editorShortcuts", DEFAULT_EDITOR_SHORTCUTS);
   };
   const tileColorModes = useMemo<Array<{ value: TileColorMode; label: string }>>(
     () => [
@@ -257,63 +235,6 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
               onChange={(v) => setConfigValue("toggleVisibilityShortcut", v)}
             />
           </div>
-        </section>
-
-        <section className="space-y-2">
-          <div className="flex items-start justify-between gap-3">
-            <div className="min-w-0">
-              <label className="block text-[11px] font-body text-ink-faint">
-                {t("settings.editorShortcuts.title", { defaultValue: "编辑快捷键" })}
-              </label>
-              <p className="mt-0.5 text-[10px] text-ink-ghost leading-relaxed">
-                {t("settings.editorShortcuts.description", {
-                  defaultValue: "仅在编辑器输入框聚焦时生效，可单独覆盖 Markdown 操作快捷键。",
-                })}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setEditorShortcutsOpen((open) => !open)}
-              className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer whitespace-nowrap"
-            >
-              {editorShortcutsOpen
-                ? t("settings.editorShortcuts.collapse", { defaultValue: "收起" })
-                : t("settings.editorShortcuts.edit", { defaultValue: "编辑" })}
-            </button>
-          </div>
-
-          {editorShortcutsOpen && (
-            <div className="space-y-2 rounded-lg border border-paper-deep/30 bg-paper-warm/25 p-2.5">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-[10px] text-ink-ghost">
-                  {t("settings.editorShortcuts.scopeHint", {
-                    defaultValue: "主编辑器与快捷便签都会生效",
-                  })}
-                </span>
-                <button
-                  type="button"
-                  onClick={resetEditorShortcuts}
-                  className="h-7 px-2.5 rounded-lg border border-paper-deep/45 text-[10px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer whitespace-nowrap"
-                >
-                  {t("settings.editorShortcuts.reset", { defaultValue: "恢复默认" })}
-                </button>
-              </div>
-              <div className="space-y-2">
-                {MARKDOWN_SHORTCUTS.map(({ command, labelKey, defaultLabel }) => (
-                  <div key={command} className="space-y-1">
-                    <label className="block text-[11px] text-ink-faint/80 px-0.5">
-                      {t(labelKey, { defaultValue: defaultLabel })}
-                    </label>
-                    <EditorShortcutRecorder
-                      value={editorShortcuts[command]}
-                      hasConflict={conflictingEditorShortcuts.has(command)}
-                      onChange={(value) => setEditorShortcut(command, value)}
-                    />
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
         </section>
 
         <section className="space-y-2">
@@ -612,122 +533,7 @@ interface ShortcutRecorderProps {
   onChange: (value: string) => void;
 }
 
-interface EditorShortcutRecorderProps extends ShortcutRecorderProps {
-  hasConflict: boolean;
-}
-
 type ShortcutMsg = { key: string; params?: Record<string, string> } | { raw: string };
-
-function EditorShortcutRecorder({ value, onChange, hasConflict }: EditorShortcutRecorderProps) {
-  const { t } = useTranslation();
-  const [invalid, setInvalid] = useState(false);
-  const platform = shortcutPlatform();
-  const recorder = useShortcutRecorder({
-    onRecord: (shortcut) => {
-      if (shortcut === "") {
-        onChange("");
-        setInvalid(false);
-        return;
-      }
-
-      if (!isValidGlobalShortcut(shortcut)) {
-        setInvalid(true);
-        return;
-      }
-
-      // 备注：编辑器快捷键是 textarea 内部行为，只需要保存配置字符串，不注册系统全局快捷键。
-      onChange(hotkeyToConfigString(shortcut, platform));
-      setInvalid(false);
-    },
-  });
-  const containerRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!recorder.isRecording) return;
-    const handleClick = (e: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
-        recorder.cancelRecording();
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [recorder.isRecording, recorder.cancelRecording]);
-
-  const clearShortcut = () => {
-    recorder.cancelRecording();
-    onChange("");
-    setInvalid(false);
-  };
-
-  const liveDisplay =
-    recorder.isRecording && recorder.heldKeys.length > 0
-      ? formatHeldKeys(recorder.heldKeys, platform)
-      : null;
-  const statusClass = invalid || hasConflict ? "text-red-400" : "text-ink-ghost";
-  const statusText = invalid
-    ? t("settings.editorShortcuts.invalid", {
-        defaultValue: "快捷键需要包含 Ctrl、Option/Alt 或 Command/Meta",
-      })
-    : hasConflict
-      ? t("settings.editorShortcuts.conflict", { defaultValue: "快捷键重复" })
-      : t("settings.editorShortcuts.localOnly", { defaultValue: "编辑器内生效" });
-
-  return (
-    <div ref={containerRef} className="space-y-1">
-      <div className="flex gap-2">
-        <button
-          type="button"
-          onClick={() => recorder.startRecording()}
-          className={`min-w-0 flex-1 h-8 px-2.5 rounded-lg border text-[12px] flex items-center gap-2 cursor-pointer transition-colors ${
-            recorder.isRecording
-              ? "bg-bamboo-mist/40 border-bamboo"
-              : hasConflict
-                ? "bg-paper-warm/70 border-red-400/50"
-                : "bg-paper-warm/70 border-paper-deep/40 hover:border-paper-deep/60"
-          }`}
-        >
-          {recorder.isRecording ? (
-            <>
-              <span className="flex-1 min-w-0 text-left text-bamboo truncate">
-                {liveDisplay ||
-                  t("settings.shortcut.pressHint", {
-                    defaultValue: "按下快捷键；按 Delete 清空。",
-                  })}
-              </span>
-              <span className="text-[10px] text-ink-faint shrink-0">
-                {t("settings.shortcut.cancelHint", { defaultValue: "Esc 取消" })}
-              </span>
-            </>
-          ) : (
-            <>
-              <span
-                className={`flex-1 min-w-0 text-left truncate ${
-                  value ? "text-ink-soft" : "text-ink-ghost"
-                }`}
-              >
-                {value || t("settings.shortcut.notSet", { defaultValue: "未设置" })}
-              </span>
-              <span className="text-[10px] text-ink-ghost shrink-0">
-                {t("settings.shortcut.clickToRecord", { defaultValue: "点击录制" })}
-              </span>
-            </>
-          )}
-        </button>
-        <button
-          type="button"
-          disabled={!value || recorder.isRecording}
-          onClick={clearShortcut}
-          aria-label={t("settings.shortcut.clear", { defaultValue: "清除" })}
-          title={t("settings.shortcut.clear", { defaultValue: "清除" })}
-          className="w-8 h-8 rounded-lg border border-paper-deep/45 text-[15px] leading-none text-ink-faint hover:text-red-400 hover:bg-paper-warm/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
-        >
-          ×
-        </button>
-      </div>
-      <p className={`min-h-4 text-[10px] ${statusClass}`}>{statusText}</p>
-    </div>
-  );
-}
 
 function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const { t } = useTranslation();

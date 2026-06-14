@@ -2527,13 +2527,6 @@ mod tests {
             heading4: "Ctrl+4".into(),
             heading5: "Ctrl+5".into(),
             heading6: "Ctrl+6".into(),
-            bold: "Ctrl+B".into(),
-            italic: "Ctrl+I".into(),
-            strike: "Ctrl+Shift+X".into(),
-            quote: "Ctrl+Shift+Q".into(),
-            unordered_list: "Ctrl+Shift+L".into(),
-            ordered_list: "Ctrl+Shift+O".into(),
-            code_block: "Ctrl+Shift+K".into(),
         }
     }
 

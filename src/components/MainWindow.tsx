@@ -17,7 +17,7 @@ import {
 import {
   commandForKeyboardEvent,
   normalizeEditorShortcuts,
-  runMarkdownShortcutOnTextarea,
+  runEditorShortcutOnTextarea,
 } from "../features/editorShortcuts/markdownShortcuts";
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
@@ -2620,7 +2620,7 @@ export function MainWindow({
 
                             event.preventDefault();
                             event.stopPropagation();
-                            runMarkdownShortcutOnTextarea(
+                            runEditorShortcutOnTextarea(
                               contentRef.current,
                               command,
                               setContent,
