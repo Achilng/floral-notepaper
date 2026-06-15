@@ -12,6 +12,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
+import { Mermaid } from "./Mermaid";
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
   const { t } = useTranslation();
@@ -224,14 +225,26 @@ const staticComponents: Components = {
   pre: ({ children }) => {
     // Extract language from the <code> element's className
     let language = "";
+    let codeContent = "";
     if (
       children != null &&
       typeof children === "object" &&
       "props" in (children as React.ReactElement)
     ) {
-      const codeProps = (children as React.ReactElement<{ className?: string }>).props;
+      const codeElement = children as React.ReactElement<{
+        className?: string;
+        children?: React.ReactNode;
+      }>;
+      const codeProps = codeElement.props;
       const match = codeProps.className?.match(/language-(\S+)/);
-      if (match) language = match[1];
+      if (match) {
+        language = match[1];
+      }
+      codeContent = extractText(codeProps.children);
+    }
+
+    if (language === "mermaid") {
+      return <Mermaid chart={codeContent} />;
     }
 
     return <CodeBlock language={language}>{children}</CodeBlock>;
