@@ -632,9 +632,10 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
   const clearShortcut = () => {
-    // 显式清除会保存为空值，后端据此注销旧的全局快捷键绑定。
-    recorder.cancelRecording();
+    // 先更新配置再停止录制，避免 stop_shortcut_recording
+    // 从旧状态重新注册已被清除的快捷键。
     onChange("");
+    recorder.cancelRecording();
     markShortcutCleared();
   };
 

@@ -1223,13 +1223,20 @@ export function MainWindow({
   ]);
 
   const handleNewNote = async () => {
+    setIsLoading(true);
     await saveCurrentNote();
     try {
       const note = await createNote({ title: "", content: "", category: activeCategory });
       replaceNoteMetadata(note);
       applyNote(note);
+      // 切换到新笔记时重置预览区滚动位置
+      if (previewScrollRef.current) {
+        previewScrollRef.current.scrollTop = 0;
+      }
     } catch (error) {
       showToast(getErrorMessage(error));
+    } finally {
+      setIsLoading(false);
     }
   };
 
@@ -2867,7 +2874,7 @@ export function MainWindow({
             </div>
 
             <div
-              key={viewMode}
+              key={`${viewMode}-${selectedId ?? "none"}`}
               ref={splitContainerRef}
               className="flex-1 flex min-h-0 animate-view-fade"
             >
