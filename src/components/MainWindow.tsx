@@ -7,6 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AboutPanel } from "./AboutPanel";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
+import { activeHeadingByLine, parseOutline, type OutlineItem } from "../features/markdown/outline";
 import { showToast } from "./Toast";
 import {
   blockIndexAtOffset,
@@ -36,6 +37,7 @@ import type {
   UpdateState,
 } from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
+import { OutlinePanel } from "./OutlinePanel";
 import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
@@ -88,6 +90,22 @@ import {
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 type SidePanelMode = "about" | "settings";
+
+/** Width of the Outline column when expanded (px). */
+const OUTLINE_WIDTH = 240;
+
+/** The heading anchor nearest the top of the scrolled preview container. */
+function activeSlugFromPreview(items: OutlineItem[], container: HTMLElement): string | null {
+  const containerTop = container.getBoundingClientRect().top;
+  let slug: string | null = items[0]?.slug ?? null;
+  for (const item of items) {
+    const el = container.querySelector(`#${CSS.escape(item.slug)}`);
+    if (!el) continue;
+    if (el.getBoundingClientRect().top - containerTop <= 12) slug = item.slug;
+    else break;
+  }
+  return slug;
+}
 
 interface NoteMenuState {
   x: number;
@@ -331,6 +349,15 @@ export function MainWindow({
     normalizeViewMode(initialConfig?.defaultViewMode ?? "split"),
   );
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [outlineVisible, setOutlineVisible] = useState(initialConfig?.outlineVisible ?? false);
+  const [outlineWidth, setOutlineWidth] = useState(initialConfig?.outlineWidth ?? OUTLINE_WIDTH);
+  const [isResizingOutline, setIsResizingOutline] = useState(false);
+  const [activeOutlineSlug, setActiveOutlineSlug] = useState<string | null>(null);
+  // 实时镜像最新宽度，供拖拽结束(mouseup)时持久化读取（effect 闭包拿不到最新 state）。
+  const outlineWidthRef = useRef(outlineWidth);
+  outlineWidthRef.current = outlineWidth;
+  const outlineColRef = useRef<HTMLDivElement>(null);
+  const outlineResizeStartLeft = useRef(0);
   const [content, setContent] = useState("");
   const [title, setTitle] = useState("");
   const [saveState, setSaveState] = useState<SaveState>("idle");
@@ -566,6 +593,87 @@ export function MainWindow({
     [content],
   );
   const charCount = useMemo(() => countNoteChars(content), [content]);
+  const outlineItems = useMemo(() => parseOutline(content), [content]);
+  const outlineFollow = settingsConfig?.outlineFollow ?? true;
+  // Scroll-spy is active only when the panel is open and "follow" is enabled.
+  const outlineTracking = outlineVisible && outlineFollow;
+
+  // Jump to a heading from the outline. Pure edit mode scrolls the source
+  // textarea to the heading's line; preview/split scroll the rendered anchor
+  // (same path as the app's in-content heading links).
+  const handleOutlineSelect = useCallback(
+    (item: OutlineItem) => {
+      setActiveOutlineSlug(item.slug);
+      if (viewMode === "edit") {
+        const textarea = contentRef.current;
+        if (!textarea) return;
+        const lineHeight =
+          parseFloat(getComputedStyle(textarea).lineHeight) ||
+          (settingsConfig?.fontSize ?? 14) * 1.9;
+        textarea.setSelectionRange(item.from, item.from);
+        textarea.scrollTop = Math.max(0, item.line * lineHeight - lineHeight);
+        return;
+      }
+      const target = previewScrollRef.current?.querySelector(`#${CSS.escape(item.slug)}`);
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    },
+    [viewMode, settingsConfig?.fontSize],
+  );
+
+  // Refresh the followed heading when the view, content, or tracking state
+  // changes. Live movement within a view is handled by the textarea's onSelect
+  // (edit/split) and the preview's onScroll.
+  useEffect(() => {
+    if (!outlineTracking) {
+      setActiveOutlineSlug(null);
+      return;
+    }
+    if (viewMode === "preview") {
+      const container = previewScrollRef.current;
+      if (container) setActiveOutlineSlug(activeSlugFromPreview(outlineItems, container));
+      return;
+    }
+    const textarea = contentRef.current;
+    const line = content.slice(0, textarea?.selectionStart ?? 0).split("\n").length - 1;
+    setActiveOutlineSlug(activeHeadingByLine(outlineItems, line));
+  }, [viewMode, outlineItems, outlineTracking, content]);
+
+  // 静默持久化大纲 UI 状态（开合 / 宽度），防抖 400ms 写配置文件。
+  const uiSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const persistUiState = useCallback((patch: Partial<AppConfig>) => {
+    setSettingsConfig((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      if (uiSaveTimer.current) clearTimeout(uiSaveTimer.current);
+      uiSaveTimer.current = setTimeout(() => {
+        void saveConfig(next).catch(() => {});
+      }, 400);
+      return next;
+    });
+  }, []);
+
+  // 大纲栏拖拽改宽。宽度 = 鼠标 X − 大纲列左边缘（拖拽开始时实测、过程中不变），钳制 140–420px。
+  useEffect(() => {
+    if (!isResizingOutline) return;
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    const onMouseMove = (e: globalThis.MouseEvent) => {
+      const width = Math.min(Math.max(e.clientX - outlineResizeStartLeft.current, 140), 420);
+      setOutlineWidth(width);
+    };
+    const onMouseUp = () => {
+      setIsResizingOutline(false);
+      persistUiState({ outlineWidth: Math.round(outlineWidthRef.current) });
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+    return () => {
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+  }, [isResizingOutline, persistUiState]);
 
   const applyNote = useCallback(
     (note: Note) => {
@@ -690,6 +798,8 @@ export function MainWindow({
         ]);
         if (cancelled) return;
         setSettingsConfig(loadedConfig);
+        setOutlineVisible(loadedConfig.outlineVisible ?? false);
+        setOutlineWidth(loadedConfig.outlineWidth ?? OUTLINE_WIDTH);
         setSavedDataDir(loadedConfig.dataDir);
         setViewMode(normalizeViewMode(loadedConfig.defaultViewMode));
         setNotes(loadedNotes);
@@ -2632,6 +2742,41 @@ export function MainWindow({
             </div>
           )}
 
+          {/* Outline column. The inner div keeps a fixed width so its content
+              doesn't reflow while the outer width animates on collapse. */}
+          <div
+            ref={outlineColRef}
+            className={`border-r border-paper-deep/30 bg-paper/30 shrink-0 overflow-hidden ${
+              isResizingOutline ? "" : "transition-[width] duration-300"
+            }`}
+            style={{ width: outlineVisible ? outlineWidth : 0 }}
+          >
+            <div className="h-full" style={{ width: outlineWidth }}>
+              <OutlinePanel
+                items={outlineItems}
+                activeSlug={outlineTracking ? activeOutlineSlug : null}
+                onSelect={handleOutlineSelect}
+              />
+            </div>
+          </div>
+
+          {/* 大纲列宽拖拽手柄（仅大纲展开时显示）。 */}
+          {outlineVisible && (
+            <div
+              className={`w-1 shrink-0 cursor-col-resize group relative ${isResizingOutline ? "bg-bamboo/30" : "hover:bg-bamboo/20"} transition-colors`}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                outlineResizeStartLeft.current =
+                  outlineColRef.current?.getBoundingClientRect().left ?? 0;
+                setIsResizingOutline(true);
+              }}
+            >
+              <div
+                className={`absolute inset-y-0 -left-1 -right-1 ${isResizingOutline ? "" : "group-hover:bg-bamboo/5"}`}
+              />
+            </div>
+          )}
+
           <div className="flex-1 flex flex-col min-w-0">
             <div className="flex items-center justify-between px-4 h-10 border-b border-paper-deep/20 shrink-0 bg-paper/20">
               <div className="flex items-center gap-1">
@@ -2656,6 +2801,44 @@ export function MainWindow({
                   >
                     <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
                     <line x1="9" y1="3" x2="9" y2="21" />
+                  </svg>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const next = !outlineVisible;
+                    setOutlineVisible(next);
+                    persistUiState({ outlineVisible: next });
+                  }}
+                  aria-pressed={outlineVisible}
+                  aria-label={t("main.outline.title", { defaultValue: "大纲" })}
+                  className={`w-7 h-7 flex items-center justify-center rounded-lg transition-all cursor-pointer ${
+                    outlineVisible
+                      ? "text-bamboo bg-bamboo-mist/50 hover:bg-bamboo-mist/70"
+                      : "text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
+                  }`}
+                  title={
+                    outlineVisible
+                      ? t("main.outline.hide", { defaultValue: "隐藏大纲" })
+                      : t("main.outline.show", { defaultValue: "显示大纲" })
+                  }
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <line x1="8" y1="6" x2="21" y2="6" />
+                    <line x1="8" y1="12" x2="21" y2="12" />
+                    <line x1="8" y1="18" x2="21" y2="18" />
+                    <line x1="3" y1="6" x2="3.01" y2="6" />
+                    <line x1="3" y1="12" x2="3.01" y2="12" />
+                    <line x1="3" y1="18" x2="3.01" y2="18" />
                   </svg>
                 </button>
 
@@ -2919,6 +3102,13 @@ export function MainWindow({
                           onDrop={imageDropHandler}
                           onDragOver={imageDragOverHandler}
                           onScroll={handleEditorScroll}
+                          onSelect={(event) => {
+                            if (!outlineTracking) return;
+                            const line =
+                              content.slice(0, event.currentTarget.selectionStart).split("\n")
+                                .length - 1;
+                            setActiveOutlineSlug(activeHeadingByLine(outlineItems, line));
+                          }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-body placeholder:text-ink-ghost/40"
                           style={{
                             fontSize: `${settingsConfig?.fontSize ?? 14}px`,
@@ -2965,7 +3155,16 @@ export function MainWindow({
                       )}
                       <div
                         ref={previewScrollRef}
-                        onScroll={handlePreviewScroll}
+                        onScroll={(event) => {
+                          handlePreviewScroll();
+                          // Split is driven by the editor caret; only preview-only
+                          // mode follows the scroll position.
+                          if (outlineTracking && viewMode === "preview") {
+                            setActiveOutlineSlug(
+                              activeSlugFromPreview(outlineItems, event.currentTarget),
+                            );
+                          }
+                        }}
                         className={`flex-1 overflow-y-auto px-6 pb-6 ${
                           viewMode === "preview" ? "pt-3" : "pt-1"
                         }`}

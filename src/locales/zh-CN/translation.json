@@ -118,6 +118,12 @@
       "newNote": "新建笔记",
       "searchPlaceholder": "搜索笔记…"
     },
+    "outline": {
+      "title": "大纲",
+      "empty": "暂无标题",
+      "show": "显示大纲",
+      "hide": "隐藏大纲"
+    },
     "images": {
       "cleanUnused": "清理未使用图片",
       "cleaned": "已清理 {{count}} 张图片",
@@ -269,6 +275,7 @@
     "tileSaveReturnsToPin": "保存后回到磁贴",
     "renderHtmlMarkdown": "允许 HTML 标签渲染",
     "splitScrollSync": "分栏同步滚动",
+    "outlineFollow": "大纲跟随光标/滚动",
     "title": "应用设置",
     "update": {
       "advanced": "高级",

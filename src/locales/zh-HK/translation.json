@@ -118,6 +118,12 @@
       "newNote": "新增筆記",
       "searchPlaceholder": "搜尋筆記…"
     },
+    "outline": {
+      "title": "大綱",
+      "empty": "暫無標題",
+      "show": "顯示大綱",
+      "hide": "隱藏大綱"
+    },
     "images": {
       "cleanUnused": "清理未使用圖片",
       "cleaned": "已清理 {{count}} 張圖片",
@@ -269,6 +275,7 @@
     "tileSaveReturnsToPin": "儲存後回到磁貼",
     "renderHtmlMarkdown": "允許 HTML 標籤渲染",
     "splitScrollSync": "分欄同步捲動",
+    "outlineFollow": "大綱跟隨游標/捲動",
     "title": "應用程式設定",
     "update": {
       "advanced": "進階",

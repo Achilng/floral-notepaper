@@ -118,6 +118,12 @@
       "newNote": "New Note",
       "searchPlaceholder": "Search notes…"
     },
+    "outline": {
+      "title": "Outline",
+      "empty": "No headings",
+      "show": "Show outline",
+      "hide": "Hide outline"
+    },
     "images": {
       "cleanUnused": "Clean unused images",
       "cleaned": "Cleaned {{count}} image(s)",
@@ -269,6 +275,7 @@
     "tileSaveReturnsToPin": "Return to tile after saving",
     "renderHtmlMarkdown": "Render HTML tags in Markdown",
     "splitScrollSync": "Split view scroll sync",
+    "outlineFollow": "Outline follows cursor/scroll",
     "title": "Settings",
     "update": {
       "advanced": "Advanced",

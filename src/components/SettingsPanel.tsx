@@ -218,6 +218,11 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             checked={config.splitScrollSync ?? true}
             onChange={(checked) => setConfigValue("splitScrollSync", checked)}
           />
+          <ToggleRow
+            label={t("settings.outlineFollow", { defaultValue: "大纲跟随光标/滚动" })}
+            checked={config.outlineFollow ?? true}
+            onChange={(checked) => setConfigValue("outlineFollow", checked)}
+          />
         </section>
 
         {/* 快捷键功能设置区域，与上方常规设置分开 */}
