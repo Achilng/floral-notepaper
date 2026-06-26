@@ -10,10 +10,7 @@ import type {
   TileColorMode,
   ViewMode,
 } from "../features/settings/types";
-import {
-  FONT_ZOOM_MAX,
-  FONT_ZOOM_MIN,
-} from "../features/settings/fontZoom";
+import { FONT_ZOOM_MAX, FONT_ZOOM_MIN } from "../features/settings/fontZoom";
 import {
   formatHeldKeys,
   hotkeyToConfigString,

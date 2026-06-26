@@ -1,10 +1,5 @@
 import { describe, expect, test } from "vitest";
-import {
-  FONT_ZOOM_MAX,
-  FONT_ZOOM_MIN,
-  getFontZoomDirection,
-  nextFontSize,
-} from "./fontZoom";
+import { FONT_ZOOM_MAX, FONT_ZOOM_MIN, getFontZoomDirection, nextFontSize } from "./fontZoom";
 
 const keyEvent = (
   overrides: Partial<Parameters<typeof getFontZoomDirection>[0]>,
@@ -22,9 +17,7 @@ describe("fontZoom", () => {
     expect(getFontZoomDirection(keyEvent({ key: "=", code: "Equal" }))).toBe("in");
     expect(getFontZoomDirection(keyEvent({ key: "+", code: "Equal" }))).toBe("in");
     expect(getFontZoomDirection(keyEvent({ key: "+", code: "NumpadAdd" }))).toBe("in");
-    expect(getFontZoomDirection(keyEvent({ ctrlKey: false, metaKey: true, key: "=" }))).toBe(
-      "in",
-    );
+    expect(getFontZoomDirection(keyEvent({ ctrlKey: false, metaKey: true, key: "=" }))).toBe("in");
   });
 
   test("detects zoom-out shortcuts", () => {
