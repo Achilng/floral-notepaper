@@ -10,7 +10,7 @@ import type { UpdateInstallPrepareRequest } from "../features/update/types";
 import { showToast } from "./Toast";
 import type { Note, NoteMetadata } from "../features/notes/types";
 import { countNoteChars, metadataFromNote } from "../features/notes/noteUtils";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   animateCurrentWindowBounds,
@@ -24,13 +24,18 @@ import {
   startCurrentWindowResize,
 } from "../features/windows/controls";
 import type { ResizeDirection } from "../features/windows/controls";
-import { getConfig } from "../features/settings/api";
+import { getConfig, saveConfig } from "../features/settings/api";
+import {
+  getFontZoomDirection,
+  isFontZoomEventTargetBlocked,
+  nextFontSize,
+} from "../features/settings/fontZoom";
 import {
   DEFAULT_TILE_COLOR,
   normalizeTileColor,
   resolveTileColor,
 } from "../features/settings/tileColor";
-import type { TileColorMode } from "../features/settings/types";
+import type { AppConfig, TileColorMode } from "../features/settings/types";
 import {
   shouldEnterPadFromTileOnDoubleClick,
   shouldReturnToTileAfterManualSave,
@@ -149,6 +154,8 @@ export function NotePad({
   const tileDragIntentRef = useRef<{ x: number; y: number } | null>(null);
   const windowLabelRef = useRef("");
   const statusRef = useRef<NotePadStatus>("empty");
+  const appConfigRef = useRef<AppConfig | null>(null);
+  const surfaceFontZoomSaveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const contentValueRef = useRef(content);
   contentValueRef.current = content;
   const titleValueRef = useRef(title);
@@ -199,6 +206,7 @@ export function NotePad({
     async function bootstrap() {
       try {
         const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
+        appConfigRef.current = loadedConfig;
         if (!cancelled) {
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
           setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
@@ -254,14 +262,8 @@ export function NotePad({
   }, []);
 
   useEffect(() => {
-    const unlisten = listen<{
-      tileColor?: string;
-      tileColorMode?: TileColorMode;
-      surfaceFontSize?: number;
-      tileRenderMarkdown?: boolean;
-      tileDoubleClickToEdit?: boolean;
-      tileSaveReturnsToPin?: boolean;
-    }>("config-changed", (event) => {
+    const unlisten = listen<AppConfig>("config-changed", (event) => {
+      appConfigRef.current = event.payload;
       const mode = event.payload.tileColorMode ?? tileColorMode;
       const raw = event.payload.tileColor ?? tileColorRaw;
       setTileColorMode(mode);
@@ -279,6 +281,14 @@ export function NotePad({
       void unlisten.then((fn) => fn());
     };
   }, [tileColorMode, tileColorRaw]);
+
+  useEffect(() => {
+    return () => {
+      if (surfaceFontZoomSaveTimer.current) {
+        clearTimeout(surfaceFontZoomSaveTimer.current);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     if (tileColorMode !== "system") return;
@@ -539,8 +549,61 @@ export function NotePad({
     [clearPendingTileDrag, switchSurfaceMode, tileDoubleClickToEdit],
   );
 
+  const queueSurfaceFontSizeConfigSave = useCallback((nextConfig: AppConfig) => {
+    if (surfaceFontZoomSaveTimer.current) {
+      clearTimeout(surfaceFontZoomSaveTimer.current);
+    }
+
+    surfaceFontZoomSaveTimer.current = setTimeout(() => {
+      const configToSave = appConfigRef.current ?? nextConfig;
+      void saveConfig(configToSave)
+        .then((savedConfig) => {
+          appConfigRef.current = savedConfig;
+        })
+        .catch((error) => showToast(getErrorMessage(error)));
+    }, 300);
+  }, []);
+
+  const applySurfaceFontZoom = useCallback(
+    (direction: ReturnType<typeof getFontZoomDirection>) => {
+      if (!direction) return;
+
+      const applyConfig = (baseConfig: AppConfig) => {
+        const currentSize = baseConfig.surfaceFontSize ?? surfaceFontSize;
+        const nextSize = nextFontSize(currentSize, direction);
+        if (nextSize === currentSize) return;
+
+        const nextConfig = { ...baseConfig, surfaceFontSize: nextSize };
+        appConfigRef.current = nextConfig;
+        setSurfaceFontSize(nextSize);
+        void emit("config-changed", nextConfig);
+        queueSurfaceFontSizeConfigSave(nextConfig);
+      };
+
+      if (appConfigRef.current) {
+        applyConfig(appConfigRef.current);
+        return;
+      }
+
+      void getConfig()
+        .then((config) => {
+          appConfigRef.current = config;
+          applyConfig(config);
+        })
+        .catch((error) => showToast(getErrorMessage(error)));
+    },
+    [queueSurfaceFontSizeConfigSave, surfaceFontSize],
+  );
+
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
+      const direction = getFontZoomDirection(event);
+      if (direction && !isFontZoomEventTargetBlocked(event.target)) {
+        event.preventDefault();
+        applySurfaceFontZoom(direction);
+        return;
+      }
+
       if ((event.ctrlKey || event.metaKey) && event.key === "s") {
         event.preventDefault();
         void handleSave();
@@ -549,7 +612,7 @@ export function NotePad({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave]);
+  }, [applySurfaceFontZoom, handleSave]);
 
   const handleOpenNote = async (noteId: string) => {
     try {

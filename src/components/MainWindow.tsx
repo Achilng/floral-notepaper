@@ -20,6 +20,11 @@ import {
   normalizeViewMode,
   saveConfig,
 } from "../features/settings/api";
+import {
+  getFontZoomDirection,
+  isFontZoomEventTargetBlocked,
+  nextFontSize,
+} from "../features/settings/fontZoom";
 import type { AppConfig, ViewMode } from "../features/settings/types";
 import { normalizeTileColor } from "../features/settings/tileColor";
 import { getUpdateStatus, reportInstallPreparation } from "../features/update/api";
@@ -722,6 +727,17 @@ export function MainWindow({
   }, [applyNote, clearCurrentNote]);
 
   useEffect(() => {
+    const unlisten = listen<AppConfig>("config-changed", (event) => {
+      setSettingsConfig(event.payload);
+      setSavedDataDir(event.payload.dataDir);
+      setViewMode(normalizeViewMode(event.payload.defaultViewMode));
+    });
+    return () => {
+      void unlisten.then((fn) => fn());
+    };
+  }, []);
+
+  useEffect(() => {
     let active = true;
 
     void getUpdateStatus()
@@ -1323,6 +1339,25 @@ export function MainWindow({
     },
     [persistSettings],
   );
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const direction = getFontZoomDirection(event);
+      if (!direction || isFontZoomEventTargetBlocked(event.target)) return;
+
+      event.preventDefault();
+      if (!settingsConfig) return;
+
+      const currentSize = settingsConfig.fontSize ?? 14;
+      const fontSize = nextFontSize(currentSize, direction);
+      if (fontSize === currentSize) return;
+
+      handleSettingsChange({ ...settingsConfig, fontSize });
+    }
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [handleSettingsChange, settingsConfig]);
 
   const handleCloseSettings = useCallback(() => {
     setSettingsOpen(false);

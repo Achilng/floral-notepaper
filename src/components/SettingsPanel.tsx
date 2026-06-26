@@ -11,6 +11,10 @@ import type {
   ViewMode,
 } from "../features/settings/types";
 import {
+  FONT_ZOOM_MAX,
+  FONT_ZOOM_MIN,
+} from "../features/settings/fontZoom";
+import {
   formatHeldKeys,
   hotkeyToConfigString,
   isValidGlobalShortcut,
@@ -259,8 +263,8 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
             <input
               type="range"
-              min={8}
-              max={30}
+              min={FONT_ZOOM_MIN}
+              max={FONT_ZOOM_MAX}
               step={1}
               value={config.fontSize ?? 14}
               onChange={(event) => setConfigValue("fontSize", Number(event.target.value))}
@@ -279,8 +283,8 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
           <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
             <input
               type="range"
-              min={8}
-              max={30}
+              min={FONT_ZOOM_MIN}
+              max={FONT_ZOOM_MAX}
               step={1}
               value={config.surfaceFontSize ?? 14}
               onChange={(event) => setConfigValue("surfaceFontSize", Number(event.target.value))}
@@ -672,7 +676,11 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const isChecking = checkState === "checking";
 
   return (
-    <div ref={containerRef} className="relative space-y-1.5">
+    <div
+      ref={containerRef}
+      data-shortcut-recorder-recording={recorder.isRecording ? "true" : undefined}
+      className="relative space-y-1.5"
+    >
       <div className="flex gap-2">
         <button
           type="button"
