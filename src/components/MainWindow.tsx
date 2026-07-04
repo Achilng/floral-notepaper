@@ -434,6 +434,85 @@ export function MainWindow({
     () => notes.find((note) => note.id === noteMenu?.noteId) ?? null,
     [noteMenu?.noteId, notes],
   );
+  const noteMenuRef = useRef<HTMLDivElement>(null);
+  const categoryMenuRef = useRef<HTMLDivElement>(null);
+
+  // 动态调整菜单位置，防止超出窗口边界
+  useEffect(() => {
+    if (!noteMenu || !noteMenuRef.current) return;
+
+    const menuElement = noteMenuRef.current;
+    const rect = menuElement.getBoundingClientRect();
+    const padding = 8;
+
+    let { x, y } = noteMenu;
+    let needsUpdate = false;
+
+    // 检查右边界
+    if (rect.right > window.innerWidth - padding) {
+      x = window.innerWidth - rect.width - padding;
+      needsUpdate = true;
+    }
+
+    // 检查底部边界
+    if (rect.bottom > window.innerHeight - padding) {
+      y = window.innerHeight - rect.height - padding;
+      needsUpdate = true;
+    }
+
+    // 检查左边界
+    if (x < padding) {
+      x = padding;
+      needsUpdate = true;
+    }
+
+    // 检查顶部边界
+    if (y < padding) {
+      y = padding;
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      setNoteMenu({ ...noteMenu, x, y });
+    }
+  }, [noteMenu, noteMenuMode]);
+
+  // 动态调整分类菜单位置
+  useEffect(() => {
+    if (!categoryMenu || !categoryMenuRef.current) return;
+
+    const menuElement = categoryMenuRef.current;
+    const rect = menuElement.getBoundingClientRect();
+    const padding = 8;
+
+    let { x, y } = categoryMenu;
+    let needsUpdate = false;
+
+    if (rect.right > window.innerWidth - padding) {
+      x = window.innerWidth - rect.width - padding;
+      needsUpdate = true;
+    }
+
+    if (rect.bottom > window.innerHeight - padding) {
+      y = window.innerHeight - rect.height - padding;
+      needsUpdate = true;
+    }
+
+    if (x < padding) {
+      x = padding;
+      needsUpdate = true;
+    }
+
+    if (y < padding) {
+      y = padding;
+      needsUpdate = true;
+    }
+
+    if (needsUpdate) {
+      setCategoryMenu({ ...categoryMenu, x, y });
+    }
+  }, [categoryMenu, categoryMenuConfirmDelete]);
+
   const noteContextMenuItems = useMemo(() => getNoteContextMenuItems(t), [t]);
   const saveStateLabel = useMemo<Record<SaveState, string>>(
     () => ({
@@ -1447,16 +1526,33 @@ export function MainWindow({
     event.preventDefault();
     event.stopPropagation();
 
+    // 估算菜单尺寸（实际会在渲染后调整）
     const menuWidth = 168;
-    const menuHeight = 76;
-    const x = Math.min(event.clientX, window.innerWidth - menuWidth - 4);
-    const y = Math.min(event.clientY, window.innerHeight - menuHeight - 4);
+    // 主菜单有2个项目，每个约36px，加上 padding
+    const menuHeight = 36 * 2 + 12;
+
+    let x = event.clientX;
+    let y = event.clientY;
+
+    // 确保菜单不超出右边界
+    if (x + menuWidth > window.innerWidth) {
+      x = window.innerWidth - menuWidth - 8;
+    }
+
+    // 确保菜单不超出底部边界
+    if (y + menuHeight > window.innerHeight) {
+      y = window.innerHeight - menuHeight - 8;
+    }
+
+    // 确保菜单不超出左边界和顶部边界
+    x = Math.max(8, x);
+    y = Math.max(8, y);
 
     setNoteMenuClosing(false);
     setHoveredId(noteId);
     setNoteMenu({
-      x: Math.max(4, x),
-      y: Math.max(4, y),
+      x,
+      y,
       noteId,
     });
   };
@@ -3065,6 +3161,7 @@ export function MainWindow({
       </div>
       {noteMenu && noteMenuTarget && (
         <div
+          ref={noteMenuRef}
           className={`popup-menu fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${noteMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
           style={{ left: noteMenu.x, top: noteMenu.y }}
           onMouseDown={(event) => event.stopPropagation()}
@@ -3127,6 +3224,7 @@ export function MainWindow({
 
       {categoryMenu && (
         <div
+          ref={categoryMenuRef}
           className={`popup-menu fixed z-[9999] min-w-[140px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${categoryMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
           data-hover-suppressed={categoryMenuHoverSuppressed ? "" : undefined}
           style={{ left: categoryMenu.x, top: categoryMenu.y }}
