@@ -53,6 +53,9 @@ describe("settings api", () => {
       renderHtmlMarkdown: false,
       splitScrollSync: true,
       openAtCursor: true,
+      exportPageSize: "a4",
+      exportFontFamily: "HarmonyOS Sans",
+      exportFontSize: 14,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -87,6 +90,9 @@ describe("settings api", () => {
       renderHtmlMarkdown: false,
       splitScrollSync: true,
       openAtCursor: true,
+      exportPageSize: "a4",
+      exportFontFamily: "HarmonyOS Sans",
+      exportFontSize: 14,
     };
     mockedInvoke.mockResolvedValue(config);
 
