@@ -78,24 +78,24 @@ fn markdown_to_typst(md: &str) -> String {
             continue;
         }
 
-        if line.starts_with("###### ") {
+        if let Some(rest) = line.strip_prefix("###### ") {
             out.push_str("====== ");
-            out.push_str(&line[7..]);
-        } else if line.starts_with("##### ") {
+            out.push_str(rest);
+        } else if let Some(rest) = line.strip_prefix("##### ") {
             out.push_str("===== ");
-            out.push_str(&line[6..]);
-        } else if line.starts_with("#### ") {
+            out.push_str(rest);
+        } else if let Some(rest) = line.strip_prefix("#### ") {
             out.push_str("==== ");
-            out.push_str(&line[5..]);
-        } else if line.starts_with("### ") {
+            out.push_str(rest);
+        } else if let Some(rest) = line.strip_prefix("### ") {
             out.push_str("=== ");
-            out.push_str(&line[4..]);
-        } else if line.starts_with("## ") {
+            out.push_str(rest);
+        } else if let Some(rest) = line.strip_prefix("## ") {
             out.push_str("== ");
-            out.push_str(&line[3..]);
-        } else if line.starts_with("# ") {
+            out.push_str(rest);
+        } else if let Some(rest) = line.strip_prefix("# ") {
             out.push_str("= ");
-            out.push_str(&line[2..]);
+            out.push_str(rest);
         } else {
             let converted = convert_inline(line);
             out.push_str(&converted);
@@ -251,7 +251,7 @@ fn create_world(source: &str) -> Result<ExportWorld, String> {
     let mut fonts = Vec::new();
 
     for face in fontdb.faces() {
-        let id = face.id.clone();
+        let id = face.id;
         let index = face.index;
         if let Some(Some(font)) = fontdb.with_face_data(id, move |data: &[u8], _: u32| {
             Font::new(Bytes::new(data.to_vec()), index)
