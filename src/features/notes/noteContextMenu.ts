@@ -1,6 +1,6 @@
 import { t, type TFunction } from "i18next";
 
-export type NoteContextMenuAction = "export" | "move" | "delete";
+export type NoteContextMenuAction = "export" | "exportPDF" | "move" | "delete";
 
 export interface NoteContextMenuItem {
   action: NoteContextMenuAction;
@@ -13,6 +13,10 @@ export function getNoteContextMenuItems(translate: TFunction = t): NoteContextMe
     {
       action: "export",
       label: translate("noteMenu.export", { defaultValue: "导出 Markdown" }),
+    },
+    {
+      action: "exportPDF",
+      label: translate("noteMenu.exportPDF", { defaultValue: "导出 PDF" }),
     },
     {
       action: "move",

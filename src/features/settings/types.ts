@@ -39,4 +39,7 @@ export interface AppConfig {
   backgroundScale?: number;
   backgroundPositionX?: number;
   backgroundPositionY?: number;
+  exportPageSize: string;
+  exportFontFamily: string;
+  exportFontSize: number;
 }

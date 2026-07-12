@@ -64,6 +64,11 @@ fn notes_export_markdown(id: String, path: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+fn notes_export_pdf(id: String, path: String) -> Result<(), AppError> {
+    default_store()?.export_pdf_file(&id, &PathBuf::from(path))
+}
+
+#[tauri::command]
 fn read_external_file(path: String) -> Result<String, AppError> {
     std::fs::read_to_string(&path).map_err(|e| AppError {
         code: "io".into(),
@@ -449,6 +454,7 @@ pub fn run() {
             notes_delete,
             notes_import_markdown,
             notes_export_markdown,
+            notes_export_pdf,
             notes_move_category,
             read_external_file,
             save_external_file,

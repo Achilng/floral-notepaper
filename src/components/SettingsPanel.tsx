@@ -457,6 +457,57 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
           />
         </section>
 
+        <section className="space-y-2">
+          <h3 className="text-[11px] font-body text-ink-faint">
+            {t("settings.export.label", { defaultValue: "PDF 导出" })}
+          </h3>
+          <div className="space-y-1.5">
+            <label className="block text-[11px] text-ink-faint/70 px-0.5">
+              {t("settings.export.pageSize", { defaultValue: "纸张大小" })}
+            </label>
+            <input
+              type="text"
+              value={config.exportPageSize}
+              onChange={(event) => setConfigValue("exportPageSize", event.target.value)}
+              placeholder="A4"
+              spellCheck={false}
+              className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-[11px] text-ink-faint/70 px-0.5">
+              {t("settings.export.fontFamily", { defaultValue: "字体" })}
+            </label>
+            <input
+              type="text"
+              value={config.exportFontFamily}
+              onChange={(event) => setConfigValue("exportFontFamily", event.target.value)}
+              placeholder="HarmonyOS Sans"
+              spellCheck={false}
+              className="w-full h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[12px] font-mono text-ink-soft outline-none"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <label className="block text-[11px] text-ink-faint/70 px-0.5">
+              {t("settings.export.fontSize", { defaultValue: "字号" })}
+            </label>
+            <div className="flex items-center gap-3 h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25">
+              <input
+                type="range"
+                min={8}
+                max={30}
+                step={1}
+                value={config.exportFontSize ?? 14}
+                onChange={(event) => setConfigValue("exportFontSize", Number(event.target.value))}
+                className="flex-1 h-1 accent-bamboo cursor-pointer appearance-none bg-transparent [&::-webkit-slider-runnable-track]:h-[3px] [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-paper-deep/50 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-bamboo [&::-webkit-slider-thumb]:-mt-[4.5px] [&::-webkit-slider-thumb]:shadow-[0_1px_3px_rgba(0,0,0,0.15)]"
+              />
+              <span className="text-[12px] font-mono text-ink-soft tabular-nums w-8 text-right">
+                {config.exportFontSize ?? 14}px
+              </span>
+            </div>
+          </div>
+        </section>
+
         <UpdateSettingsSection mode="settingsOnly" />
 
         <section className="pt-2 border-t border-paper-deep/25">
