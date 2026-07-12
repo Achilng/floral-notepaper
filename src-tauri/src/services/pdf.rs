@@ -32,8 +32,8 @@ struct ExportWorld {
 }
 
 impl World for ExportWorld {
-    fn source(&self, _id: FileId) -> FileResult<Source> {
-        Ok(self.source.clone())
+    fn library(&self) -> &LazyHash<Library> {
+        &self.library
     }
 
     fn book(&self) -> &LazyHash<FontBook> {
@@ -44,16 +44,16 @@ impl World for ExportWorld {
         self.source.id()
     }
 
-    fn library(&self) -> &LazyHash<Library> {
-        &self.library
-    }
-
-    fn font(&self, index: usize) -> Option<Font> {
-        self.fonts.get(index).cloned()
+    fn source(&self, _id: FileId) -> FileResult<Source> {
+        Ok(self.source.clone())
     }
 
     fn file(&self, _id: FileId) -> FileResult<Bytes> {
         Err(FileError::Other(None))
+    }
+
+    fn font(&self, index: usize) -> Option<Font> {
+        self.fonts.get(index).cloned()
     }
 
     fn today(&self, _offset: Option<Duration>) -> Option<Datetime> {
@@ -65,17 +65,79 @@ fn markdown_to_typst(md: &str) -> String {
     let mut out = String::with_capacity(md.len());
     let mut in_code_block = false;
 
-    for line in md.lines() {
+    let lines: Vec<&str> = md.lines().collect();
+    let len = lines.len();
+    let mut i = 0;
+
+    while i < len {
+        let line = lines[i];
+
         if line.trim_start().starts_with("```") {
             in_code_block = !in_code_block;
             out.push_str(line);
             out.push('\n');
+            i += 1;
             continue;
         }
         if in_code_block {
             out.push_str(line);
             out.push('\n');
+            i += 1;
             continue;
+        }
+
+        // > [!TYPE] [optional content]
+        if let Some(rest) = line.strip_prefix("> [!") {
+            if let Some(end) = rest.find(']') {
+                let type_name = &rest[..end];
+                let inline_rest = rest[end + 1..].trim();
+                let (label, accent, bg) = match type_name.to_uppercase().as_str() {
+                    "NOTE" => ("NOTE", "rgb(9, 105, 218)", "rgb(212, 231, 250)"),
+                    "TIP" => ("TIP", "rgb(26, 127, 55)", "rgb(210, 240, 218)"),
+                    "WARNING" => ("WARNING", "rgb(154, 103, 0)", "rgb(250, 236, 210)"),
+                    "CAUTION" => ("CAUTION", "rgb(207, 34, 46)", "rgb(253, 220, 222)"),
+                    "IMPORTANT" => ("IMPORTANT", "rgb(130, 80, 223)", "rgb(230, 220, 250)"),
+                    _ => ("NOTE", "rgb(9, 105, 218)", "rgb(212, 231, 250)"),
+                };
+                out.push_str(&format!(
+                    "#block(fill: {bg}, stroke: (left: 4pt + {accent}), \
+                     inset: (x: 1em, y: 0.75em), radius: 4pt, width: 100%, breakable: true)["
+                ));
+                out.push_str(&format!("*{}:*", label));
+                if !inline_rest.is_empty() {
+                    out.push(' ');
+                    out.push_str(&convert_inline(inline_rest));
+                }
+
+                i += 1;
+                while i < len {
+                    let aline = lines[i];
+                    if let Some(content) = aline.strip_prefix("> ") {
+                        if content.trim().is_empty() {
+                            out.push_str("\n\n");
+                        } else {
+                            out.push(' ');
+                            out.push_str(&convert_inline(content));
+                        }
+                        i += 1;
+                    } else if aline.trim().is_empty() {
+                        let mut j = i + 1;
+                        while j < len && lines[j].trim().is_empty() {
+                            j += 1;
+                        }
+                        if j < len && lines[j].starts_with("> ") {
+                            out.push_str("\n\n");
+                            i += 1;
+                        } else {
+                            break;
+                        }
+                    } else {
+                        break;
+                    }
+                }
+                out.push_str("]\n\n");
+                continue;
+            }
         }
 
         if let Some(rest) = line.strip_prefix("###### ") {
@@ -101,7 +163,9 @@ fn markdown_to_typst(md: &str) -> String {
             out.push_str(&converted);
         }
         out.push('\n');
+        i += 1;
     }
+
     out
 }
 

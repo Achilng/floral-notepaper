@@ -2495,4 +2495,52 @@ C# 代码: `Console.WriteLine();`
         let header = fs::read(&export_path).expect("read PDF");
         assert_eq!(&header[..4], b"%PDF");
     }
+
+    #[test]
+    fn exports_pdf_with_admonition_blocks() {
+        let root = test_root("export-pdf-admonition");
+        let store_path = root.join("store");
+        let store = NoteStore::new(store_path.clone(), store_path);
+        let content = "\
+# 注意提醒
+
+> [!NOTE]
+> 这是一个普通提示信息。
+
+> [!TIP]
+> 这是一个小技巧。
+
+> [!WARNING]
+> 请谨慎操作。
+
+> [!CAUTION]
+> 这个操作有风险。
+
+> [!IMPORTANT]
+> 这条信息非常重要。
+
+包含 **粗体** 和 `代码` 的 [!NOTE] 注意块：
+> [!NOTE] 标题行也有内容
+> 第二行内容
+>
+> 新的段落";
+
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "Admonition Test".into(),
+                content: content.into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        let export_path = root.join("exports").join("admonition.pdf");
+
+        store
+            .export_pdf_file(&note.id, &export_path)
+            .expect("export PDF with admonitions");
+
+        assert!(export_path.exists());
+        let header = fs::read(&export_path).expect("read PDF");
+        assert_eq!(&header[..4], b"%PDF");
+    }
 }
