@@ -163,6 +163,7 @@
   "noteMenu": {
     "delete": "Delete Note",
     "export": "Export Markdown",
+    "exportPDF": "Export PDF",
     "moveToCategory": "Move to category…"
   },
   "notepad": {
@@ -419,6 +420,12 @@
       "title": "Updates"
     },
     "visibilityShortcut": "Show/Hide window shortcut",
+    "export": {
+      "label": "PDF Export",
+      "pageSize": "Paper size",
+      "fontFamily": "Font family",
+      "fontSize": "Font size"
+    },
     "background": {
       "label": "Background image",
       "default": "Default background",

@@ -163,6 +163,7 @@
   "noteMenu": {
     "delete": "刪除筆記",
     "export": "匯出 Markdown",
+    "exportPDF": "匯出 PDF",
     "moveToCategory": "移至分類…"
   },
   "notepad": {
@@ -400,6 +401,12 @@
       "title": "更新"
     },
     "visibilityShortcut": "顯示／隱藏視窗快捷鍵",
+    "export": {
+      "label": "PDF 匯出",
+      "pageSize": "紙張大小",
+      "fontFamily": "字型",
+      "fontSize": "字級"
+    },
     "background": {
       "label": "背景圖片",
       "default": "預設背景",
