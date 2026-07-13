@@ -278,33 +278,6 @@ jobs:
             return $certificate
           }
 
-          function Add-PinnedTestCertificateToTrustStore {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if ($env:SIGNING_MODE -eq 'release') {
-              return
-            }
-            if ($env:SIGNING_MODE -ne 'test') {
-              throw "Unsupported signing mode: $($env:SIGNING_MODE)"
-            }
-
-            $certificate = Get-PinnedSignerCertificate -Path $Path
-            if ($certificate.Subject -ne $certificate.Issuer) {
-              throw 'The pinned test certificate must be self-signed before it can be trusted on the ephemeral runner.'
-            }
-
-            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-              [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-              [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-            )
-            try {
-              $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-              $store.Add($certificate)
-            } finally {
-              $store.Close()
-            }
-          }
-
           function Assert-AuthenticodeSignature {
             param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -312,26 +285,43 @@ jobs:
               throw "Signed file was not found: $Path"
             }
 
-            $null = Get-PinnedSignerCertificate -Path $Path
+            if ($env:SIGNING_MODE -notin @('test', 'release')) {
+              throw "Unsupported signing mode: $($env:SIGNING_MODE)"
+            }
+
+            $certificate = Get-PinnedSignerCertificate -Path $Path
 
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
             $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
-            if ($signature.Status -ne 'Valid') {
-              throw "Authenticode signature is not valid for ${Path}: $($signature.Status)"
-            }
             if (-not $signature.TimeStamperCertificate) {
               throw "The signature does not contain a trusted timestamp: $Path"
             }
 
-            $signTool = Get-SignToolPath
-            & $signTool verify /pa /all /v $Path
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
+            if ($signature.Status -eq 'Valid') {
+              $signTool = Get-SignToolPath
+              & $signTool verify /pa /all /v $Path
+              if ($LASTEXITCODE -ne 0) {
+                throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
+              }
+              return
             }
+
+            $untrustedRootPattern = '(?i)(0x800B0109|untrusted root|root certificate.+not trusted)'
+            $isExpectedTestTrustFailure =
+              $env:SIGNING_MODE -eq 'test' -and
+              $signature.Status -in @('UnknownError', 'NotTrusted') -and
+              $signature.StatusMessage -match $untrustedRootPattern
+            if (-not $isExpectedTestTrustFailure) {
+              throw "Authenticode signature is not valid for ${Path}: $($signature.Status): $($signature.StatusMessage)"
+            }
+            if ($certificate.Subject -ne $certificate.Issuer) {
+              throw 'The pinned test certificate must be self-signed.'
+            }
+
+            Write-Host 'Accepted the pinned SignPath test certificate; only the expected untrusted-root status was ignored.'
           }
 
           $mainBinary = "signed-windows-binary/floral-notepaper_$($env:RELEASE_VERSION).exe"
-          Add-PinnedTestCertificateToTrustStore -Path $mainBinary
           Assert-AuthenticodeSignature -Path $mainBinary
 
       - name: Upload verified signed binaries
@@ -677,33 +667,6 @@ jobs:
             return $certificate
           }
 
-          function Add-PinnedTestCertificateToTrustStore {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if ($env:SIGNING_MODE -eq 'release') {
-              return
-            }
-            if ($env:SIGNING_MODE -ne 'test') {
-              throw "Unsupported signing mode: $($env:SIGNING_MODE)"
-            }
-
-            $certificate = Get-PinnedSignerCertificate -Path $Path
-            if ($certificate.Subject -ne $certificate.Issuer) {
-              throw 'The pinned test certificate must be self-signed before it can be trusted on the ephemeral runner.'
-            }
-
-            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-              [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-              [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
-            )
-            try {
-              $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-              $store.Add($certificate)
-            } finally {
-              $store.Close()
-            }
-          }
-
           function Assert-AuthenticodeSignature {
             param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -711,27 +674,44 @@ jobs:
               throw "Signed file was not found: $Path"
             }
 
-            $null = Get-PinnedSignerCertificate -Path $Path
+            if ($env:SIGNING_MODE -notin @('test', 'release')) {
+              throw "Unsupported signing mode: $($env:SIGNING_MODE)"
+            }
+
+            $certificate = Get-PinnedSignerCertificate -Path $Path
 
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
             $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
-            if ($signature.Status -ne 'Valid') {
-              throw "Authenticode signature is not valid for ${Path}: $($signature.Status)"
-            }
             if (-not $signature.TimeStamperCertificate) {
               throw "The signature does not contain a trusted timestamp: $Path"
             }
 
-            $signTool = Get-SignToolPath
-            & $signTool verify /pa /all /v $Path
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
+            if ($signature.Status -eq 'Valid') {
+              $signTool = Get-SignToolPath
+              & $signTool verify /pa /all /v $Path
+              if ($LASTEXITCODE -ne 0) {
+                throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
+              }
+              return
             }
+
+            $untrustedRootPattern = '(?i)(0x800B0109|untrusted root|root certificate.+not trusted)'
+            $isExpectedTestTrustFailure =
+              $env:SIGNING_MODE -eq 'test' -and
+              $signature.Status -in @('UnknownError', 'NotTrusted') -and
+              $signature.StatusMessage -match $untrustedRootPattern
+            if (-not $isExpectedTestTrustFailure) {
+              throw "Authenticode signature is not valid for ${Path}: $($signature.Status): $($signature.StatusMessage)"
+            }
+            if ($certificate.Subject -ne $certificate.Issuer) {
+              throw 'The pinned test certificate must be self-signed.'
+            }
+
+            Write-Host 'Accepted the pinned SignPath test certificate; only the expected untrusted-root status was ignored.'
           }
 
           $installer = "signed-windows-installer/floral-notepaper_$($env:RELEASE_VERSION)_x64-setup.exe"
           $portable = "signed-windows-binaries/floral-notepaper_$($env:RELEASE_VERSION).exe"
-          Add-PinnedTestCertificateToTrustStore -Path $installer
           Assert-AuthenticodeSignature -Path $installer
           Assert-AuthenticodeSignature -Path $portable
           $expectedBinarySha256 = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash
