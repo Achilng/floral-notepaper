@@ -73,13 +73,17 @@ jobs:
             exit 1
           fi
 
-          bundled_bin_sources=()
-          while IFS= read -r source; do
-            bundled_bin_sources+=("$source")
-          done < <(find src-tauri/src/bin -maxdepth 1 -type f -name '*.rs' -exec basename {} \; | sort)
-          if [[ ${#bundled_bin_sources[@]} -ne 1 || "${bundled_bin_sources[0]}" != "floral-notepaper-update-helper.rs" ]]; then
-            echo 'The expected bundled Rust helper set has changed; update the SignPath configuration before releasing:' >&2
-            printf '%s\n' "${bundled_bin_sources[@]}" >&2
+          executable_targets=()
+          while IFS= read -r target; do
+            executable_targets+=("$target")
+          done < <(
+            cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 --no-deps |
+              jq -r '.packages[] | select(.name == "floral-notepaper") | .targets[] | select(.kind | index("bin")) | .name' |
+              sort
+          )
+          if [[ ${#executable_targets[@]} -ne 1 || "${executable_targets[0]}" != "floral-notepaper" ]]; then
+            echo 'The executable target set has changed; update the SignPath configuration before releasing:' >&2
+            printf '%s\n' "${executable_targets[@]}" >&2
             exit 1
           fi
 
@@ -148,10 +152,6 @@ jobs:
             @{
               Source = 'src-tauri/target/release/floral-notepaper.exe'
               Destination = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION).exe"
-            },
-            @{
-              Source = 'src-tauri/target/release/floral-notepaper-update-helper.exe'
-              Destination = Join-Path $releaseDir 'floral-notepaper-update-helper.exe'
             }
           )
 
@@ -331,10 +331,8 @@ jobs:
           }
 
           $mainBinary = "signed-windows-binary/floral-notepaper_$($env:RELEASE_VERSION).exe"
-          $helperBinary = 'signed-windows-binary/floral-notepaper-update-helper.exe'
           Add-PinnedTestCertificateToTrustStore -Path $mainBinary
           Assert-AuthenticodeSignature -Path $mainBinary
-          Assert-AuthenticodeSignature -Path $helperBinary
 
       - name: Upload verified signed binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -401,11 +399,6 @@ jobs:
               Source = "signed-windows-binaries/floral-notepaper_$($env:RELEASE_VERSION).exe"
               Target = Join-Path $targetDir 'floral-notepaper.exe'
               Output = 'main_sha256'
-            },
-            @{
-              Source = 'signed-windows-binaries/floral-notepaper-update-helper.exe'
-              Target = Join-Path $targetDir 'floral-notepaper-update-helper.exe'
-              Output = 'helper_sha256'
             }
           )
 
@@ -540,7 +533,6 @@ jobs:
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
           EXPECTED_MAIN_SHA256: ${{ steps.restore.outputs.main_sha256 }}
-          EXPECTED_HELPER_SHA256: ${{ steps.restore.outputs.helper_sha256 }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -548,10 +540,6 @@ jobs:
             @{
               Path = 'src-tauri/target/release/floral-notepaper.exe'
               ExpectedSha256 = $env:EXPECTED_MAIN_SHA256
-            },
-            @{
-              Path = 'src-tauri/target/release/floral-notepaper-update-helper.exe'
-              ExpectedSha256 = $env:EXPECTED_HELPER_SHA256
             }
           )
           foreach ($binary in $binaries) {
@@ -743,13 +731,10 @@ jobs:
 
           $installer = "signed-windows-installer/floral-notepaper_$($env:RELEASE_VERSION)_x64-setup.exe"
           $portable = "signed-windows-binaries/floral-notepaper_$($env:RELEASE_VERSION).exe"
-          $helper = 'signed-windows-binaries/floral-notepaper-update-helper.exe'
           Add-PinnedTestCertificateToTrustStore -Path $installer
           Assert-AuthenticodeSignature -Path $installer
           Assert-AuthenticodeSignature -Path $portable
-          Assert-AuthenticodeSignature -Path $helper
           $expectedBinarySha256 = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash
-          $expectedHelperSha256 = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash
 
           $installProcess = Start-Process -FilePath $installer -ArgumentList @('/S', '/CurrentUser') -PassThru -Wait
           if ($installProcess.ExitCode -ne 0) {
@@ -776,19 +761,12 @@ jobs:
 
           $installDir = $installEntry.InstallLocation.Trim('"')
           $installedBinary = Join-Path $installDir 'floral-notepaper.exe'
-          $installedHelper = Join-Path $installDir 'floral-notepaper-update-helper.exe'
           $uninstaller = Join-Path $installDir 'uninstall.exe'
           Assert-AuthenticodeSignature -Path $installedBinary
-          Assert-AuthenticodeSignature -Path $installedHelper
 
           $installedSha256 = (Get-FileHash -LiteralPath $installedBinary -Algorithm SHA256).Hash
           if ($installedSha256 -ne $expectedBinarySha256) {
             throw "Installed executable hash mismatch. Expected $expectedBinarySha256, got $installedSha256."
-          }
-
-          $installedHelperSha256 = (Get-FileHash -LiteralPath $installedHelper -Algorithm SHA256).Hash
-          if ($installedHelperSha256 -ne $expectedHelperSha256) {
-            throw "Installed helper hash mismatch. Expected $expectedHelperSha256, got $installedHelperSha256."
           }
 
           if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
@@ -798,7 +776,6 @@ jobs:
           "### Windows signing verification" >> $env:GITHUB_STEP_SUMMARY
           "- Installer: valid Authenticode signature and timestamp" >> $env:GITHUB_STEP_SUMMARY
           "- Installed executable: signature valid and SHA-256 matches the signed portable executable" >> $env:GITHUB_STEP_SUMMARY
-          "- Installed update helper: signature valid and SHA-256 matches the signed bundled helper" >> $env:GITHUB_STEP_SUMMARY
           "- Uninstaller: $($uninstallerSignature.Status) (signing intentionally deferred)" >> $env:GITHUB_STEP_SUMMARY
 
           $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/S', '/CurrentUser') -PassThru -Wait
