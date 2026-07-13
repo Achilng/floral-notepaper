@@ -378,9 +378,22 @@ jobs:
         id: restore
         shell: pwsh
         env:
+          SIGNING_MODE: ${{ needs.validate-release.outputs.mode }}
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
           $ErrorActionPreference = 'Stop'
+
+          if ($env:SIGNING_MODE -notin @('test', 'release')) {
+            throw "Unsupported signing mode: $($env:SIGNING_MODE)"
+          }
+          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+          }
+          $untrustedRootPattern = '(?i)(0x800B0109|untrusted root|root certificate.+not trusted)'
 
           $targetDir = 'src-tauri/target/release'
           New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
@@ -398,8 +411,28 @@ jobs:
             }
 
             $signature = Get-AuthenticodeSignature -LiteralPath $binary.Source
-            if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate) {
-              throw "The restored executable is not validly signed: $($binary.Source): $($signature.Status)"
+            $certificate = $signature.SignerCertificate
+            if (-not $certificate) {
+              throw "The restored executable does not contain a signer certificate: $($binary.Source)"
+            }
+            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if (
+              $actualThumbprint -ne $expectedThumbprint -or
+              $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
+              $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
+            ) {
+              throw "The restored executable was signed by an unexpected certificate: $($binary.Source)"
+            }
+            if (-not $signature.TimeStamperCertificate) {
+              throw "The restored executable does not contain a trusted timestamp: $($binary.Source)"
+            }
+
+            $isExpectedTestTrustFailure =
+              $env:SIGNING_MODE -eq 'test' -and
+              $signature.Status -in @('UnknownError', 'NotTrusted') -and
+              $signature.StatusMessage -match $untrustedRootPattern
+            if ($signature.Status -ne 'Valid' -and -not $isExpectedTestTrustFailure) {
+              throw "The restored executable is not validly signed: $($binary.Source): $($signature.Status): $($signature.StatusMessage)"
             }
 
             Copy-Item -LiteralPath $binary.Source -Destination $binary.Target -Force
