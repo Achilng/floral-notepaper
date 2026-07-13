@@ -2,6 +2,8 @@ name: Release
 
 on:
   push:
+    branches:
+      - "ci/windows-artifact-sign"
     tags:
       - "v*"
 
@@ -17,6 +19,7 @@ jobs:
     permissions:
       contents: read
     outputs:
+      mode: ${{ steps.release.outputs.mode }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
     steps:
@@ -25,22 +28,32 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Validate tag, versions, and signing scope
+      - name: Validate source, versions, and signing scope
         id: release
         shell: bash
         run: |
           set -euo pipefail
 
-          tag="$GITHUB_REF_NAME"
-          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
-            echo "Release tags must use the stable SemVer form vMAJOR.MINOR.PATCH: $tag" >&2
-            exit 1
-          fi
-
-          version="${tag#v}"
           package_version="$(jq -r '.version' package.json)"
           tauri_version="$(jq -r '.version' src-tauri/tauri.conf.json)"
           cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)"
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            mode="release"
+            tag="$GITHUB_REF_NAME"
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+              echo "Release tags must use the stable SemVer form vMAJOR.MINOR.PATCH: $tag" >&2
+              exit 1
+            fi
+            version="${tag#v}"
+          elif [[ "$GITHUB_REF_TYPE" == "branch" && "$GITHUB_REF_NAME" == "ci/windows-artifact-sign" ]]; then
+            mode="test"
+            tag=""
+            version="$package_version"
+          else
+            echo "Unsupported release source: $GITHUB_REF_TYPE $GITHUB_REF_NAME" >&2
+            exit 1
+          fi
 
           for entry in \
             "package.json:$package_version" \
@@ -89,6 +102,7 @@ jobs:
             exit 1
           fi
 
+          echo "mode=$mode" >> "$GITHUB_OUTPUT"
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "tag=$tag" >> "$GITHUB_OUTPUT"
 
@@ -204,9 +218,11 @@ jobs:
       - name: Verify signed executable
         shell: pwsh
         env:
+          SIGNING_MODE: ${{ needs.validate-release.outputs.mode }}
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
           EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
           EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -227,12 +243,9 @@ jobs:
             return $candidate.FullName
           }
 
-          function Assert-AuthenticodeSignature {
+          function Get-PinnedSignerCertificate {
             param([Parameter(Mandatory = $true)][string]$Path)
 
-            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-              throw "Signed file was not found: $Path"
-            }
             if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
               throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
             }
@@ -240,16 +253,71 @@ jobs:
               throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
             }
 
+            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if (-not $signature.SignerCertificate) {
+              throw "The Authenticode signature does not contain a signer certificate: $Path"
+            }
+
+            $certificate = $signature.SignerCertificate
+            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if ($actualThumbprint -ne $expectedThumbprint) {
+              throw "Unexpected certificate thumbprint: $actualThumbprint"
+            }
+            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
+              throw "Unexpected certificate subject: $($certificate.Subject)"
+            }
+            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
+              throw "Unexpected certificate issuer: $($certificate.Issuer)"
+            }
+
+            return $certificate
+          }
+
+          function Add-PinnedTestCertificateToTrustStore {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if ($env:SIGNING_MODE -eq 'release') {
+              return
+            }
+            if ($env:SIGNING_MODE -ne 'test') {
+              throw "Unsupported signing mode: $($env:SIGNING_MODE)"
+            }
+
+            $certificate = Get-PinnedSignerCertificate -Path $Path
+            if ($certificate.Subject -ne $certificate.Issuer) {
+              throw 'The pinned test certificate must be self-signed before it can be trusted on the ephemeral runner.'
+            }
+
+            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+              [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+              [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+            )
+            try {
+              $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+              $store.Add($certificate)
+            } finally {
+              $store.Close()
+            }
+          }
+
+          function Assert-AuthenticodeSignature {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+              throw "Signed file was not found: $Path"
+            }
+
+            $null = Get-PinnedSignerCertificate -Path $Path
+
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
             $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
             if ($signature.Status -ne 'Valid') {
               throw "Authenticode signature is not valid for $Path: $($signature.Status)"
-            }
-            if ($signature.SignerCertificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
-              throw "Unexpected certificate subject: $($signature.SignerCertificate.Subject)"
-            }
-            if ($signature.SignerCertificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
-              throw "Unexpected certificate issuer: $($signature.SignerCertificate.Issuer)"
             }
             if (-not $signature.TimeStamperCertificate) {
               throw "The signature does not contain a trusted timestamp: $Path"
@@ -264,6 +332,7 @@ jobs:
 
           $mainBinary = "signed-windows-binary/floral-notepaper_$($env:RELEASE_VERSION).exe"
           $helperBinary = 'signed-windows-binary/floral-notepaper-update-helper.exe'
+          Add-PinnedTestCertificateToTrustStore -Path $mainBinary
           Assert-AuthenticodeSignature -Path $mainBinary
           Assert-AuthenticodeSignature -Path $helperBinary
 
@@ -550,8 +619,6 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: signed-windows-installer
           skip-decompress: true
-          parameters: |
-            version: ${{ toJSON(needs.validate-release.outputs.version) }}
 
       - name: Download signed Windows binaries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -562,9 +629,11 @@ jobs:
       - name: Verify installer and installed executable
         shell: pwsh
         env:
+          SIGNING_MODE: ${{ needs.validate-release.outputs.mode }}
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
           EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
           EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -585,12 +654,9 @@ jobs:
             return $candidate.FullName
           }
 
-          function Assert-AuthenticodeSignature {
+          function Get-PinnedSignerCertificate {
             param([Parameter(Mandatory = $true)][string]$Path)
 
-            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-              throw "Signed file was not found: $Path"
-            }
             if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
               throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
             }
@@ -598,16 +664,71 @@ jobs:
               throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
             }
 
+            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if (-not $signature.SignerCertificate) {
+              throw "The Authenticode signature does not contain a signer certificate: $Path"
+            }
+
+            $certificate = $signature.SignerCertificate
+            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if ($actualThumbprint -ne $expectedThumbprint) {
+              throw "Unexpected certificate thumbprint: $actualThumbprint"
+            }
+            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
+              throw "Unexpected certificate subject: $($certificate.Subject)"
+            }
+            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
+              throw "Unexpected certificate issuer: $($certificate.Issuer)"
+            }
+
+            return $certificate
+          }
+
+          function Add-PinnedTestCertificateToTrustStore {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if ($env:SIGNING_MODE -eq 'release') {
+              return
+            }
+            if ($env:SIGNING_MODE -ne 'test') {
+              throw "Unsupported signing mode: $($env:SIGNING_MODE)"
+            }
+
+            $certificate = Get-PinnedSignerCertificate -Path $Path
+            if ($certificate.Subject -ne $certificate.Issuer) {
+              throw 'The pinned test certificate must be self-signed before it can be trusted on the ephemeral runner.'
+            }
+
+            $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
+              [System.Security.Cryptography.X509Certificates.StoreName]::Root,
+              [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser
+            )
+            try {
+              $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+              $store.Add($certificate)
+            } finally {
+              $store.Close()
+            }
+          }
+
+          function Assert-AuthenticodeSignature {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+              throw "Signed file was not found: $Path"
+            }
+
+            $null = Get-PinnedSignerCertificate -Path $Path
+
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
             $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
             if ($signature.Status -ne 'Valid') {
               throw "Authenticode signature is not valid for $Path: $($signature.Status)"
-            }
-            if ($signature.SignerCertificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
-              throw "Unexpected certificate subject: $($signature.SignerCertificate.Subject)"
-            }
-            if ($signature.SignerCertificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
-              throw "Unexpected certificate issuer: $($signature.SignerCertificate.Issuer)"
             }
             if (-not $signature.TimeStamperCertificate) {
               throw "The signature does not contain a trusted timestamp: $Path"
@@ -623,6 +744,7 @@ jobs:
           $installer = "signed-windows-installer/floral-notepaper_$($env:RELEASE_VERSION)_x64-setup.exe"
           $portable = "signed-windows-binaries/floral-notepaper_$($env:RELEASE_VERSION).exe"
           $helper = 'signed-windows-binaries/floral-notepaper-update-helper.exe'
+          Add-PinnedTestCertificateToTrustStore -Path $installer
           Assert-AuthenticodeSignature -Path $installer
           Assert-AuthenticodeSignature -Path $portable
           Assert-AuthenticodeSignature -Path $helper
@@ -882,6 +1004,86 @@ jobs:
           overwrite: true
           retention-days: 7
 
+  verify-test-release-assets:
+    name: Verify test release assets without publishing
+    needs:
+      - validate-release
+      - sign-windows-binary
+      - sign-and-verify-windows-installer
+      - build-linux
+      - build-macos-x86_64
+      - build-macos-aarch64
+    if: needs.validate-release.outputs.mode == 'test'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Download signed Windows portable executable
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-portable
+          path: test-release-assets
+
+      - name: Download signed Windows installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-installer
+          path: test-release-assets
+
+      - name: Download Linux release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: linux-release-assets
+          path: test-release-assets
+
+      - name: Download macOS Intel release asset
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: macos-x64-release-asset
+          path: test-release-assets
+
+      - name: Download macOS Apple Silicon release asset
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: macos-aarch64-release-asset
+          path: test-release-assets
+
+      - name: Validate test assets and generate checksums
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          required_assets=(
+            "floral-notepaper_${RELEASE_VERSION}.exe"
+            "floral-notepaper_${RELEASE_VERSION}_x64-setup.exe"
+            "floral-notepaper_${RELEASE_VERSION}_x64.dmg"
+            "floral-notepaper_${RELEASE_VERSION}_aarch64.dmg"
+          )
+          for asset in "${required_assets[@]}"; do
+            if [[ ! -f "test-release-assets/$asset" ]]; then
+              echo "Required test asset is missing: $asset" >&2
+              exit 1
+            fi
+          done
+
+          find test-release-assets -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  test-release-assets/#  #' \
+            > test-release-assets/SHA256SUMS.txt
+
+      - name: Upload aggregate test release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-release-assets
+          path: test-release-assets/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
   publish-draft-release:
     name: Publish verified assets to draft release
     needs:
@@ -891,6 +1093,7 @@ jobs:
       - build-linux
       - build-macos-x86_64
       - build-macos-aarch64
+    if: needs.validate-release.outputs.mode == 'release'
     runs-on: ubuntu-latest
     permissions:
       actions: read
