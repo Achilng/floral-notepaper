@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 use typst::diag::{FileError, FileResult, Warned};
 use typst::foundations::{Bytes, Datetime, Duration};
@@ -12,14 +13,22 @@ pub struct PdfExportOptions {
     pub page_size: String,
     pub font_family: String,
     pub font_size: u32,
+    pub admonition_labels: HashMap<String, String>,
 }
 
 impl Default for PdfExportOptions {
     fn default() -> Self {
+        let mut admonition_labels = HashMap::new();
+        admonition_labels.insert("note".into(), "Note".into());
+        admonition_labels.insert("tip".into(), "Tip".into());
+        admonition_labels.insert("important".into(), "Important".into());
+        admonition_labels.insert("warning".into(), "Warning".into());
+        admonition_labels.insert("caution".into(), "Caution".into());
         Self {
-            page_size: "A4".into(),
+            page_size: "a4".into(),
             font_family: "HarmonyOS Sans".into(),
             font_size: 14,
+            admonition_labels,
         }
     }
 }
@@ -61,7 +70,58 @@ impl World for ExportWorld {
     }
 }
 
-fn markdown_to_typst(md: &str) -> String {
+fn admonition_icon(type_name: &str) -> String {
+    match type_name.to_uppercase().as_str() {
+        "NOTE" => r#"#box(
+  fill: rgb(9, 105, 218),
+  width: 1.2em,
+  height: 1.2em,
+  radius: 50%,
+  inset: 0pt,
+  align(center + horizon, text(fill: white, size: 0.8em, weight: "bold", "i"))
+)"#
+        .to_string(),
+        "TIP" => r#"#box(
+  fill: rgb(26, 127, 55),
+  width: 1.2em,
+  height: 1.2em,
+  radius: 50%,
+  inset: 0pt,
+  align(center + horizon, text(fill: white, size: 0.8em, "★"))
+)"#
+        .to_string(),
+        "WARNING" => r#"#box(
+  fill: rgb(154, 103, 0),
+  width: 1.2em,
+  height: 1.2em,
+  radius: 50%,
+  inset: 0pt,
+  align(center + horizon, text(fill: white, size: 0.8em, "!"))
+)"#
+        .to_string(),
+        "CAUTION" => r#"#box(
+  fill: rgb(207, 34, 46),
+  width: 1.2em,
+  height: 1.2em,
+  radius: 50%,
+  inset: 0pt,
+  align(center + horizon, text(fill: white, size: 0.8em, weight: "bold", "!"))
+)"#
+        .to_string(),
+        "IMPORTANT" => r#"#box(
+  fill: rgb(130, 80, 223),
+  width: 1.2em,
+  height: 1.2em,
+  radius: 50%,
+  inset: 0pt,
+  align(center + horizon, text(fill: white, size: 0.8em, "◆"))
+)"#
+        .to_string(),
+        _ => "".to_string(),
+    }
+}
+
+fn markdown_to_typst(md: &str, labels: &HashMap<String, String>) -> String {
     let mut out = String::with_capacity(md.len());
     let mut in_code_block = false;
 
@@ -89,24 +149,32 @@ fn markdown_to_typst(md: &str) -> String {
         // > [!TYPE] [optional content]
         if let Some(rest) = line.strip_prefix("> [!") {
             if let Some(end) = rest.find(']') {
-                let type_name = &rest[..end];
+                let type_name = &rest[..end].to_lowercase();
                 let inline_rest = rest[end + 1..].trim();
-                let (label, accent, bg) = match type_name.to_uppercase().as_str() {
-                    "NOTE" => ("NOTE", "rgb(9, 105, 218)", "rgb(212, 231, 250)"),
-                    "TIP" => ("TIP", "rgb(26, 127, 55)", "rgb(210, 240, 218)"),
-                    "WARNING" => ("WARNING", "rgb(154, 103, 0)", "rgb(250, 236, 210)"),
-                    "CAUTION" => ("CAUTION", "rgb(207, 34, 46)", "rgb(253, 220, 222)"),
-                    "IMPORTANT" => ("IMPORTANT", "rgb(130, 80, 223)", "rgb(230, 220, 250)"),
-                    _ => ("NOTE", "rgb(9, 105, 218)", "rgb(212, 231, 250)"),
+                let kind = type_name.as_str();
+                let (accent, bg) = match kind {
+                    "note" => ("rgb(9, 105, 218)", "rgb(212, 231, 250)"),
+                    "tip" => ("rgb(26, 127, 55)", "rgb(210, 240, 218)"),
+                    "warning" => ("rgb(154, 103, 0)", "rgb(250, 236, 210)"),
+                    "caution" => ("rgb(207, 34, 46)", "rgb(253, 220, 222)"),
+                    "important" => ("rgb(130, 80, 223)", "rgb(230, 220, 250)"),
+                    _ => ("rgb(9, 105, 218)", "rgb(212, 231, 250)"),
                 };
+                let label = labels.get(kind).map(|s| s.as_str()).unwrap_or(kind);
+                let icon = admonition_icon(kind);
                 out.push_str(&format!(
                     "#block(fill: {bg}, stroke: (left: 4pt + {accent}), \
-                     inset: (x: 1em, y: 0.75em), radius: 4pt, width: 100%, breakable: true)["
+             inset: (x: 1em, y: 0.75em), radius: 4pt, width: 100%, breakable: true)["
                 ));
+                if !icon.is_empty() {
+                    out.push_str(&format!("{}", icon));
+                    out.push('\n');
+                }
                 out.push_str(&format!("*{}:*", label));
+                out.push('\n');
                 if !inline_rest.is_empty() {
-                    out.push(' ');
                     out.push_str(&convert_inline(inline_rest));
+                    out.push('\n');
                 }
 
                 i += 1;
@@ -120,8 +188,6 @@ fn markdown_to_typst(md: &str) -> String {
                             out.push_str(&convert_inline(content));
                         }
                         i += 1;
-                    } else if aline.trim().is_empty() {
-                        break;
                     } else {
                         break;
                     }
@@ -255,7 +321,7 @@ fn build_typst_source(content: &str, options: &PdfExportOptions) -> String {
     let size = options.page_size.to_lowercase();
     let font = &options.font_family;
     let size_pt = options.font_size;
-    let converted = markdown_to_typst(content);
+    let converted = markdown_to_typst(content, &options.admonition_labels);
 
     format!(
         "#set page(paper: \"{size}\", margin: 2.5cm)\n\

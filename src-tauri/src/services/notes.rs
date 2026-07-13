@@ -3,7 +3,7 @@ use crate::services::pdf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     env, fmt, fs, io,
     path::{Component, Path, PathBuf},
 };
@@ -904,13 +904,19 @@ impl NoteStore {
         Ok(())
     }
 
-    pub fn export_pdf_file(&self, id: &str, path: &Path) -> Result<(), AppError> {
+    pub fn export_pdf_file(
+        &self,
+        id: &str,
+        path: &Path,
+        admonition_labels: HashMap<String, String>,
+    ) -> Result<(), AppError> {
         let note = self.read_note(id)?;
         let config = self.load_config()?;
         let options = pdf::PdfExportOptions {
             page_size: config.export_page_size,
             font_family: config.export_font_family,
             font_size: config.export_font_size,
+            admonition_labels,
         };
         pdf::export_markdown_to_pdf(&note.content, path, &options).map_err(|msg| AppError {
             code: "exportPdf".into(),
@@ -2396,6 +2402,16 @@ mod tests {
         );
     }
 
+    fn default_labels() -> HashMap<String, String> {
+        HashMap::from([
+            ("note".into(), "Note".into()),
+            ("tip".into(), "Tip".into()),
+            ("important".into(), "Important".into()),
+            ("warning".into(), "Warning".into()),
+            ("caution".into(), "Caution".into()),
+        ])
+    }
+
     #[test]
     fn exports_pdf_with_typst_basic_markdown() {
         let root = test_root("export-pdf");
@@ -2423,7 +2439,7 @@ fn main() {}
         let export_path = export_dir.join("test.pdf");
 
         store
-            .export_pdf_file(&note.id, &export_path)
+            .export_pdf_file(&note.id, &export_path, default_labels())
             .expect("export PDF");
 
         assert!(export_path.exists(), "PDF file should exist");
@@ -2458,7 +2474,7 @@ fn main() {}
         store.save_config(config).expect("save config");
 
         store
-            .export_pdf_file(&note.id, &export_path)
+            .export_pdf_file(&note.id, &export_path, default_labels())
             .expect("export PDF with custom size");
 
         assert!(export_path.exists());
@@ -2488,7 +2504,7 @@ C# 代码: `Console.WriteLine();`
         let export_path = root.join("exports").join("special.pdf");
 
         store
-            .export_pdf_file(&note.id, &export_path)
+            .export_pdf_file(&note.id, &export_path, default_labels())
             .expect("export PDF with special chars");
 
         assert!(export_path.exists());
@@ -2536,7 +2552,7 @@ C# 代码: `Console.WriteLine();`
         let export_path = root.join("exports").join("admonition.pdf");
 
         store
-            .export_pdf_file(&note.id, &export_path)
+            .export_pdf_file(&note.id, &export_path, default_labels())
             .expect("export PDF with admonitions");
 
         assert!(export_path.exists());

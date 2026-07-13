@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 pub mod desktop;
 pub mod json_io;
 pub mod locales;
@@ -64,8 +66,12 @@ fn notes_export_markdown(id: String, path: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
-fn notes_export_pdf(id: String, path: String) -> Result<(), AppError> {
-    default_store()?.export_pdf_file(&id, &PathBuf::from(path))
+fn notes_export_pdf(
+    id: String,
+    path: String,
+    admonition_labels: HashMap<String, String>,
+) -> Result<(), AppError> {
+    default_store()?.export_pdf_file(&id, &PathBuf::from(path), admonition_labels)
 }
 
 #[tauri::command]

@@ -48,7 +48,15 @@ export async function exportMarkdownPDF(note: ExportableNote): Promise<boolean> 
     return false;
   }
 
-  await invoke("notes_export_pdf", { id: note.id, path });
+  const admonitionLabels = {
+    note: t("markdown.alert.note"),
+    tip: t("markdown.alert.tip"),
+    important: t("markdown.alert.important"),
+    warning: t("markdown.alert.warning"),
+    caution: t("markdown.alert.caution"),
+  };
+
+  await invoke("notes_export_pdf", { id: note.id, path, admonitionLabels });
   return true;
 }
 
