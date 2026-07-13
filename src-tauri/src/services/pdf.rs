@@ -121,16 +121,7 @@ fn markdown_to_typst(md: &str) -> String {
                         }
                         i += 1;
                     } else if aline.trim().is_empty() {
-                        let mut j = i + 1;
-                        while j < len && lines[j].trim().is_empty() {
-                            j += 1;
-                        }
-                        if j < len && lines[j].starts_with("> ") {
-                            out.push_str("\n\n");
-                            i += 1;
-                        } else {
-                            break;
-                        }
+                        break;
                     } else {
                         break;
                     }
