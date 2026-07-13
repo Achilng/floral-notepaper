@@ -2084,7 +2084,12 @@ fn available_disk_space(path: &Path) -> Option<u64> {
         return None;
     }
     let stat = unsafe { stat.assume_init() };
-    Some((stat.f_bavail as u64).saturating_mul(stat.f_frsize))
+
+    fn cast_u64<T: Into<u64>>(val: T) -> u64 {
+        val.into()
+    }
+
+    Some(cast_u64(stat.f_bavail).saturating_mul(cast_u64(stat.f_frsize)))
 }
 
 #[cfg(not(any(unix, target_os = "windows")))]

@@ -167,7 +167,7 @@ fn markdown_to_typst(md: &str, labels: &HashMap<String, String>) -> String {
              inset: (x: 1em, y: 0.75em), radius: 4pt, width: 100%, breakable: true)["
                 ));
                 if !icon.is_empty() {
-                    out.push_str(&format!("{}", icon));
+                    out.push_str(icon.as_str());
                     out.push('\n');
                 }
                 out.push_str(&format!("*{}:*", label));
