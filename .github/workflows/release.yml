@@ -1,92 +1,359 @@
 name: Release
 
 on:
-  workflow_dispatch:
-    inputs:
-      version:
-        description: "版本号（例如 v1.0.3）"
-        required: true
-        type: string
+  push:
+    tags:
+      - "v*"
+
+permissions: {}
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  prepare-release:
+  validate-release:
+    name: Validate release source
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     outputs:
-      created: ${{ steps.release.outputs.created }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
-          fetch-depth: 0
+          persist-credentials: false
 
-      - name: Create or update draft release
+      - name: Validate tag, versions, and signing scope
         id: release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.inputs.version }}
+        shell: bash
         run: |
-          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
-          release_note_file="Docs/release-note/${ver}.md"
-          if [ ! -f "$release_note_file" ]; then
+          set -euo pipefail
+
+          tag="$GITHUB_REF_NAME"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must use the stable SemVer form vMAJOR.MINOR.PATCH: $tag" >&2
+            exit 1
+          fi
+
+          version="${tag#v}"
+          package_version="$(jq -r '.version' package.json)"
+          tauri_version="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)"
+
+          for entry in \
+            "package.json:$package_version" \
+            "src-tauri/tauri.conf.json:$tauri_version" \
+            "src-tauri/Cargo.toml:$cargo_version"; do
+            file="${entry%%:*}"
+            actual="${entry#*:}"
+            if [[ "$actual" != "$version" ]]; then
+              echo "Version mismatch in $file: expected $version, got $actual" >&2
+              exit 1
+            fi
+          done
+
+          release_note_file="Docs/release-note/${version}.md"
+          if [[ ! -f "$release_note_file" ]]; then
             echo "Release note file not found: $release_note_file" >&2
             exit 1
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          empty_ref=""
-          git tag -f "$TAG_NAME" "$GITHUB_SHA"
-          git push origin "${empty_ref}:refs/tags/$TAG_NAME" || true
-          git push origin "refs/tags/$TAG_NAME"
-
-          if gh release view "$TAG_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release edit "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --notes-file "$release_note_file"
-            echo "created=false" >> "$GITHUB_OUTPUT"
-          else
-            gh release create "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --draft --title "$TAG_NAME" --notes-file "$release_note_file" --verify-tag
-            echo "created=true" >> "$GITHUB_OUTPUT"
+          bundled_bin_sources=()
+          while IFS= read -r source; do
+            bundled_bin_sources+=("$source")
+          done < <(find src-tauri/src/bin -maxdepth 1 -type f -name '*.rs' -exec basename {} \; | sort)
+          if [[ ${#bundled_bin_sources[@]} -ne 1 || "${bundled_bin_sources[0]}" != "floral-notepaper-update-helper.rs" ]]; then
+            echo 'The expected bundled Rust helper set has changed; update the SignPath configuration before releasing:' >&2
+            printf '%s\n' "${bundled_bin_sources[@]}" >&2
+            exit 1
           fi
 
-          # Remove stale auxiliary files and old sanitized asset names from older workflow versions.
-          for asset in \
-            icon.icns \
-            bundle_dmg.sh \
-            "_${ver}_aarch64.dmg" \
-            "_${ver}_x64.dmg" \
-            "_${ver}_x64-setup.exe" \
-            "花笺_${ver}_aarch64.dmg" \
-            "花笺_${ver}_x64.dmg" \
-            "花笺_${ver}_x64-setup.exe"; do
-            gh release delete-asset "$TAG_NAME" "$asset" --repo "$GITHUB_REPOSITORY" --yes >/dev/null 2>&1 || true
-          done
+          external_bins="$(jq -r '.bundle.externalBin // [] | .[]' src-tauri/tauri.conf.json)"
+          if [[ -n "$external_bins" ]]; then
+            echo "bundle.externalBin is not empty; update the SignPath signing scope before releasing:" >&2
+            printf '%s\n' "$external_bins" >&2
+            exit 1
+          fi
 
-  build-windows:
-    needs: prepare-release
+          executable_resources="$({
+            jq -r '
+              (.bundle.resources // [])
+              | if type == "array" then .[] else keys[] end
+            ' src-tauri/tauri.conf.json
+          } | grep -Ei '\.(exe|dll)(\*|$)' || true)"
+          if [[ -n "$executable_resources" ]]; then
+            echo "Executable bundle resources are not covered by the current SignPath configurations:" >&2
+            printf '%s\n' "$executable_resources" >&2
+            exit 1
+          fi
+
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+  build-windows-binary:
+    name: Build unsigned Windows binary
+    needs: validate-release
     runs-on: windows-latest
     permissions:
-      contents: write
+      contents: read
+    outputs:
+      unsigned_artifact_id: ${{ steps.upload.outputs.artifact-id }}
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Set version
+      - name: Build executable without bundling
+        run: npm run tauri -- build --no-bundle --no-sign
+
+      - name: Collect unsigned Windows binaries
         shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
         run: |
-          $ver = "${{ github.event.inputs.version }}" -replace '^v', ''
-          node scripts/set-version.mjs $ver
+          $ErrorActionPreference = 'Stop'
+
+          $releaseDir = 'unsigned-release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          $binaries = @(
+            @{
+              Source = 'src-tauri/target/release/floral-notepaper.exe'
+              Destination = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION).exe"
+            },
+            @{
+              Source = 'src-tauri/target/release/floral-notepaper-update-helper.exe'
+              Destination = Join-Path $releaseDir 'floral-notepaper-update-helper.exe'
+            }
+          )
+
+          foreach ($binary in $binaries) {
+            if (-not (Test-Path -LiteralPath $binary.Source -PathType Leaf)) {
+              throw "Windows executable was not found at $($binary.Source)."
+            }
+            Copy-Item -LiteralPath $binary.Source -Destination $binary.Destination -Force
+
+            $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $binary.Destination).Path)
+            $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
+            $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
+            foreach ($entry in @{
+                FileVersion = $versionInfo.FileVersion
+                ProductVersion = $versionInfo.ProductVersion
+              }.GetEnumerator()) {
+              if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
+                throw "Unexpected PE $($entry.Key) for $($binary.Source): expected $env:RELEASE_VERSION, got $($entry.Value)."
+              }
+            }
+          }
+
+          Compress-Archive `
+            -Path (Join-Path $releaseDir '*.exe') `
+            -DestinationPath 'unsigned-windows-binaries.zip' `
+            -CompressionLevel Optimal
+
+      - name: Upload unsigned binaries for SignPath
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          path: unsigned-windows-binaries.zip
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  sign-windows-binary:
+    name: Sign and verify Windows binary
+    needs: [validate-release, build-windows-binary]
+    runs-on: windows-latest
+    environment:
+      name: release-signing
+      deployment: false
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Submit binary signing request
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_BINARY_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ needs.build-windows-binary.outputs.unsigned_artifact_id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-windows-binary
+          skip-decompress: false
+          parameters: |
+            version: ${{ toJSON(needs.validate-release.outputs.version) }}
+
+      - name: Verify signed executable
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-SignToolPath {
+            $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
+            if ($command) {
+              return $command.Source
+            }
+
+            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
+              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $candidate) {
+              throw 'signtool.exe was not found on the runner.'
+            }
+            return $candidate.FullName
+          }
+
+          function Assert-AuthenticodeSignature {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+              throw "Signed file was not found: $Path"
+            }
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
+              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
+            }
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
+              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+            if ($signature.Status -ne 'Valid') {
+              throw "Authenticode signature is not valid for $Path: $($signature.Status)"
+            }
+            if ($signature.SignerCertificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
+              throw "Unexpected certificate subject: $($signature.SignerCertificate.Subject)"
+            }
+            if ($signature.SignerCertificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
+              throw "Unexpected certificate issuer: $($signature.SignerCertificate.Issuer)"
+            }
+            if (-not $signature.TimeStamperCertificate) {
+              throw "The signature does not contain a trusted timestamp: $Path"
+            }
+
+            $signTool = Get-SignToolPath
+            & $signTool verify /pa /all /v $Path
+            if ($LASTEXITCODE -ne 0) {
+              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
+            }
+          }
+
+          $mainBinary = "signed-windows-binary/floral-notepaper_$($env:RELEASE_VERSION).exe"
+          $helperBinary = 'signed-windows-binary/floral-notepaper-update-helper.exe'
+          Assert-AuthenticodeSignature -Path $mainBinary
+          Assert-AuthenticodeSignature -Path $helperBinary
+
+      - name: Upload verified signed binaries
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signed-windows-binaries
+          path: signed-windows-binary/*.exe
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+      - name: Upload verified signed executable
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signed-windows-portable
+          path: signed-windows-binary/floral-notepaper_${{ needs.validate-release.outputs.version }}.exe
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  build-windows-installer:
+    name: Bundle unsigned Windows installer
+    needs: [validate-release, sign-windows-binary]
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      unsigned_artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download signed Windows binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-binaries
+          path: signed-windows-binaries
+
+      - name: Restore signed Windows binaries
+        id: restore
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $targetDir = 'src-tauri/target/release'
+          New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+          $binaries = @(
+            @{
+              Source = "signed-windows-binaries/floral-notepaper_$($env:RELEASE_VERSION).exe"
+              Target = Join-Path $targetDir 'floral-notepaper.exe'
+              Output = 'main_sha256'
+            },
+            @{
+              Source = 'signed-windows-binaries/floral-notepaper-update-helper.exe'
+              Target = Join-Path $targetDir 'floral-notepaper-update-helper.exe'
+              Output = 'helper_sha256'
+            }
+          )
+
+          foreach ($binary in $binaries) {
+            if (-not (Test-Path -LiteralPath $binary.Source -PathType Leaf)) {
+              throw "Signed executable was not found at $($binary.Source)."
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $binary.Source
+            if ($signature.Status -ne 'Valid' -or -not $signature.TimeStamperCertificate) {
+              throw "The restored executable is not validly signed: $($binary.Source): $($signature.Status)"
+            }
+
+            Copy-Item -LiteralPath $binary.Source -Destination $binary.Target -Force
+            $sha256 = (Get-FileHash -LiteralPath $binary.Target -Algorithm SHA256).Hash
+            "$($binary.Output)=$sha256" >> $env:GITHUB_OUTPUT
+          }
 
       - name: Preload Tauri NSIS toolchain
         shell: pwsh
@@ -196,55 +463,256 @@ jobs:
 
           Write-Host "Tauri NSIS toolchain is ready at $nsisPath"
 
-      - name: Build
-        run: npm run tauri build
+      - name: Bundle NSIS installer without recompiling
+        run: npm run tauri -- bundle --bundles nsis --no-sign
 
-      - name: Rename portable binary
-        shell: pwsh
-        run: |
-          $ver = "${{ github.event.inputs.version }}" -replace '^v', ''
-          Copy-Item src-tauri/target/release/floral-notepaper.exe "floral-notepaper_$ver.exe"
-
-      - name: Upload release assets
+      - name: Verify binary hash and collect installer
         shell: pwsh
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.inputs.version }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          EXPECTED_MAIN_SHA256: ${{ steps.restore.outputs.main_sha256 }}
+          EXPECTED_HELPER_SHA256: ${{ steps.restore.outputs.helper_sha256 }}
         run: |
-          $ver = $env:TAG_NAME -replace '^v', ''
-          $releaseDir = 'release-assets'
-          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          $ErrorActionPreference = 'Stop'
 
-          $setupSource = Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -File -Recurse -Filter '*.exe' | Sort-Object Length -Descending | Select-Object -First 1
-          if (-not $setupSource) {
-            throw 'No Windows NSIS installer found.'
+          $binaries = @(
+            @{
+              Path = 'src-tauri/target/release/floral-notepaper.exe'
+              ExpectedSha256 = $env:EXPECTED_MAIN_SHA256
+            },
+            @{
+              Path = 'src-tauri/target/release/floral-notepaper-update-helper.exe'
+              ExpectedSha256 = $env:EXPECTED_HELPER_SHA256
+            }
+          )
+          foreach ($binary in $binaries) {
+            $actualSha256 = (Get-FileHash -LiteralPath $binary.Path -Algorithm SHA256).Hash
+            if ($actualSha256 -ne $binary.ExpectedSha256) {
+              throw "A signed executable was replaced while bundling: $($binary.Path). Expected $($binary.ExpectedSha256), got $actualSha256."
+            }
           }
 
-          $setupAsset = Join-Path $releaseDir "floral-notepaper_${ver}_x64-setup.exe"
-          $portableAsset = Join-Path $releaseDir "floral-notepaper_${ver}.exe"
-          Copy-Item $setupSource.FullName $setupAsset -Force
-          Copy-Item "floral-notepaper_$ver.exe" $portableAsset -Force
-
-          $files = @(
-            (Resolve-Path $setupAsset).Path,
-            (Resolve-Path $portableAsset).Path
+          $installers = @(
+            Get-ChildItem -Path 'src-tauri/target/release/bundle/nsis' -File -Recurse -Filter '*.exe'
           )
-          gh release upload $env:TAG_NAME $files --clobber --repo $env:GITHUB_REPOSITORY
+          if ($installers.Count -ne 1) {
+            $names = ($installers | ForEach-Object FullName) -join "`n"
+            throw "Expected exactly one NSIS installer, found $($installers.Count):`n$names"
+          }
+
+          $releaseDir = 'unsigned-release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_x64-setup.exe"
+          Copy-Item -LiteralPath $installers[0].FullName -Destination $asset -Force
+
+          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $asset).Path)
+          $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
+          $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
+          foreach ($entry in @{
+              FileVersion = $versionInfo.FileVersion
+              ProductVersion = $versionInfo.ProductVersion
+            }.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
+              throw "Unexpected installer $($entry.Key): expected $env:RELEASE_VERSION, got $($entry.Value)."
+            }
+          }
+
+      - name: Upload unsigned installer for SignPath
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          path: unsigned-release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_x64-setup.exe
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  sign-and-verify-windows-installer:
+    name: Sign and install-test Windows installer
+    needs: [validate-release, sign-windows-binary, build-windows-installer]
+    runs-on: windows-latest
+    environment:
+      name: release-signing
+      deployment: false
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Submit installer signing request
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: ${{ vars.SIGNPATH_SIGNING_POLICY_SLUG }}
+          artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ needs.build-windows-installer.outputs.unsigned_artifact_id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-windows-installer
+          skip-decompress: true
+          parameters: |
+            version: ${{ toJSON(needs.validate-release.outputs.version) }}
+
+      - name: Download signed Windows binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-binaries
+          path: signed-windows-binaries
+
+      - name: Verify installer and installed executable
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-SignToolPath {
+            $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
+            if ($command) {
+              return $command.Source
+            }
+
+            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
+              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $candidate) {
+              throw 'signtool.exe was not found on the runner.'
+            }
+            return $candidate.FullName
+          }
+
+          function Assert-AuthenticodeSignature {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+              throw "Signed file was not found: $Path"
+            }
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
+              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
+            }
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
+              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+            if ($signature.Status -ne 'Valid') {
+              throw "Authenticode signature is not valid for $Path: $($signature.Status)"
+            }
+            if ($signature.SignerCertificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
+              throw "Unexpected certificate subject: $($signature.SignerCertificate.Subject)"
+            }
+            if ($signature.SignerCertificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
+              throw "Unexpected certificate issuer: $($signature.SignerCertificate.Issuer)"
+            }
+            if (-not $signature.TimeStamperCertificate) {
+              throw "The signature does not contain a trusted timestamp: $Path"
+            }
+
+            $signTool = Get-SignToolPath
+            & $signTool verify /pa /all /v $Path
+            if ($LASTEXITCODE -ne 0) {
+              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
+            }
+          }
+
+          $installer = "signed-windows-installer/floral-notepaper_$($env:RELEASE_VERSION)_x64-setup.exe"
+          $portable = "signed-windows-binaries/floral-notepaper_$($env:RELEASE_VERSION).exe"
+          $helper = 'signed-windows-binaries/floral-notepaper-update-helper.exe'
+          Assert-AuthenticodeSignature -Path $installer
+          Assert-AuthenticodeSignature -Path $portable
+          Assert-AuthenticodeSignature -Path $helper
+          $expectedBinarySha256 = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash
+          $expectedHelperSha256 = (Get-FileHash -LiteralPath $helper -Algorithm SHA256).Hash
+
+          $installProcess = Start-Process -FilePath $installer -ArgumentList @('/S', '/CurrentUser') -PassThru -Wait
+          if ($installProcess.ExitCode -ne 0) {
+            throw "The NSIS installer failed with exit code $($installProcess.ExitCode)."
+          }
+
+          $uninstallRoots = @(
+            'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+            'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+            'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+          )
+          $installEntry = foreach ($root in $uninstallRoots) {
+            if (-not (Test-Path $root)) {
+              continue
+            }
+            Get-ChildItem $root -ErrorAction SilentlyContinue |
+              ForEach-Object { Get-ItemProperty $_.PSPath -ErrorAction SilentlyContinue } |
+              Where-Object { $_.DisplayName -eq '花笺' }
+          }
+          $installEntry = @($installEntry) | Select-Object -First 1
+          if (-not $installEntry -or [string]::IsNullOrWhiteSpace($installEntry.InstallLocation)) {
+            throw 'The installed application could not be located through the uninstall registry.'
+          }
+
+          $installDir = $installEntry.InstallLocation.Trim('"')
+          $installedBinary = Join-Path $installDir 'floral-notepaper.exe'
+          $installedHelper = Join-Path $installDir 'floral-notepaper-update-helper.exe'
+          $uninstaller = Join-Path $installDir 'uninstall.exe'
+          Assert-AuthenticodeSignature -Path $installedBinary
+          Assert-AuthenticodeSignature -Path $installedHelper
+
+          $installedSha256 = (Get-FileHash -LiteralPath $installedBinary -Algorithm SHA256).Hash
+          if ($installedSha256 -ne $expectedBinarySha256) {
+            throw "Installed executable hash mismatch. Expected $expectedBinarySha256, got $installedSha256."
+          }
+
+          $installedHelperSha256 = (Get-FileHash -LiteralPath $installedHelper -Algorithm SHA256).Hash
+          if ($installedHelperSha256 -ne $expectedHelperSha256) {
+            throw "Installed helper hash mismatch. Expected $expectedHelperSha256, got $installedHelperSha256."
+          }
+
+          if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+            throw "The NSIS uninstaller was not found at $uninstaller."
+          }
+          $uninstallerSignature = Get-AuthenticodeSignature -LiteralPath $uninstaller
+          "### Windows signing verification" >> $env:GITHUB_STEP_SUMMARY
+          "- Installer: valid Authenticode signature and timestamp" >> $env:GITHUB_STEP_SUMMARY
+          "- Installed executable: signature valid and SHA-256 matches the signed portable executable" >> $env:GITHUB_STEP_SUMMARY
+          "- Installed update helper: signature valid and SHA-256 matches the signed bundled helper" >> $env:GITHUB_STEP_SUMMARY
+          "- Uninstaller: $($uninstallerSignature.Status) (signing intentionally deferred)" >> $env:GITHUB_STEP_SUMMARY
+
+          $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/S', '/CurrentUser') -PassThru -Wait
+          if ($uninstallProcess.ExitCode -ne 0) {
+            throw "The NSIS uninstaller failed with exit code $($uninstallProcess.ExitCode)."
+          }
+
+      - name: Upload verified signed installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signed-windows-installer
+          path: signed-windows-installer/floral-notepaper_${{ needs.validate-release.outputs.version }}_x64-setup.exe
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   build-linux:
-    needs: prepare-release
+    name: Build Linux release assets
+    needs: validate-release
     runs-on: ubuntu-22.04
     permissions:
-      contents: write
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
 
       - name: Install system dependencies
         run: |
@@ -254,159 +722,277 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci
 
-      - name: Set version
-        run: |
-          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
-          cat > set-version.cjs << 'SCRIPT'
-          const fs = require("fs");
-          const ver = process.argv[2];
-          const conf = JSON.parse(fs.readFileSync("src-tauri/tauri.conf.json", "utf8"));
-          conf.version = ver;
-          fs.writeFileSync("src-tauri/tauri.conf.json", JSON.stringify(conf, null, 2));
-          let toml = fs.readFileSync("src-tauri/Cargo.toml", "utf8");
-          toml = toml.replace(/^version = "[^"]*"/m, 'version = "' + ver + '"');
-          fs.writeFileSync("src-tauri/Cargo.toml", toml);
-          SCRIPT
-          node set-version.cjs "$ver"
-
       - name: Build
-        run: npm run tauri build
+        run: npm run tauri -- build --no-sign
 
-      - name: Upload release assets
+      - name: Collect release assets
+        shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.inputs.version }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
         run: |
-          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
+          set -euo pipefail
           mkdir -p release-assets
 
-          # DEB
           deb_source="$(find src-tauri/target/release/bundle/deb -type f -name '*.deb' | sort | head -n 1)"
-          if [ -n "$deb_source" ]; then
-            cp "$deb_source" "release-assets/floral-notepaper_${ver}_amd64.deb"
+          if [[ -n "$deb_source" ]]; then
+            cp "$deb_source" "release-assets/floral-notepaper_${RELEASE_VERSION}_amd64.deb"
           fi
 
-          # RPM
           rpm_source="$(find src-tauri/target/release/bundle/rpm -type f -name '*.rpm' | sort | head -n 1)"
-          if [ -n "$rpm_source" ]; then
-            cp "$rpm_source" "release-assets/floral-notepaper-${ver}-1.x86_64.rpm"
+          if [[ -n "$rpm_source" ]]; then
+            cp "$rpm_source" "release-assets/floral-notepaper-${RELEASE_VERSION}-1.x86_64.rpm"
           fi
 
-          # AppImage
           appimage_source="$(find src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' | sort | head -n 1)"
-          if [ -n "$appimage_source" ]; then
-            cp "$appimage_source" "release-assets/floral-notepaper_${ver}_amd64.AppImage"
+          if [[ -n "$appimage_source" ]]; then
+            cp "$appimage_source" "release-assets/floral-notepaper_${RELEASE_VERSION}_amd64.AppImage"
           fi
 
           shopt -s nullglob
           assets=(release-assets/*)
-          if [ ${#assets[@]} -eq 0 ]; then
-            echo "No Linux release assets found." >&2
+          if [[ ${#assets[@]} -eq 0 ]]; then
+            echo 'No Linux release assets found.' >&2
             exit 1
           fi
 
-          gh release upload "$TAG_NAME" release-assets/* --clobber --repo "$GITHUB_REPOSITORY"
+      - name: Upload Linux release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linux-release-assets
+          path: release-assets/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   build-macos-x86_64:
-    needs: prepare-release
+    name: Build macOS Intel release asset
+    needs: validate-release
     runs-on: macos-15-intel
     permissions:
-      contents: write
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           targets: x86_64-apple-darwin
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Set version & disable signing
-        run: |
-          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
-          node scripts/set-version.mjs "$ver" --disable-macos-signing
+      - name: Build without signing
+        run: npm run tauri -- build --target x86_64-apple-darwin --no-sign
 
-      - name: Build
-        run: npm run tauri build -- --target x86_64-apple-darwin
-
-      - name: Upload release assets
+      - name: Collect release asset
+        shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.inputs.version }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
         run: |
-          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
-          mkdir -p release-assets
-          dmg_source="$(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
-          if [ -z "$dmg_source" ]; then
-            echo "No macOS x86_64 DMG release asset found." >&2
+          set -euo pipefail
+          dmg_candidates=()
+          while IFS= read -r candidate; do
+            dmg_candidates+=("$candidate")
+          done < <(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort)
+          if [[ ${#dmg_candidates[@]} -ne 1 ]]; then
+            printf 'Expected exactly one macOS x86_64 DMG, found %s:\n' "${#dmg_candidates[@]}" >&2
+            printf '%s\n' "${dmg_candidates[@]}" >&2
             exit 1
           fi
-          dmg_asset="release-assets/floral-notepaper_${ver}_x64.dmg"
-          cp "$dmg_source" "$dmg_asset"
+
+          mkdir -p release-assets
+          dmg_asset="release-assets/floral-notepaper_${RELEASE_VERSION}_x64.dmg"
+          cp "${dmg_candidates[0]}" "$dmg_asset"
           xattr -cr "$dmg_asset"
-          gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
+
+      - name: Upload macOS Intel release asset
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: macos-x64-release-asset
+          path: release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_x64.dmg
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
 
   build-macos-aarch64:
-    needs: prepare-release
+    name: Build macOS Apple Silicon release asset
+    needs: validate-release
     runs-on: macos-15
     permissions:
-      contents: write
+      contents: read
     steps:
-      - uses: actions/checkout@v5
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-node@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: "24"
           cache: npm
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           targets: aarch64-apple-darwin
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Set version & disable signing
-        run: |
-          ver="$(echo '${{ github.event.inputs.version }}' | sed 's/^v//')"
-          node scripts/set-version.mjs "$ver" --disable-macos-signing
+      - name: Build without signing
+        run: npm run tauri -- build --target aarch64-apple-darwin --no-sign
 
-      - name: Build
-        run: npm run tauri build -- --target aarch64-apple-darwin
-
-      - name: Upload release assets
+      - name: Collect release asset
+        shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.inputs.version }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
         run: |
-          ver="$(echo "$TAG_NAME" | sed 's/^v//')"
-          mkdir -p release-assets
-          dmg_source="$(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort | head -n 1)"
-          if [ -z "$dmg_source" ]; then
-            echo "No macOS aarch64 DMG release asset found." >&2
+          set -euo pipefail
+          dmg_candidates=()
+          while IFS= read -r candidate; do
+            dmg_candidates+=("$candidate")
+          done < <(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort)
+          if [[ ${#dmg_candidates[@]} -ne 1 ]]; then
+            printf 'Expected exactly one macOS aarch64 DMG, found %s:\n' "${#dmg_candidates[@]}" >&2
+            printf '%s\n' "${dmg_candidates[@]}" >&2
             exit 1
           fi
-          dmg_asset="release-assets/floral-notepaper_${ver}_aarch64.dmg"
-          cp "$dmg_source" "$dmg_asset"
-          xattr -cr "$dmg_asset"
-          gh release upload "$TAG_NAME" "$dmg_asset" --clobber --repo "$GITHUB_REPOSITORY"
 
-  cleanup-release:
-    needs: [prepare-release, build-windows, build-linux, build-macos-x86_64, build-macos-aarch64]
-    if: failure() && needs.prepare-release.outputs.created == 'true'
+          mkdir -p release-assets
+          dmg_asset="release-assets/floral-notepaper_${RELEASE_VERSION}_aarch64.dmg"
+          cp "${dmg_candidates[0]}" "$dmg_asset"
+          xattr -cr "$dmg_asset"
+
+      - name: Upload macOS Apple Silicon release asset
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: macos-aarch64-release-asset
+          path: release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64.dmg
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  publish-draft-release:
+    name: Publish verified assets to draft release
+    needs:
+      - validate-release
+      - sign-windows-binary
+      - sign-and-verify-windows-installer
+      - build-linux
+      - build-macos-x86_64
+      - build-macos-aarch64
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
-      - name: Delete draft release after failed build
+      - name: Checkout release notes
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+
+      - name: Download signed Windows portable executable
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-portable
+          path: release-assets
+
+      - name: Download signed Windows installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-installer
+          path: release-assets
+
+      - name: Download Linux release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: linux-release-assets
+          path: release-assets
+
+      - name: Download macOS Intel release asset
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: macos-x64-release-asset
+          path: release-assets
+
+      - name: Download macOS Apple Silicon release asset
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: macos-aarch64-release-asset
+          path: release-assets
+
+      - name: Validate release assets and generate checksums
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          required_assets=(
+            "floral-notepaper_${RELEASE_VERSION}.exe"
+            "floral-notepaper_${RELEASE_VERSION}_x64-setup.exe"
+            "floral-notepaper_${RELEASE_VERSION}_x64.dmg"
+            "floral-notepaper_${RELEASE_VERSION}_aarch64.dmg"
+          )
+          for asset in "${required_assets[@]}"; do
+            if [[ ! -f "release-assets/$asset" ]]; then
+              echo "Required release asset is missing: $asset" >&2
+              exit 1
+            fi
+          done
+
+          find release-assets -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  release-assets/#  #' \
+            > release-assets/SHA256SUMS.txt
+
+      - name: Create or update draft release
+        shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG_NAME: ${{ github.event.inputs.version }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
         run: |
-          gh release delete "$TAG_NAME" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes || true
+          set -euo pipefail
+
+          release_note_file="Docs/release-note/${RELEASE_VERSION}.md"
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft')"
+            if [[ "$is_draft" != "true" ]]; then
+              echo "Release $RELEASE_TAG is already published and will not be overwritten." >&2
+              exit 1
+            fi
+
+            while IFS= read -r asset; do
+              [[ -z "$asset" ]] && continue
+              gh release delete-asset "$RELEASE_TAG" "$asset" --repo "$GITHUB_REPOSITORY" --yes
+            done < <(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name')
+
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --title "$RELEASE_TAG" \
+              --notes-file "$release_note_file"
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --draft \
+              --title "$RELEASE_TAG" \
+              --notes-file "$release_note_file" \
+              --verify-tag
+          fi
+
+          gh release upload "$RELEASE_TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
