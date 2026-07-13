@@ -139,6 +139,51 @@ jobs:
       - name: Build executable without bundling
         run: npm run tauri -- build --no-bundle --no-sign
 
+      - name: Mark executable for NSIS bundling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $binaryPath = 'src-tauri/target/release/floral-notepaper.exe'
+          if (-not (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
+            throw "Windows executable was not found at $binaryPath."
+          }
+
+          $unknownMarker = '__TAURI_BUNDLE_TYPE_VAR_UNK'
+          $nsisMarker = '__TAURI_BUNDLE_TYPE_VAR_NSS'
+          if ($unknownMarker.Length -ne $nsisMarker.Length) {
+            throw 'Tauri bundle type markers must have the same length.'
+          }
+
+          $bytes = [System.IO.File]::ReadAllBytes($binaryPath)
+          $content = [System.Text.Encoding]::Latin1.GetString($bytes)
+          $markerIndex = $content.IndexOf($unknownMarker, [System.StringComparison]::Ordinal)
+          if ($markerIndex -lt 0) {
+            throw 'The Tauri unknown bundle type marker was not found.'
+          }
+          if ($content.IndexOf($unknownMarker, $markerIndex + 1, [System.StringComparison]::Ordinal) -ge 0) {
+            throw 'More than one Tauri unknown bundle type marker was found.'
+          }
+          if ($content.Contains($nsisMarker, [System.StringComparison]::Ordinal)) {
+            throw 'The executable already contains an NSIS bundle type marker.'
+          }
+
+          $nsisMarkerBytes = [System.Text.Encoding]::ASCII.GetBytes($nsisMarker)
+          [System.Array]::Copy($nsisMarkerBytes, 0, $bytes, $markerIndex, $nsisMarkerBytes.Length)
+          [System.IO.File]::WriteAllBytes($binaryPath, $bytes)
+
+          $patchedContent = [System.Text.Encoding]::Latin1.GetString(
+            [System.IO.File]::ReadAllBytes($binaryPath)
+          )
+          if (
+            $patchedContent.Contains($unknownMarker, [System.StringComparison]::Ordinal) -or
+            -not $patchedContent.Contains($nsisMarker, [System.StringComparison]::Ordinal)
+          ) {
+            throw 'Failed to apply the Tauri NSIS bundle type marker.'
+          }
+
+          Write-Host 'Marked the unsigned executable for NSIS bundling before code signing.'
+
       - name: Collect unsigned Windows binaries
         shell: pwsh
         env:
@@ -323,6 +368,20 @@ jobs:
 
           $mainBinary = "signed-windows-binary/floral-notepaper_$($env:RELEASE_VERSION).exe"
           Assert-AuthenticodeSignature -Path $mainBinary
+
+          $binaryContent = [System.Text.Encoding]::Latin1.GetString(
+            [System.IO.File]::ReadAllBytes($mainBinary)
+          )
+          $unknownMarker = '__TAURI_BUNDLE_TYPE_VAR_UNK'
+          $nsisMarker = '__TAURI_BUNDLE_TYPE_VAR_NSS'
+          $nsisMarkerIndex = $binaryContent.IndexOf($nsisMarker, [System.StringComparison]::Ordinal)
+          if (
+            $binaryContent.Contains($unknownMarker, [System.StringComparison]::Ordinal) -or
+            $nsisMarkerIndex -lt 0 -or
+            $binaryContent.IndexOf($nsisMarker, $nsisMarkerIndex + 1, [System.StringComparison]::Ordinal) -ge 0
+          ) {
+            throw 'The signed executable does not contain exactly one Tauri NSIS bundle type marker.'
+          }
 
       - name: Upload verified signed binaries
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
