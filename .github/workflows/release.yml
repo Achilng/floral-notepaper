@@ -317,7 +317,7 @@ jobs:
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
             $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
             if ($signature.Status -ne 'Valid') {
-              throw "Authenticode signature is not valid for $Path: $($signature.Status)"
+              throw "Authenticode signature is not valid for ${Path}: $($signature.Status)"
             }
             if (-not $signature.TimeStamperCertificate) {
               throw "The signature does not contain a trusted timestamp: $Path"
@@ -716,7 +716,7 @@ jobs:
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
             $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
             if ($signature.Status -ne 'Valid') {
-              throw "Authenticode signature is not valid for $Path: $($signature.Status)"
+              throw "Authenticode signature is not valid for ${Path}: $($signature.Status)"
             }
             if (-not $signature.TimeStamperCertificate) {
               throw "The signature does not contain a trusted timestamp: $Path"
