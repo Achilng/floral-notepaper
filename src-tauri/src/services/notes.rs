@@ -68,6 +68,8 @@ pub struct AppConfig {
     pub background_position_y: f64,
     #[serde(default = "default_remember_surface_size")]
     pub remember_surface_size: bool,
+    #[serde(default = "default_notepad_always_on_top")]
+    pub notepad_always_on_top: bool,
     #[serde(default = "default_tile_ctrl_close")]
     pub tile_ctrl_close: bool,
     #[serde(default)]
@@ -1073,6 +1075,7 @@ impl NoteStore {
             background_position_x: default_background_position(),
             background_position_y: default_background_position(),
             remember_surface_size: default_remember_surface_size(),
+            notepad_always_on_top: default_notepad_always_on_top(),
             tile_ctrl_close: default_tile_ctrl_close(),
             tile_double_click_to_edit: false,
             tile_save_returns_to_pin: false,
@@ -1643,6 +1646,10 @@ fn default_remember_surface_size() -> bool {
     true
 }
 
+fn default_notepad_always_on_top() -> bool {
+    true
+}
+
 fn default_tile_ctrl_close() -> bool {
     true
 }
@@ -1789,6 +1796,7 @@ mod tests {
         assert_eq!(default_config.tile_color_mode, "system");
         assert!(!default_config.tile_double_click_to_edit);
         assert!(!default_config.tile_save_returns_to_pin);
+        assert!(default_config.notepad_always_on_top);
         assert_eq!(default_config.theme, "system");
         assert_eq!(default_config.locale, "zh-CN");
         assert_eq!(
@@ -1820,6 +1828,7 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            notepad_always_on_top: false,
             tile_ctrl_close: true,
             tile_double_click_to_edit: true,
             tile_save_returns_to_pin: true,

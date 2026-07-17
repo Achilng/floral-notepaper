@@ -22,6 +22,7 @@ export interface AppConfig {
   tabIndentSize: number;
   externalFileAutoSave: boolean;
   rememberSurfaceSize: boolean;
+  notepadAlwaysOnTop: boolean;
   tileCtrlClose: boolean;
   tileDoubleClickToEdit: boolean;
   tileSaveReturnsToPin: boolean;

@@ -230,6 +230,7 @@
     "openAtCursor": "Open near cursor with shortcut",
     "quickNoteShortcut": "Quick Note shortcut",
     "rememberSurfaceSize": "Remember surface size",
+    "notepadAlwaysOnTop": "Keep Quick Note on top",
     "tabIndentSize": "Tab indent width",
     "selectFolder": "Select Folder",
     "shortcut": {
