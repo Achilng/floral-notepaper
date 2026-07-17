@@ -228,6 +228,11 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             onChange={(checked) => setConfigValue("tileCtrlClose", checked)}
           />
           <ToggleRow
+            label={t("settings.notepadEscClose", { defaultValue: "按 Esc 关闭便签小窗" })}
+            checked={config.notepadEscClose ?? true}
+            onChange={(checked) => setConfigValue("notepadEscClose", checked)}
+          />
+          <ToggleRow
             label={t("settings.openAtCursor", { defaultValue: "快捷键打开时跟随鼠标位置" })}
             checked={config.openAtCursor ?? true}
             onChange={(checked) => setConfigValue("openAtCursor", checked)}

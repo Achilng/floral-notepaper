@@ -264,6 +264,7 @@
       "label": "磁貼顏色"
     },
     "tileCtrlClose": "Ctrl+右鍵快速關閉磁貼",
+    "notepadEscClose": "按 Esc 關閉便箋小窗",
     "tileRenderMarkdown": "磁貼渲染 Markdown",
     "tileDoubleClickToEdit": "雙擊磁貼進入編輯",
     "tileSaveReturnsToPin": "儲存後回到磁貼",

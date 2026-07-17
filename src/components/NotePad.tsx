@@ -140,6 +140,7 @@ export function NotePad({
   const [tileRenderMarkdown, setTileRenderMarkdown] = useState(false);
   const [tileDoubleClickToEdit, setTileDoubleClickToEdit] = useState(false);
   const [tileSaveReturnsToPin, setTileSaveReturnsToPin] = useState(false);
+  const [notepadEscClose, setNotepadEscClose] = useState(true);
   const [tileColor, setTileColor] = useState(() =>
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
@@ -205,6 +206,7 @@ export function NotePad({
           setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
           setTileDoubleClickToEdit(loadedConfig.tileDoubleClickToEdit ?? false);
           setTileSaveReturnsToPin(loadedConfig.tileSaveReturnsToPin ?? false);
+          setNotepadEscClose(loadedConfig.notepadEscClose ?? true);
           setTileColorRaw(normalizeTileColor(loadedConfig.tileColor));
           setTileColorMode(loadedConfig.tileColorMode ?? "system");
           setTileColor(
@@ -261,6 +263,7 @@ export function NotePad({
       tileRenderMarkdown?: boolean;
       tileDoubleClickToEdit?: boolean;
       tileSaveReturnsToPin?: boolean;
+      notepadEscClose?: boolean;
     }>("config-changed", (event) => {
       const mode = event.payload.tileColorMode ?? tileColorMode;
       const raw = event.payload.tileColor ?? tileColorRaw;
@@ -274,6 +277,8 @@ export function NotePad({
         setTileDoubleClickToEdit(event.payload.tileDoubleClickToEdit);
       if (event.payload.tileSaveReturnsToPin != null)
         setTileSaveReturnsToPin(event.payload.tileSaveReturnsToPin);
+      if (event.payload.notepadEscClose != null)
+        setNotepadEscClose(event.payload.notepadEscClose);
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -580,6 +585,18 @@ export function NotePad({
       showToast(getErrorMessage(error));
     });
   }, [surfaceMode]);
+
+  useEffect(() => {
+    if (!notepadEscClose) return;
+    function handleEscKey(event: KeyboardEvent) {
+      if (event.key === "Escape" && surfaceMode === "pad") {
+        event.preventDefault();
+        handleClose();
+      }
+    }
+    document.addEventListener("keydown", handleEscKey);
+    return () => document.removeEventListener("keydown", handleEscKey);
+  }, [handleClose, surfaceMode, notepadEscClose]);
 
   const copyTileContent = useCallback(async () => {
     try {
