@@ -277,8 +277,7 @@ export function NotePad({
         setTileDoubleClickToEdit(event.payload.tileDoubleClickToEdit);
       if (event.payload.tileSaveReturnsToPin != null)
         setTileSaveReturnsToPin(event.payload.tileSaveReturnsToPin);
-      if (event.payload.notepadEscClose != null)
-        setNotepadEscClose(event.payload.notepadEscClose);
+      if (event.payload.notepadEscClose != null) setNotepadEscClose(event.payload.notepadEscClose);
     });
     return () => {
       void unlisten.then((fn) => fn());
