@@ -270,6 +270,9 @@ function applyFormat(
     }
   }
 
+  // Selecting the whole value scrolls the textarea to the top; capture the
+  // scroll offset so we can restore the viewport after replacing the content.
+  const previousScrollTop = textarea.scrollTop;
   textarea.focus();
   textarea.setSelectionRange(0, value.length);
   document.execCommand("insertText", false, result);
@@ -277,6 +280,7 @@ function applyFormat(
   markDirty();
   requestAnimationFrame(() => {
     textarea.setSelectionRange(cursorStart, cursorEnd);
+    textarea.scrollTop = previousScrollTop;
   });
 }
 
