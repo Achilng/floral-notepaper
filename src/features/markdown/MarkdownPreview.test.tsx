@@ -16,6 +16,21 @@ describe("MarkdownPreview", () => {
     expect(markup).toContain("正文");
   });
 
+  test("does not strike through a lone tilde between numbers", () => {
+    const markup = renderToStaticMarkup(<MarkdownPreview content="0.2~3 μm / 微藻 3~20 μm" />);
+
+    expect(markup).not.toContain("<del");
+    expect(markup).toContain("0.2~3 μm");
+    expect(markup).toContain("3~20 μm");
+  });
+
+  test("still renders double-tilde strikethrough", () => {
+    const markup = renderToStaticMarkup(<MarkdownPreview content="~~已完成~~" />);
+
+    expect(markup).toContain("<del");
+    expect(markup).toContain("已完成");
+  });
+
   test("keeps code block controls outside the horizontally scrollable pre", () => {
     const markup = renderToStaticMarkup(
       <MarkdownPreview content={"```text\nvery long code line\n```"} />,
