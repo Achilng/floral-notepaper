@@ -801,6 +801,9 @@ export function NotePad({
                     setStatus("dirty");
                   }}
                   onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.currentTarget.blur();
+                    }
                     if (event.key === "Enter" || event.key === "ArrowDown") {
                       event.preventDefault();
                       contentRef.current?.focus();
@@ -823,6 +826,9 @@ export function NotePad({
                   onDrop={imageDropHandler}
                   onDragOver={imageDragOverHandler}
                   onKeyDown={(event) => {
+                    if (event.key === "Escape") {
+                      event.currentTarget.blur();
+                    }
                     if (event.key === "ArrowUp") {
                       const ta = contentRef.current;
                       if (ta && ta.selectionStart === ta.selectionEnd) {
