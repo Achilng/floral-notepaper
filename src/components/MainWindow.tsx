@@ -1621,9 +1621,44 @@ export function MainWindow({
   const handleUndo = () => {
     if (!selectedId) return;
     const textarea = contentRef.current;
-    if (runEditorCommand(textarea, "undo")) {
+    const undoResult = runEditorCommand(textarea, "undo");
+
+    if (undoResult) {
       setContent(textarea?.value ?? content);
       markDirty();
+
+      // 撤销成功后，自动滚动到光标位置
+      if (textarea) {
+        requestAnimationFrame(() => {
+          const cursorPos = textarea.selectionStart;
+          const textLines = textarea.value.substring(0, cursorPos).split("\n");
+          const currentLine = textLines.length;
+
+          // 获取行高
+          const style = window.getComputedStyle(textarea);
+          const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5 || 20;
+
+          // 计算目标滚动位置（让光标位置居中显示）
+          const cursorTop = (currentLine - 1) * lineHeight;
+          const viewportHeight = textarea.clientHeight;
+          const targetScrollTop = cursorTop - viewportHeight / 2 + lineHeight / 2;
+
+          // 标记为编辑器主动滚动，避免同步滚动干扰
+          scrollSource.current = "editor";
+
+          // 滚动到目标位置
+          const finalScrollTop = Math.max(
+            0,
+            Math.min(targetScrollTop, textarea.scrollHeight - viewportHeight),
+          );
+          textarea.scrollTop = finalScrollTop;
+
+          // 150ms 后清除标记
+          setTimeout(() => {
+            scrollSource.current = null;
+          }, 150);
+        });
+      }
     }
   };
 
@@ -1633,8 +1668,68 @@ export function MainWindow({
     if (runEditorCommand(textarea, "redo")) {
       setContent(textarea?.value ?? content);
       markDirty();
+
+      // 重做成功后，自动滚动到光标位置
+      if (textarea) {
+        requestAnimationFrame(() => {
+          const cursorPos = textarea.selectionStart;
+          const textLines = textarea.value.substring(0, cursorPos).split("\n");
+          const currentLine = textLines.length;
+
+          // 获取行高
+          const style = window.getComputedStyle(textarea);
+          const lineHeight = parseFloat(style.lineHeight) || parseFloat(style.fontSize) * 1.5 || 20;
+
+          // 计算目标滚动位置（让光标位置居中显示）
+          const cursorTop = (currentLine - 1) * lineHeight;
+          const viewportHeight = textarea.clientHeight;
+          const targetScrollTop = cursorTop - viewportHeight / 2 + lineHeight / 2;
+
+          // 标记为编辑器主动滚动，避免同步滚动干扰
+          scrollSource.current = "editor";
+
+          // 滚动到目标位置
+          textarea.scrollTop = Math.max(
+            0,
+            Math.min(targetScrollTop, textarea.scrollHeight - viewportHeight),
+          );
+
+          // 150ms 后清除标记
+          setTimeout(() => {
+            scrollSource.current = null;
+          }, 150);
+        });
+      }
     }
   };
+
+  // 监听 Ctrl+Z 和 Ctrl+Y 快捷键
+  useEffect(() => {
+    function handleUndoRedoKeys(event: KeyboardEvent) {
+      // 如果没有选中笔记，不处理
+      if (!selectedId) return;
+
+      // 如果焦点不在 textarea 上，不处理（避免在其他输入框中拦截）
+      if (document.activeElement !== contentRef.current) return;
+
+      // Ctrl+Z 或 Cmd+Z（撤销）
+      if ((event.ctrlKey || event.metaKey) && event.key === "z" && !event.shiftKey) {
+        event.preventDefault();
+        handleUndo();
+      }
+      // Ctrl+Y 或 Cmd+Shift+Z（重做）
+      else if (
+        ((event.ctrlKey || event.metaKey) && event.key === "y") ||
+        ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key === "z")
+      ) {
+        event.preventDefault();
+        handleRedo();
+      }
+    }
+
+    document.addEventListener("keydown", handleUndoRedoKeys);
+    return () => document.removeEventListener("keydown", handleUndoRedoKeys);
+  }, [selectedId, handleUndo, handleRedo]);
 
   const handleOpenNotepad = async () => {
     try {
