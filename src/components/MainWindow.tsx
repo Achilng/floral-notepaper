@@ -2923,7 +2923,7 @@ export function MainWindow({
                           onScroll={handleEditorScroll}
                           className="w-full h-full leading-[1.9] text-ink-soft font-body placeholder:text-ink-ghost/40"
                           style={{
-                            fontSize: `${settingsConfig?.fontSize ?? 14}px`,
+                            fontSize: `${settingsConfig?.fontSize ?? 16}px`,
                             tabSize: `var(--tab-indent-size, 2)`,
                           }}
                           placeholder={t("main.editor.contentPlaceholder", {
@@ -2974,7 +2974,7 @@ export function MainWindow({
                       >
                         <MarkdownPreview
                           content={content}
-                          fontSize={settingsConfig?.fontSize ?? 14}
+                          fontSize={settingsConfig?.fontSize ?? 16}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           imageBaseDir={imageBaseDir ?? undefined}
                         />

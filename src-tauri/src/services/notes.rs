@@ -1604,11 +1604,11 @@ fn default_theme() -> String {
 }
 
 fn default_font_size() -> u32 {
-    14
+    16
 }
 
 fn default_surface_font_size() -> u32 {
-    14
+    16
 }
 
 fn default_tab_indent_size() -> u32 {
@@ -1892,8 +1892,8 @@ mod tests {
         assert!(!loaded.tile_save_returns_to_pin);
         assert_eq!(loaded.theme, "system");
         assert_eq!(loaded.locale, "zh-CN");
-        assert_eq!(loaded.font_size, 14);
-        assert_eq!(loaded.surface_font_size, 14);
+        assert_eq!(loaded.font_size, 16);
+        assert_eq!(loaded.surface_font_size, 16);
     }
 
     fn legacy_config_json(notes_dir: &Path, background_image_path: &str) -> String {

@@ -74,7 +74,7 @@ export function Tile({
   color = DEFAULT_TILE_COLOR,
   width = 260,
   rotation = 0,
-  fontSize = 14,
+  fontSize = 16,
   renderMarkdown = false,
   imageBaseDir,
   className = "",
