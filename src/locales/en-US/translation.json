@@ -207,6 +207,16 @@
       "note": "Auto-save notes",
       "surface": "Auto-save surface notes"
     },
+    "back": "Back",
+    "rememberWindowBounds": "Remember window size and position",
+    "interface": {
+      "backgroundColor": "Background color",
+      "defaultFont": "Default font",
+      "entry": "Interface settings",
+      "entryHint": "Fonts, size and background color",
+      "fontFamily": "Interface font",
+      "title": "Interface settings"
+    },
     "autostart": "Launch on Startup",
     "closeTitle": "Close Settings",
     "closeToTray": "Close to Tray",

@@ -8,9 +8,12 @@ interface BackgroundLayerProps {
 
 export function BackgroundLayer({ config }: BackgroundLayerProps) {
   const rawPath = config?.backgroundImagePath?.trim() ?? "";
+  const backgroundColor = config?.backgroundColor?.trim() || "var(--interface-background-color)";
   const convertedUrl = useMemo(() => (rawPath ? convertFileSrc(rawPath) : ""), [rawPath]);
 
-  if (!rawPath) return null;
+  if (!rawPath) {
+    return <div className="absolute inset-0 pointer-events-none z-0" style={{ backgroundColor }} />;
+  }
 
   const fit = config?.backgroundFit ?? "cover";
   const dim = Math.max(0, Math.min(1, config?.backgroundDim ?? 0.25));
@@ -51,7 +54,7 @@ export function BackgroundLayer({ config }: BackgroundLayerProps) {
           }}
         />
       )}
-      <div className="absolute inset-0 bg-cloud" style={{ opacity: dim }} />
+      <div className="absolute inset-0" style={{ backgroundColor, opacity: dim }} />
     </div>
   );
 }

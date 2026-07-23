@@ -207,6 +207,16 @@
       "note": "自動儲存筆記",
       "surface": "小窗筆記自動儲存"
     },
+    "back": "返回",
+    "rememberWindowBounds": "記住視窗大小和位置",
+    "interface": {
+      "backgroundColor": "背景顏色",
+      "defaultFont": "預設字體",
+      "entry": "界面設定",
+      "entryHint": "字體、字號和背景顏色",
+      "fontFamily": "界面字體",
+      "title": "界面設定"
+    },
     "autostart": "開機自啟",
     "closeTitle": "關閉設定",
     "closeToTray": "關閉至系統匣",

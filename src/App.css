@@ -55,6 +55,7 @@
 :root {
   --app-window-radius: 14px;
   --app-surface-radius: 14px;
+  --interface-background-color: #f6f3ec;
 }
 
 :root[data-theme="dark"] {
@@ -131,7 +132,7 @@ body {
 }
 
 .app-window-shell {
-  background: transparent;
+  background: var(--interface-background-color);
 }
 
 .app-main-frame {

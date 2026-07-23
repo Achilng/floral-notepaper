@@ -43,6 +43,10 @@ export async function chooseBackgroundImage(): Promise<string | null> {
   return typeof path === "string" ? path : null;
 }
 
+export function loadSystemFonts(): Promise<string[]> {
+  return invoke("system_fonts_list");
+}
+
 export function normalizeViewMode(value: string): ViewMode {
   if (value === "edit" || value === "split" || value === "preview") {
     return value;

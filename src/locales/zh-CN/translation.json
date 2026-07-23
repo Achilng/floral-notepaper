@@ -207,6 +207,16 @@
       "note": "自动保存笔记",
       "surface": "小窗笔记自动保存"
     },
+    "back": "返回",
+    "rememberWindowBounds": "记住窗口大小和位置",
+    "interface": {
+      "backgroundColor": "背景颜色",
+      "defaultFont": "默认字体",
+      "entry": "界面设置",
+      "entryHint": "字体、字号和背景颜色",
+      "fontFamily": "界面字体",
+      "title": "界面设置"
+    },
     "autostart": "开机自启",
     "closeTitle": "关闭设置",
     "closeToTray": "关闭到托盘",

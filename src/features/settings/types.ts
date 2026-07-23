@@ -18,10 +18,13 @@ export interface AppConfig {
   tileColorMode: TileColorMode;
   theme: ThemeOption;
   fontSize: number;
+  interfaceFontFamily: string;
+  backgroundColor: string;
   surfaceFontSize: number;
   tabIndentSize: number;
   externalFileAutoSave: boolean;
   rememberSurfaceSize: boolean;
+  rememberWindowBounds: boolean;
   tileCtrlClose: boolean;
   tileDoubleClickToEdit: boolean;
   tileSaveReturnsToPin: boolean;
@@ -30,6 +33,10 @@ export interface AppConfig {
   splitScrollSync: boolean;
   surfaceWidth?: number;
   surfaceHeight?: number;
+  windowX?: number;
+  windowY?: number;
+  windowWidth?: number;
+  windowHeight?: number;
   toggleVisibilityShortcut: string;
   openAtCursor: boolean;
   backgroundImagePath?: string;

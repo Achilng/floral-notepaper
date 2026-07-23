@@ -416,6 +416,8 @@ use tauri_plugin_autostart::{MacosLauncher, ManagerExt as AutostartExt};
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 const MAIN_WINDOW_LABEL: &str = "main";
+const MAIN_WINDOW_MIN_WIDTH: u32 = 900;
+const MAIN_WINDOW_MIN_HEIGHT: u32 = 620;
 const OPEN_ABOUT_PANEL_EVENT: &str = "open-about-panel";
 const MACOS_APP_ABOUT_ID: &str = "macos-about";
 const TRAY_ID: &str = "main-tray";
@@ -1184,6 +1186,10 @@ pub fn handle_window_event(window: &Window, event: &WindowEvent) {
         return;
     };
 
+    if let Some(webview) = window.app_handle().get_webview_window(MAIN_WINDOW_LABEL) {
+        save_main_window_bounds(&webview);
+    }
+
     match main_window_close_action(app_is_exiting(window.app_handle()), close_to_tray_enabled()) {
         MainWindowCloseAction::AllowClose => {}
         MainWindowCloseAction::HideToTray => {
@@ -1262,6 +1268,96 @@ fn hide_fullscreen_window(window: &Window) {
 
     FULLSCREEN_HIDING.store(true, Ordering::SeqCst);
     let _ = window.set_fullscreen(false);
+}
+
+#[cfg(target_os = "windows")]
+pub fn system_font_families() -> Vec<String> {
+    use std::collections::BTreeSet;
+    use std::ffi::OsString;
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::System::Registry::{
+        RegCloseKey, RegEnumValueW, RegOpenKeyExW, HKEY_LOCAL_MACHINE, KEY_READ,
+    };
+
+    const FONTS_KEY: &str = r"SOFTWARE\Microsoft\Windows NT\CurrentVersion\Fonts";
+    let mut key = std::ptr::null_mut();
+    let key_wide: Vec<u16> = FONTS_KEY.encode_utf16().chain(std::iter::once(0)).collect();
+    let status = unsafe { RegOpenKeyExW(HKEY_LOCAL_MACHINE, key_wide.as_ptr(), 0, KEY_READ, &mut key) };
+    if status != 0 {
+        return fallback_font_families();
+    }
+
+    let mut fonts = BTreeSet::new();
+    let mut index = 0;
+    loop {
+        let mut name = [0u16; 512];
+        let mut name_len = name.len() as u32;
+        let status = unsafe {
+            RegEnumValueW(
+                key,
+                index,
+                name.as_mut_ptr(),
+                &mut name_len,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+            )
+        };
+        if status != 0 {
+            break;
+        }
+        let raw = OsString::from_wide(&name[..name_len as usize])
+            .to_string_lossy()
+            .to_string();
+        if let Some(family) = normalize_windows_font_name(&raw) {
+            fonts.insert(family);
+        }
+        index += 1;
+    }
+    unsafe {
+        RegCloseKey(key);
+    }
+
+    let mut fonts: Vec<String> = fonts.into_iter().collect();
+    if fonts.is_empty() {
+        fonts = fallback_font_families();
+    }
+    fonts
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn system_font_families() -> Vec<String> {
+    fallback_font_families()
+}
+
+#[cfg(target_os = "windows")]
+fn normalize_windows_font_name(value: &str) -> Option<String> {
+    let family = value
+        .replace("(TrueType)", "")
+        .replace("(OpenType)", "")
+        .replace("(All res)", "")
+        .replace("&", ",")
+        .trim()
+        .trim_end_matches(',')
+        .trim()
+        .to_string();
+    if family.is_empty() {
+        None
+    } else {
+        Some(family)
+    }
+}
+
+fn fallback_font_families() -> Vec<String> {
+    vec![
+        "HarmonyOS Sans SC".into(),
+        "Microsoft YaHei".into(),
+        "SimSun".into(),
+        "Arial".into(),
+        "Segoe UI".into(),
+        "system-ui".into(),
+    ]
 }
 
 fn main_window_close_action(app_is_exiting: bool, close_to_tray: bool) -> MainWindowCloseAction {
@@ -1387,9 +1483,11 @@ fn toggle_close_to_tray(_app: &AppHandle) -> Result<AppConfig, Box<dyn Error>> {
 pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     clear_hidden_window_state(app);
     let locale = configured_locale();
+    let saved_bounds = saved_main_window_bounds();
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
         window.set_title(locales::main_window_title(locale))?;
+        apply_window_bounds(&window, saved_bounds)?;
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
@@ -1405,8 +1503,8 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
             specs: WindowSizeSpec {
                 width: 1180.0,
                 height: 760.0,
-                min_width: 900.0,
-                min_height: 620.0,
+                min_width: MAIN_WINDOW_MIN_WIDTH as f64,
+                min_height: MAIN_WINDOW_MIN_HEIGHT as f64,
             },
             // On macOS, tauri.macos.conf.json sets titleBarStyle: "Overlay"
             // with native traffic lights; decorations: false would conflict.
@@ -1414,7 +1512,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
             always_on_top: false,
             shadow: true,
             skip_taskbar: false,
-            bounds: None,
+            bounds: saved_bounds,
         },
     )?;
     if let Some(window) = app.get_webview_window(&label) {
@@ -1527,6 +1625,62 @@ fn save_surface_size(window: &tauri::WebviewWindow) {
     config.surface_width = Some(w);
     config.surface_height = Some(h);
     let _ = store.save_config(config);
+}
+
+fn save_main_window_bounds(window: &tauri::WebviewWindow) {
+    let Ok(store) = default_store() else {
+        return;
+    };
+    let Ok(mut config) = store.load_config() else {
+        return;
+    };
+    if !config.remember_window_bounds {
+        return;
+    }
+    if window.is_minimized().unwrap_or(false)
+        || window.is_maximized().unwrap_or(false)
+        || window.is_fullscreen().unwrap_or(false)
+    {
+        return;
+    }
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.inner_size() else {
+        return;
+    };
+    let width = size.width.max(MAIN_WINDOW_MIN_WIDTH);
+    let height = size.height.max(MAIN_WINDOW_MIN_HEIGHT);
+    if width == 0 || height == 0 {
+        return;
+    }
+    if config.window_x == Some(position.x)
+        && config.window_y == Some(position.y)
+        && config.window_width == Some(width)
+        && config.window_height == Some(height)
+    {
+        return;
+    }
+
+    config.window_x = Some(position.x);
+    config.window_y = Some(position.y);
+    config.window_width = Some(width);
+    config.window_height = Some(height);
+    let _ = store.save_config(config);
+}
+
+fn saved_main_window_bounds() -> Option<WindowBounds> {
+    let config = load_config().ok()?;
+    if !config.remember_window_bounds {
+        return None;
+    }
+
+    Some(WindowBounds {
+        x: config.window_x?,
+        y: config.window_y?,
+        width: config.window_width?.max(MAIN_WINDOW_MIN_WIDTH),
+        height: config.window_height?.max(MAIN_WINDOW_MIN_HEIGHT),
+    })
 }
 
 fn should_save_surface_size_before_close(label: &str) -> bool {
@@ -2539,6 +2693,8 @@ mod tests {
             tile_color_mode: "system".into(),
             theme: "light".into(),
             font_size: 14,
+            interface_font_family: String::new(),
+            background_color: String::new(),
             surface_font_size: 14,
             tab_indent_size: 2,
             external_file_auto_save: true,
@@ -2550,6 +2706,11 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            remember_window_bounds: true,
+            window_x: None,
+            window_y: None,
+            window_width: None,
+            window_height: None,
             tile_ctrl_close: true,
             tile_double_click_to_edit: false,
             tile_save_returns_to_pin: false,
@@ -2624,6 +2785,8 @@ mod tests {
             tile_color_mode: "system".into(),
             theme: "light".into(),
             font_size: 14,
+            interface_font_family: String::new(),
+            background_color: String::new(),
             surface_font_size: 14,
             tab_indent_size: 2,
             external_file_auto_save: true,
@@ -2635,6 +2798,11 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            remember_window_bounds: true,
+            window_x: None,
+            window_y: None,
+            window_width: None,
+            window_height: None,
             tile_ctrl_close: true,
             tile_double_click_to_edit: false,
             tile_save_returns_to_pin: false,
@@ -2661,6 +2829,8 @@ mod tests {
             tile_color_mode: "custom".into(),
             theme: "dark".into(),
             font_size: 16,
+            interface_font_family: String::new(),
+            background_color: String::new(),
             surface_font_size: 16,
             tab_indent_size: 4,
             external_file_auto_save: true,
@@ -2672,6 +2842,11 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            remember_window_bounds: true,
+            window_x: None,
+            window_y: None,
+            window_width: None,
+            window_height: None,
             tile_ctrl_close: true,
             tile_double_click_to_edit: true,
             tile_save_returns_to_pin: true,

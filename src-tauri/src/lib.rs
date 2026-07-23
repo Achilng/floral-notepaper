@@ -223,6 +223,11 @@ fn copy_background_image(_app: AppHandle, source_path: String) -> Result<String,
 }
 
 #[tauri::command]
+fn system_fonts_list() -> Vec<String> {
+    desktop::system_font_families()
+}
+
+#[tauri::command]
 fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError> {
     let store = default_store()?;
     let previous = store.load_config()?;
@@ -463,6 +468,7 @@ pub fn run() {
             images_clean_unused,
             config_get,
             copy_background_image,
+            system_fonts_list,
             config_save,
             config_migrate_data_dir,
             global_shortcut_check,

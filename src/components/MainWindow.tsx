@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
-import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AboutPanel } from "./AboutPanel";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
@@ -60,7 +60,6 @@ import { useImagePaste, insertTextAtCursor } from "../features/images/useImagePa
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
 import type { ExternalFile, Note, NoteMetadata } from "../features/notes/types";
 import {
-  countNoteChars,
   filterNotes,
   formatShortDate,
   formatTime,
@@ -567,12 +566,37 @@ export function MainWindow({
     [filteredNotes, categories],
   );
 
-  const lineCount = useMemo(() => content.split("\n").length, [content]);
-  const byteSize = useMemo(
-    () => (new TextEncoder().encode(content).length / 1024).toFixed(1),
-    [content],
-  );
-  const charCount = useMemo(() => countNoteChars(content), [content]);
+  const contentMetrics = useMemo(() => {
+    let lines = 1;
+    let chars = 0;
+    let bytes = 0;
+    for (let index = 0; index < content.length; index += 1) {
+      const code = content.charCodeAt(index);
+      if (code === 10) lines += 1;
+      if (!/\s/.test(content[index])) chars += 1;
+      if (code < 0x80) {
+        bytes += 1;
+      } else if (code < 0x800) {
+        bytes += 2;
+      } else if (code >= 0xd800 && code <= 0xdbff && index + 1 < content.length) {
+        const nextCode = content.charCodeAt(index + 1);
+        if (nextCode >= 0xdc00 && nextCode <= 0xdfff) {
+          bytes += 4;
+          index += 1;
+        } else {
+          bytes += 3;
+        }
+      } else {
+        bytes += 3;
+      }
+    }
+    return {
+      lineCount: lines,
+      byteSize: (bytes / 1024).toFixed(1),
+      charCount: chars,
+    };
+  }, [content]);
+  const { lineCount, byteSize, charCount } = contentMetrics;
 
   const applyNote = useCallback(
     (note: Note) => {
@@ -1325,7 +1349,6 @@ export function MainWindow({
   const handleSettingsChange = useCallback(
     (nextConfig: AppConfig) => {
       setSettingsConfig(nextConfig);
-      void emit("config-changed", nextConfig);
       persistSettings(nextConfig);
     },
     [persistSettings],
