@@ -103,6 +103,15 @@ Please refer to [CONTRIBUTING.md](CONTRIBUTING.md).
 
 [![contrib.rocks](https://contrib.rocks/image?repo=Achilng/floral-notepaper&max=1000)](https://contrib.rocks/image?repo=Achilng/floral-notepaper&max=1000)
 
+## Sponsors
+
+<!-- markdownlint-disable -->
+
+| <img src="https://signpath.org/assets/favicon.png" alt="SignPath Logo" width=50> | Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org/) |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+
+<!-- markdownlint-restore -->
+
 ## License
 
 [MIT](LICENSE)

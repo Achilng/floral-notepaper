@@ -1,6 +1,6 @@
-**简体中文** | [繁體中文](README_zh-HK.md) | [English](README_en-US.md)
-
 <!-- markdownlint-disable -->
+
+**简体中文** | [繁體中文](README_zh-HK.md) | [English](README_en-US.md)
 
 <div align="center">
 
@@ -102,6 +102,15 @@
 ## 🌟 贡献者
 
 [![contrib.rocks](https://contrib.rocks/image?repo=Achilng/floral-notepaper&max=1000)](https://contrib.rocks/image?repo=Achilng/floral-notepaper&max=1000)
+
+## Sponsors
+
+<!-- markdownlint-disable -->
+
+| <img src="https://signpath.org/assets/favicon.png" alt="SignPath Logo" width=50> | Free code signing provided by [SignPath.io](https://signpath.io), certificate by [SignPath Foundation](https://signpath.org/) |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+
+<!-- markdownlint-restore -->
 
 ## 许可证
 
