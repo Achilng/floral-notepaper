@@ -36,8 +36,7 @@ async function processImageFile(file: File, noteId: string, t?: TFunction): Prom
   if (!ext) return null;
 
   const buffer = await file.arrayBuffer();
-  const data = Array.from(new Uint8Array(buffer));
-  return saveImage(noteId, data, ext);
+  return saveImage(noteId, new Uint8Array(buffer), ext);
 }
 
 export function insertTextAtCursor(

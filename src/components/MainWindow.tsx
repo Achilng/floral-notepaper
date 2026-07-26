@@ -1,12 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  Suspense,
+  lazy,
+} from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AboutPanel } from "./AboutPanel";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
-import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
+import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
 import { showToast } from "./Toast";
 import {
   blockIndexAtOffset,
@@ -37,7 +45,6 @@ import type {
 } from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
 import { POPUP_VIEWPORT_MARGIN, useViewportPopupPosition } from "./popupPosition";
-import { SettingsPanel } from "./SettingsPanel";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
   createNote,
@@ -89,6 +96,15 @@ import {
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 type SidePanelMode = "about" | "settings";
+
+// 侧面板只在用户主动打开时挂载，懒加载可把关于面板（贡献者数据、更新设置）
+// 和设置面板从首屏 bundle 中拆出
+const AboutPanel = lazy(() =>
+  import("./AboutPanel").then((module) => ({ default: module.AboutPanel })),
+);
+const SettingsPanel = lazy(() =>
+  import("./SettingsPanel").then((module) => ({ default: module.SettingsPanel })),
+);
 
 interface NoteMenuState {
   x: number;
@@ -567,12 +583,16 @@ export function MainWindow({
     [filteredNotes, categories],
   );
 
-  const lineCount = useMemo(() => content.split("\n").length, [content]);
+  // 打字时输入框优先响应：预览渲染与字数/字节统计使用延迟值，
+  // 连续输入期间 React 会自动合并这些重计算，停顿时再追上
+  const deferredContent = useDeferredValue(content);
+
+  const lineCount = useMemo(() => deferredContent.split("\n").length, [deferredContent]);
   const byteSize = useMemo(
-    () => (new TextEncoder().encode(content).length / 1024).toFixed(1),
-    [content],
+    () => (new TextEncoder().encode(deferredContent).length / 1024).toFixed(1),
+    [deferredContent],
   );
-  const charCount = useMemo(() => countNoteChars(content), [content]);
+  const charCount = useMemo(() => countNoteChars(deferredContent), [deferredContent]);
 
   const applyNote = useCallback(
     (note: Note) => {
@@ -1013,6 +1033,8 @@ export function MainWindow({
     if (!selectedExternalFile) return;
 
     const interval = window.setInterval(async () => {
+      // 窗口隐藏（托盘/最小化）时跳过探测，恢复可见后 1s 内自动追上
+      if (document.visibilityState === "hidden") return;
       if (Date.now() - lastExternalSaveRef.current < 2000) return;
       try {
         const mtime = await getFileModifiedTime(selectedExternalFile.filePath);
@@ -2973,7 +2995,7 @@ export function MainWindow({
                         }`}
                       >
                         <MarkdownPreview
-                          content={content}
+                          content={deferredContent}
                           fontSize={settingsConfig?.fontSize ?? 14}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           imageBaseDir={imageBaseDir ?? undefined}
@@ -3042,7 +3064,11 @@ export function MainWindow({
                   : "pointer-events-none translate-x-4 opacity-0"
               }`}
             >
-              {mountedSidePanel === "about" ? <AboutPanel onClose={handleCloseAbout} /> : null}
+              {mountedSidePanel === "about" ? (
+                <Suspense fallback={null}>
+                  <AboutPanel onClose={handleCloseAbout} />
+                </Suspense>
+              ) : null}
             </div>
             <div
               className={`absolute inset-0 w-[360px] h-full transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
@@ -3054,12 +3080,14 @@ export function MainWindow({
               }`}
             >
               {mountedSidePanel === "settings" && settingsConfig ? (
-                <SettingsPanel
-                  config={settingsConfig}
-                  onChange={handleSettingsChange}
-                  onMigrateDataDir={() => void handleMigrateDataDir()}
-                  onClose={handleCloseSettings}
-                />
+                <Suspense fallback={null}>
+                  <SettingsPanel
+                    config={settingsConfig}
+                    onChange={handleSettingsChange}
+                    onMigrateDataDir={() => void handleMigrateDataDir()}
+                    onClose={handleCloseSettings}
+                  />
+                </Suspense>
               ) : null}
             </div>
           </div>

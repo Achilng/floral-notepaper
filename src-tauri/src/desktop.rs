@@ -1461,12 +1461,46 @@ fn open_notepad_window_now(
     )
 }
 
+/// 调整池中隐藏 notepad 窗口的 WebView2 内存占用档位（仅 Windows）。
+/// 入池隐藏时设为 Low，浏览器引擎会主动释放缓存、允许换出，从而显著降低
+/// 后台常驻内存；激活取出时恢复 Normal。脚本与事件监听不受影响，
+/// 因此不影响窗口池的呼出速度。
+#[cfg(target_os = "windows")]
+fn set_webview_memory_usage_level(window: &tauri::WebviewWindow, low: bool) {
+    use webview2_com::Microsoft::Web::WebView2::Win32::{
+        ICoreWebView2_19, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL,
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW, COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL,
+    };
+    use windows_core::Interface;
+
+    let level: COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL = if low {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_LOW
+    } else {
+        COREWEBVIEW2_MEMORY_USAGE_TARGET_LEVEL_NORMAL
+    };
+
+    let _ = window.with_webview(move |webview| unsafe {
+        let Ok(core) = webview.controller().CoreWebView2() else {
+            return;
+        };
+        // MemoryUsageTargetLevel 需要 WebView2 Runtime 1.0.1901.177+，
+        // 旧版本 cast 失败时静默跳过，仅损失这项优化
+        if let Ok(webview_19) = core.cast::<ICoreWebView2_19>() {
+            let _ = webview_19.SetMemoryUsageTargetLevel(level);
+        }
+    });
+}
+
+#[cfg(not(target_os = "windows"))]
+fn set_webview_memory_usage_level(_window: &tauri::WebviewWindow, _low: bool) {}
+
 fn activate_pooled_notepad(app: &AppHandle, bounds: Option<WindowBounds>) -> Option<String> {
     let pool = app.try_state::<NotepadPool>()?;
     let label = pool.take()?;
     let window = app.get_webview_window(&label)?;
     let locale = configured_locale();
 
+    set_webview_memory_usage_level(&window, false);
     let specs = saved_surface_specs(app);
     let _ = window.set_title(locales::notepad_window_title(locale));
     let _ = window.set_size(tauri::LogicalSize::new(specs.width, specs.height));
@@ -1496,6 +1530,8 @@ pub fn recycle_notepad_window(app: &AppHandle, label: &str) -> Result<(), AppErr
 
     if !recycled {
         window.close()?;
+    } else {
+        set_webview_memory_usage_level(&window, true);
     }
 
     Ok(())
@@ -1569,7 +1605,7 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     let visual_options = dynamic_window_visual_options(&label);
     let locale = configured_locale();
 
-    WebviewWindowBuilder::new(
+    let window = WebviewWindowBuilder::new(
         app,
         &label,
         WebviewUrl::App("index.html?view=notepad&standby=1".into()),
@@ -1586,6 +1622,9 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     .visible(false)
     .focused(false)
     .build()?;
+
+    // 预热窗口在池中等待期间保持低内存档位，激活时恢复 Normal
+    set_webview_memory_usage_level(&window, true);
 
     pool.put(label);
 

@@ -153,10 +153,17 @@ export function NotePad({
   contentValueRef.current = content;
   const titleValueRef = useRef(title);
   titleValueRef.current = title;
+  const tileColorModeRef = useRef(tileColorMode);
+  tileColorModeRef.current = tileColorMode;
+  const tileColorRawRef = useRef(tileColorRaw);
+  tileColorRawRef.current = tileColorRaw;
   const isStandby = useRef(
     typeof window !== "undefined" &&
       new URLSearchParams(window.location.search).get("standby") === "1",
   );
+  // 窗口位于池中（standby 预热或已回收隐藏）时为 true：
+  // 休眠期间跳过笔记列表拉取，激活时统一刷新
+  const dormantRef = useRef(isStandby.current);
   const hasEnteredOnce = useRef(false);
   const statusLabel = useMemo<Record<NotePadStatus, string>>(
     () => ({
@@ -180,6 +187,8 @@ export function NotePad({
   statusRef.current = status;
 
   const refreshNotes = useCallback(async () => {
+    // 池中休眠的窗口不拉取笔记列表，激活时会统一刷新
+    if (dormantRef.current) return [] as NoteMetadata[];
     const loadedNotes = await listNotes();
     setNotes(loadedNotes);
     return loadedNotes;
@@ -262,8 +271,8 @@ export function NotePad({
       tileDoubleClickToEdit?: boolean;
       tileSaveReturnsToPin?: boolean;
     }>("config-changed", (event) => {
-      const mode = event.payload.tileColorMode ?? tileColorMode;
-      const raw = event.payload.tileColor ?? tileColorRaw;
+      const mode = event.payload.tileColorMode ?? tileColorModeRef.current;
+      const raw = event.payload.tileColor ?? tileColorRawRef.current;
       setTileColorMode(mode);
       setTileColorRaw(normalizeTileColor(raw));
       setTileColor(resolveTileColor(mode, raw));
@@ -278,7 +287,7 @@ export function NotePad({
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [tileColorMode, tileColorRaw]);
+  }, []);
 
   useEffect(() => {
     if (tileColorMode !== "system") return;
@@ -305,6 +314,7 @@ export function NotePad({
       if (event.payload !== myLabel) return;
 
       isStandby.current = false;
+      dormantRef.current = false;
       hasEnteredOnce.current = true;
       setEditingNoteId(null);
       setTitle("");
@@ -344,6 +354,11 @@ export function NotePad({
     return note;
   }, [content, editingNoteId, notes, title]);
 
+  // 通过 ref 持有最新的 saveNote，让下方的 Tauri 监听只注册一次，
+  // 避免每次输入（content 变化）都注销再重注册事件监听
+  const saveNoteRef = useRef(saveNote);
+  saveNoteRef.current = saveNote;
+
   useEffect(() => {
     const unlisten = listen<UpdateInstallPrepareRequest>("update://prepare-install", (event) => {
       const respond = async () => {
@@ -354,7 +369,7 @@ export function NotePad({
         }
 
         try {
-          await saveNote();
+          await saveNoteRef.current();
           await reportInstallPreparation(event.payload.requestId, windowLabel, "ready");
         } catch (error) {
           setStatus("saveFailed");
@@ -380,7 +395,7 @@ export function NotePad({
     return () => {
       void unlisten.then((fn) => fn());
     };
-  }, [saveNote]);
+  }, []);
 
   const hasDraftContent = useCallback(
     () => Boolean(editingNoteId || title.trim() || content.trim()),
@@ -479,6 +494,11 @@ export function NotePad({
     [saveNote, surfaceMode, switchSurfaceMode, tileSaveReturnsToPin],
   );
 
+  // 全局监听（Ctrl+S、表面动作）只注册一次，通过 ref 取最新回调，
+  // 避免回调依赖 content 导致每次输入都重绑监听
+  const handleSaveRef = useRef(handleSave);
+  handleSaveRef.current = handleSave;
+
   const clearPendingTileDrag = useCallback(() => {
     tileDragIntentRef.current = null;
   }, []);
@@ -543,13 +563,13 @@ export function NotePad({
     function handleKeyDown(event: KeyboardEvent) {
       if ((event.ctrlKey || event.metaKey) && event.key === "s") {
         event.preventDefault();
-        void handleSave();
+        void handleSaveRef.current();
       }
     }
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [handleSave]);
+  }, []);
 
   const handleOpenNote = async (noteId: string) => {
     try {
@@ -574,11 +594,32 @@ export function NotePad({
 
   const handleClose = useCallback(() => {
     setIsExiting(true);
-    const closeSurface = surfaceMode === "tile" ? closeCurrentWindow : recycleCurrentNotepad;
-    void closeSurface().catch((error) => {
-      setIsExiting(false);
-      showToast(getErrorMessage(error));
-    });
+    if (surfaceMode === "tile") {
+      void closeCurrentWindow().catch((error) => {
+        setIsExiting(false);
+        showToast(getErrorMessage(error));
+      });
+      return;
+    }
+
+    // 回收进窗口池：窗口只是被隐藏，立刻清空编辑器状态并进入休眠，
+    // 避免上一篇笔记全文和笔记列表驻留在隐藏窗口的内存里
+    dormantRef.current = true;
+    void recycleCurrentNotepad()
+      .then(() => {
+        setEditingNoteId(null);
+        setTitle("");
+        setContent("");
+        setNotes([]);
+        setMode("new");
+        setStatus("empty");
+        setIsExiting(false);
+      })
+      .catch((error) => {
+        dormantRef.current = false;
+        setIsExiting(false);
+        showToast(getErrorMessage(error));
+      });
   }, [surfaceMode]);
 
   const copyTileContent = useCallback(async () => {
@@ -594,34 +635,41 @@ export function NotePad({
     }
   }, [content, t]);
 
+  const handleCloseRef = useRef(handleClose);
+  handleCloseRef.current = handleClose;
+  const copyTileContentRef = useRef(copyTileContent);
+  copyTileContentRef.current = copyTileContent;
+  const switchSurfaceModeRef = useRef(switchSurfaceMode);
+  switchSurfaceModeRef.current = switchSurfaceMode;
+
   useEffect(() => {
     function handleSurfaceActionRequest(event: Event) {
       const action = surfaceActionFromEvent(event);
       if (!action) return;
 
       if (action === "copy") {
-        void copyTileContent();
+        void copyTileContentRef.current();
         return;
       }
 
       if (action === "save") {
-        void handleSave();
+        void handleSaveRef.current();
         return;
       }
 
       if (action === "close") {
-        void handleClose();
+        void handleCloseRef.current();
         return;
       }
 
-      void switchSurfaceMode("pad");
+      void switchSurfaceModeRef.current("pad");
     }
 
     window.addEventListener(NOTE_SURFACE_ACTION_EVENT, handleSurfaceActionRequest);
     return () => {
       window.removeEventListener(NOTE_SURFACE_ACTION_EVENT, handleSurfaceActionRequest);
     };
-  }, [copyTileContent, handleClose, handleSave, switchSurfaceMode]);
+  }, []);
 
   useEffect(() => {
     if (!noteSurfaceAutoSave || mode !== "new" || status !== "dirty") {

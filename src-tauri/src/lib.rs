@@ -144,8 +144,31 @@ fn notes_move_category(
 }
 
 #[tauri::command]
-fn images_save(note_id: String, data: Vec<u8>, extension: String) -> Result<String, AppError> {
-    default_store()?.save_image(&note_id, &data, &extension)
+fn images_save(request: tauri::ipc::Request<'_>) -> Result<String, AppError> {
+    // 前端以 raw payload 直传图片字节流（noteId / 扩展名走 headers），
+    // 避免二进制经 JSON 数字数组序列化的巨大内存与耗时开销
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
+        return Err(AppError {
+            code: "invalidPayload".into(),
+            message: "images_save expects a raw binary payload".into(),
+            details: Default::default(),
+        });
+    };
+    let header = |name: &str| -> Result<String, AppError> {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+            .ok_or_else(|| AppError {
+                code: "invalidPayload".into(),
+                message: format!("missing {name} header"),
+                details: Default::default(),
+            })
+    };
+    let note_id = header("x-note-id")?;
+    let extension = header("x-image-ext")?;
+    default_store()?.save_image(&note_id, data, &extension)
 }
 
 #[tauri::command]

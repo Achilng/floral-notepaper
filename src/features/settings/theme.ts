@@ -37,7 +37,11 @@ export function watchSystemTheme(option: ThemeOption): () => void {
 
   const cleanup = () => {
     mql.removeEventListener("change", handler);
-    systemListener = null;
+    // 仅当自己仍是当前单例时才清空全局引用；否则会把后来者
+    // （如设置面板刚注册的监听）的注销入口抹掉，造成监听泄漏
+    if (systemListener === cleanup) {
+      systemListener = null;
+    }
   };
   systemListener = cleanup;
   return cleanup;
