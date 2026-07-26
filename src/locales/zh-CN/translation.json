@@ -163,6 +163,7 @@
   "noteMenu": {
     "delete": "删除笔记",
     "export": "导出 Markdown",
+    "exportPDF": "导出 PDF",
     "moveToCategory": "移动到分类…"
   },
   "notepad": {
@@ -419,6 +420,12 @@
       "title": "更新"
     },
     "visibilityShortcut": "显示/隐藏窗口快捷键",
+    "export": {
+      "label": "PDF 导出",
+      "pageSize": "纸张大小",
+      "fontFamily": "字体",
+      "fontSize": "字号"
+    },
     "background": {
       "label": "背景图片",
       "default": "默认背景",

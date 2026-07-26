@@ -39,6 +39,9 @@ semver = "1"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
 sha2 = "0.10"
 dirs = "6"
+typst = { version = "0.15", default-features = false }
+typst-pdf = "0.15"
+fontdb = "0.23"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

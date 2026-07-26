@@ -38,10 +38,38 @@ export async function exportMarkdownNote(note: ExportableNote): Promise<boolean>
   return true;
 }
 
+export async function exportMarkdownPDF(note: ExportableNote): Promise<boolean> {
+  const path = await save({
+    defaultPath: pdfFileName(note.title),
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+
+  if (typeof path !== "string") {
+    return false;
+  }
+
+  const admonitionLabels = {
+    note: t("markdown.alert.note"),
+    tip: t("markdown.alert.tip"),
+    important: t("markdown.alert.important"),
+    warning: t("markdown.alert.warning"),
+    caution: t("markdown.alert.caution"),
+  };
+
+  await invoke("notes_export_pdf", { id: note.id, path, admonitionLabels });
+  return true;
+}
+
 function markdownFileName(title: string, translate: TFunction = t): string {
   const safeTitle =
     safeFileStem(title) || translate("common.untitledNote", { defaultValue: "无标题笔记" });
   return `${safeTitle}.md`;
+}
+
+function pdfFileName(title: string, translate: TFunction = t): string {
+  const safeTitle =
+    safeFileStem(title) || translate("common.untitledNote", { defaultValue: "无标题笔记" });
+  return `${safeTitle}.pdf`;
 }
 
 function safeFileStem(value: string): string {

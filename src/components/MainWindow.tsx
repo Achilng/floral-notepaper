@@ -5,7 +5,11 @@ import { useTranslation } from "react-i18next";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AboutPanel } from "./AboutPanel";
-import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
+import {
+  exportMarkdownNote,
+  exportMarkdownPDF,
+  importMarkdownNote,
+} from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
 import { showToast } from "./Toast";
 import {
@@ -1479,6 +1483,22 @@ export function MainWindow({
     }
   };
 
+  const handleExportMarkdownPDF = async (note: NoteMetadata) => {
+    try {
+      if (note.id === selectedId) {
+        const saved = await saveCurrentNote();
+        if (!saved) return;
+      }
+
+      await exportMarkdownPDF({
+        id: note.id,
+        title: note.id === selectedId ? title : note.title,
+      });
+    } catch (error) {
+      showToast(getErrorMessage(error));
+    }
+  };
+
   const handleNoteMenuAction = (action: NoteContextMenuAction) => {
     const note = noteMenuTarget;
     if (!note) return;
@@ -1486,6 +1506,10 @@ export function MainWindow({
     if (action === "export") {
       setNoteMenuClosing(true);
       void handleExportNote(note);
+      return;
+    } else if (action === "exportPDF") {
+      setNoteMenuClosing(true);
+      void handleExportMarkdownPDF(note);
       return;
     }
 

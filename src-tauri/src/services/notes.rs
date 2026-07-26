@@ -1,8 +1,9 @@
 use crate::json_io::write_json_atomic;
+use crate::services::pdf;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     env, fmt, fs, io,
     path::{Component, Path, PathBuf},
 };
@@ -88,6 +89,13 @@ pub struct AppConfig {
     pub toggle_visibility_shortcut: String,
     #[serde(default = "default_open_at_cursor")]
     pub open_at_cursor: bool,
+    // Export settings
+    #[serde(default = "default_export_page_size")]
+    pub export_page_size: String,
+    #[serde(default = "default_export_font_family")]
+    pub export_font_family: String,
+    #[serde(default = "default_export_font_size")]
+    pub export_font_size: u32,
     // Legacy fields — read from old config, never written back
     #[serde(default, skip_serializing)]
     pub notes_dir: Option<String>,
@@ -896,6 +904,27 @@ impl NoteStore {
         Ok(())
     }
 
+    pub fn export_pdf_file(
+        &self,
+        id: &str,
+        path: &Path,
+        admonition_labels: HashMap<String, String>,
+    ) -> Result<(), AppError> {
+        let note = self.read_note(id)?;
+        let config = self.load_config()?;
+        let options = pdf::PdfExportOptions {
+            page_size: config.export_page_size,
+            font_family: config.export_font_family,
+            font_size: config.export_font_size,
+            admonition_labels,
+        };
+        pdf::export_markdown_to_pdf(&note.content, path, &options).map_err(|msg| AppError {
+            code: "exportPdf".into(),
+            message: msg,
+            details: Default::default(),
+        })
+    }
+
     pub fn list_categories(&self) -> Result<Vec<String>, AppError> {
         let notes_dir = self.notes_dir();
         fs::create_dir_all(&notes_dir)?;
@@ -1083,6 +1112,9 @@ impl NoteStore {
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
             open_at_cursor: default_open_at_cursor(),
+            export_page_size: default_export_page_size(),
+            export_font_family: default_export_font_family(),
+            export_font_size: default_export_font_size(),
             notes_dir: None,
             last_known_base_dir: None,
         }
@@ -1663,6 +1695,18 @@ fn default_locale() -> String {
     "zh-CN".into()
 }
 
+fn default_export_page_size() -> String {
+    "a4".into()
+}
+
+fn default_export_font_family() -> String {
+    "HarmonyOS Sans".into()
+}
+
+fn default_export_font_size() -> u32 {
+    14
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1832,6 +1876,9 @@ mod tests {
             notes_dir: None,
             last_known_base_dir: None,
             open_at_cursor: true,
+            export_page_size: "a4".into(),
+            export_font_family: "HarmonyOS Sans".into(),
+            export_font_size: 14,
         };
 
         store.save_config(saved.clone()).expect("save config");
@@ -2353,5 +2400,163 @@ mod tests {
             fs::read_to_string(export_path).expect("read exported markdown"),
             content
         );
+    }
+
+    fn default_labels() -> HashMap<String, String> {
+        HashMap::from([
+            ("note".into(), "Note".into()),
+            ("tip".into(), "Tip".into()),
+            ("important".into(), "Important".into()),
+            ("warning".into(), "Warning".into()),
+            ("caution".into(), "Caution".into()),
+        ])
+    }
+
+    #[test]
+    fn exports_pdf_with_typst_basic_markdown() {
+        let root = test_root("export-pdf");
+        let store_path = root.join("store");
+        let store = NoteStore::new(store_path.clone(), store_path);
+        let content = "\
+# 标题
+**粗体** *斜体* ~~删除线~~
+## 二级标题
+- 列表项1
+- 列表项2
+```rs
+fn main() {}
+```
+一段普通文本，包含 #hash 和 $dollar 符号。";
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "PDF 测试".into(),
+                content: content.into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        let export_dir = root.join("exports");
+        let export_path = export_dir.join("test.pdf");
+
+        store
+            .export_pdf_file(&note.id, &export_path, default_labels())
+            .expect("export PDF");
+
+        assert!(export_path.exists(), "PDF file should exist");
+        assert!(
+            export_path.metadata().expect("read metadata").len() > 100,
+            "PDF file should be non-empty"
+        );
+
+        // Verify PDF magic bytes: %PDF
+        let header = fs::read(&export_path).expect("read PDF");
+        assert_eq!(&header[..4], b"%PDF", "should be a valid PDF");
+    }
+
+    #[test]
+    fn exports_pdf_respects_custom_page_size() {
+        let root = test_root("export-pdf-custom");
+        let store_path = root.join("store");
+        let store = NoteStore::new(store_path.clone(), store_path);
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "Custom Size".into(),
+                content: "Hello World".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        let export_path = root.join("exports").join("letter.pdf");
+
+        // Set letter page size and export
+        let mut config = store.load_config().expect("load config");
+        config.export_page_size = "us-letter".into();
+        store.save_config(config).expect("save config");
+
+        store
+            .export_pdf_file(&note.id, &export_path, default_labels())
+            .expect("export PDF with custom size");
+
+        assert!(export_path.exists());
+        let header = fs::read(&export_path).expect("read PDF");
+        assert_eq!(&header[..4], b"%PDF");
+    }
+
+    #[test]
+    fn exports_pdf_with_special_characters() {
+        let root = test_root("export-pdf-special");
+        let store_path = root.join("store");
+        let store = NoteStore::new(store_path.clone(), store_path);
+        let content = "\
+# 公式示例
+Einstein: $E = mc^2$
+C# 代码: `Console.WriteLine();`
+路径: C:\\Users\\test\\file.txt
+使用 #tag 标签";
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "Special Chars".into(),
+                content: content.into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        let export_path = root.join("exports").join("special.pdf");
+
+        store
+            .export_pdf_file(&note.id, &export_path, default_labels())
+            .expect("export PDF with special chars");
+
+        assert!(export_path.exists());
+        let header = fs::read(&export_path).expect("read PDF");
+        assert_eq!(&header[..4], b"%PDF");
+    }
+
+    #[test]
+    fn exports_pdf_with_admonition_blocks() {
+        let root = test_root("export-pdf-admonition");
+        let store_path = root.join("store");
+        let store = NoteStore::new(store_path.clone(), store_path);
+        let content = "\
+# 注意提醒
+
+> [!NOTE]
+> 这是一个普通提示信息。
+
+> [!TIP]
+> 这是一个小技巧。
+
+> [!WARNING]
+> 请谨慎操作。
+
+> [!CAUTION]
+> 这个操作有风险。
+
+> [!IMPORTANT]
+> 这条信息非常重要。
+
+包含 **粗体** 和 `代码` 的 [!NOTE] 注意块：
+> [!NOTE] 标题行也有内容
+> 第二行内容
+>
+> 新的段落";
+
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "Admonition Test".into(),
+                content: content.into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        let export_path = root.join("exports").join("admonition.pdf");
+
+        store
+            .export_pdf_file(&note.id, &export_path, default_labels())
+            .expect("export PDF with admonitions");
+
+        assert!(export_path.exists());
+        let header = fs::read(&export_path).expect("read PDF");
+        assert_eq!(&header[..4], b"%PDF");
     }
 }
