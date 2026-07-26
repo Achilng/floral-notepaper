@@ -57,8 +57,11 @@
     "unsupportedShortcutGeneric": "快捷键配置无效"
   },
   "markdown": {
+    "codeCollapsed": "… 已折叠，点击展开",
+    "collapse": "折叠",
     "copied": "已复制",
     "copy": "复制",
+    "expand": "展开",
     "emptyHint": "预览区会显示当前笔记内容",
     "alert": {
       "note": "备注",
@@ -210,9 +213,17 @@
     "autostart": "开机自启",
     "closeTitle": "关闭设置",
     "closeToTray": "关闭到托盘",
+    "activeHighlight": {
+      "block": "块",
+      "blockLine": "块+行",
+      "label": "即时模式高光当前行/块",
+      "line": "行",
+      "off": "关"
+    },
     "defaultView": {
       "edit": "编辑",
       "label": "默认视图",
+      "live": "即时",
       "preview": "预览",
       "split": "分栏"
     },
@@ -269,6 +280,9 @@
     "tileSaveReturnsToPin": "保存后回到磁贴",
     "renderHtmlMarkdown": "允许 HTML 标签渲染",
     "splitScrollSync": "分栏同步滚动",
+    "codeBlockLineNumbers": "即时模式代码块行号",
+    "codeWrap": "代码块自动换行",
+    "editorLineNumbers": "即时模式整篇行号栏",
     "title": "应用设置",
     "update": {
       "advanced": "高级",

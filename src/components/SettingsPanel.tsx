@@ -64,9 +64,24 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
     () => [
       { value: "edit", label: t("settings.defaultView.edit", { defaultValue: "编辑" }) },
       { value: "split", label: t("settings.defaultView.split", { defaultValue: "分栏" }) },
+      { value: "live", label: t("settings.defaultView.live", { defaultValue: "即时" }) },
       {
         value: "preview",
         label: t("settings.defaultView.preview", { defaultValue: "预览" }),
+      },
+    ],
+    [t],
+  );
+  const highlightModes = useMemo<
+    Array<{ value: "off" | "line" | "block" | "block-line"; label: string }>
+  >(
+    () => [
+      { value: "off", label: t("settings.activeHighlight.off", { defaultValue: "关" }) },
+      { value: "line", label: t("settings.activeHighlight.line", { defaultValue: "行" }) },
+      { value: "block", label: t("settings.activeHighlight.block", { defaultValue: "块" }) },
+      {
+        value: "block-line",
+        label: t("settings.activeHighlight.blockLine", { defaultValue: "块+行" }),
       },
     ],
     [t],
@@ -217,6 +232,21 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             label={t("settings.splitScrollSync", { defaultValue: "分栏同步滚动" })}
             checked={config.splitScrollSync ?? true}
             onChange={(checked) => setConfigValue("splitScrollSync", checked)}
+          />
+          <ToggleRow
+            label={t("settings.codeBlockLineNumbers", { defaultValue: "即时模式代码块行号" })}
+            checked={config.codeBlockLineNumbers ?? false}
+            onChange={(checked) => setConfigValue("codeBlockLineNumbers", checked)}
+          />
+          <ToggleRow
+            label={t("settings.editorLineNumbers", { defaultValue: "即时模式整篇行号栏" })}
+            checked={config.editorLineNumbers ?? false}
+            onChange={(checked) => setConfigValue("editorLineNumbers", checked)}
+          />
+          <ToggleRow
+            label={t("settings.codeWrap", { defaultValue: "代码块自动换行" })}
+            checked={config.codeWrap ?? true}
+            onChange={(checked) => setConfigValue("codeWrap", checked)}
           />
         </section>
 
@@ -454,6 +484,17 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             options={viewModes}
             value={config.defaultViewMode}
             onChange={(v) => setConfigValue("defaultViewMode", v)}
+          />
+        </section>
+
+        <section className="space-y-2">
+          <label className="block text-[11px] font-body text-ink-faint">
+            {t("settings.activeHighlight.label", { defaultValue: "即时模式高光当前行/块" })}
+          </label>
+          <SlidingButtonGroup
+            options={highlightModes}
+            value={config.liveActiveHighlight ?? "off"}
+            onChange={(v) => setConfigValue("liveActiveHighlight", v)}
           />
         </section>
 

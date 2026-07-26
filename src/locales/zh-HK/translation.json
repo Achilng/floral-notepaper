@@ -57,8 +57,11 @@
     "unsupportedShortcutGeneric": "快捷鍵配置無效"
   },
   "markdown": {
+    "codeCollapsed": "… 已摺疊，點擊展開",
+    "collapse": "摺疊",
     "copied": "已複製",
     "copy": "複製",
+    "expand": "展開",
     "emptyHint": "預覽區會顯示目前筆記內容",
     "alert": {
       "note": "備註",
@@ -210,9 +213,17 @@
     "autostart": "開機自啟",
     "closeTitle": "關閉設定",
     "closeToTray": "關閉至系統匣",
+    "activeHighlight": {
+      "block": "塊",
+      "blockLine": "塊+行",
+      "label": "即時模式高光當前行/塊",
+      "line": "行",
+      "off": "關"
+    },
     "defaultView": {
       "edit": "編輯",
       "label": "預設檢視",
+      "live": "即時",
       "preview": "預覽",
       "split": "分欄"
     },
@@ -269,6 +280,9 @@
     "tileSaveReturnsToPin": "儲存後回到磁貼",
     "renderHtmlMarkdown": "允許 HTML 標籤渲染",
     "splitScrollSync": "分欄同步捲動",
+    "codeBlockLineNumbers": "即時模式代碼塊行號",
+    "codeWrap": "程式碼區塊自動換行",
+    "editorLineNumbers": "即時模式整篇行號欄",
     "title": "應用程式設定",
     "update": {
       "advanced": "進階",

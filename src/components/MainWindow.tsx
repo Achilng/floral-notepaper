@@ -7,6 +7,8 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { AboutPanel } from "./AboutPanel";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
+import { LiveEditor } from "../features/markdown/LiveEditor";
+import { convertFileSrc } from "@tauri-apps/api/core";
 import { showToast } from "./Toast";
 import {
   blockIndexAtOffset,
@@ -396,6 +398,15 @@ export function MainWindow({
   const externalFileMtimeRef = useRef<number>(0);
   const lastExternalSaveRef = useRef<number>(0);
   const imageBaseDir = useImageBaseDir();
+  const resolveLiveImageSrc = useCallback(
+    (src: string) => {
+      if (src.startsWith("images/") && imageBaseDir) {
+        return convertFileSrc(imageBaseDir + "/" + src);
+      }
+      return src;
+    },
+    [imageBaseDir],
+  );
   const saveStateRef = useRef(saveState);
   const isMacOS = useMemo(() => {
     return (
@@ -528,6 +539,10 @@ export function MainWindow({
       {
         value: "split" as ViewMode,
         label: t("settings.defaultView.split", { defaultValue: "分栏" }),
+      },
+      {
+        value: "live" as ViewMode,
+        label: t("settings.defaultView.live", { defaultValue: "即时" }),
       },
       {
         value: "preview" as ViewMode,
@@ -1113,12 +1128,17 @@ export function MainWindow({
       settleSaveState("saving");
       try {
         if (externalFile) {
-          await saveExternalFile(externalFile.filePath, contentSnapshot);
+          // 必须在写盘“之前”就打上时间戳：saveExternalFile 一旦落盘，磁盘 mtime 立刻变化，
+          // 而 mtime 轮询（外部改动检测）是独立的宏任务——若它在“已落盘但下面这行尚未执行”的
+          // 窗口里读到新 mtime，会把我们自己的写入误判成外部改动 → 回读整篇 → 即时模式光标被
+          // 重置（“切换外部文件后拖拽复制时光标乱跳”的根因）。写盘耗时后再刷新一次覆盖全程。
           lastExternalSaveRef.current = Date.now();
+          await saveExternalFile(externalFile.filePath, contentSnapshot);
           const mtime = await getFileModifiedTime(externalFile.filePath);
           if (stillCurrent()) {
             externalFileMtimeRef.current = mtime;
           }
+          lastExternalSaveRef.current = Date.now();
           settleSaveState(contentValueRef.current === contentSnapshot ? "saved" : "dirty");
         } else {
           const category = notesRef.current.find((note) => note.id === id)?.category ?? "";
@@ -2976,9 +2996,32 @@ export function MainWindow({
                           content={content}
                           fontSize={settingsConfig?.fontSize ?? 14}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
+                          codeWrap={settingsConfig?.codeWrap ?? true}
                           imageBaseDir={imageBaseDir ?? undefined}
                         />
                       </div>
+                    </div>
+                  )}
+
+                  {viewMode === "live" && (
+                    <div className="flex flex-col min-h-0 min-w-0 flex-1 px-6 pt-3 pb-2">
+                      <LiveEditor
+                        value={content}
+                        docKey={selectedId ?? undefined}
+                        onChange={(next) => {
+                          setContent(next);
+                          markDirty();
+                        }}
+                        fontSize={settingsConfig?.fontSize ?? 14}
+                        resolveImageSrc={resolveLiveImageSrc}
+                        showCodeLineNumbers={settingsConfig?.codeBlockLineNumbers ?? false}
+                        showEditorLineNumbers={settingsConfig?.editorLineNumbers ?? false}
+                        activeHighlight={settingsConfig?.liveActiveHighlight ?? "off"}
+                        codeWrap={settingsConfig?.codeWrap ?? true}
+                        placeholder={t("main.editor.contentPlaceholder", {
+                          defaultValue: "开始写作……",
+                        })}
+                      />
                     </div>
                   )}
                 </>

@@ -14,9 +14,79 @@ import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
 import { resolveMarkdownImageSrc } from "./imageSrc";
 
-function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
+// 与即时模式工具栏统一的图标（同 liveEditor/widgets.ts）。
+const COPY_SVG = (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <rect x="9" y="9" width="13" height="13" rx="2" />
+    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+  </svg>
+);
+const CHECK_SVG = (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.5"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M20 6 9 17l-5-5" />
+  </svg>
+);
+const CHEVRON_UP_SVG = (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M18 15l-6-6-6 6" />
+  </svg>
+);
+const CHEVRON_DOWN_SVG = (
+  <svg
+    width="13"
+    height="13"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+  >
+    <path d="M6 9l6 6 6-6" />
+  </svg>
+);
+
+// 预览代码块：右上角工具栏（语言 · 复制 · 折叠）复用即时同款 cm-md-code-* 类，实现跨视图统一。
+// 自动换行由 codeWrap 控制（默认开）：开→pre-wrap 换行；关→横向滚动。
+function CodeBlock({
+  children,
+  language,
+  codeWrap,
+}: {
+  children: React.ReactNode;
+  language?: string;
+  codeWrap: boolean;
+}) {
   const { t } = useTranslation();
   const [copied, setCopied] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
 
   const handleCopy = useCallback(() => {
     const text = extractText(children);
@@ -29,26 +99,55 @@ function CodeBlock({ children, language }: { children: React.ReactNode; language
   return (
     <div className="markdown-code-block my-3 relative group">
       <pre
-        className={`markdown-code-scroll m-0 px-4 rounded bg-paper-warm/80 overflow-x-auto ${
-          language ? "pt-8 pb-3" : "py-3"
+        className={`markdown-code-scroll m-0 px-4 pt-8 pb-3 rounded bg-paper-warm/80 ${
+          codeWrap ? "whitespace-pre-wrap break-words" : "overflow-x-auto"
         }`}
       >
-        {children}
+        {collapsed ? (
+          <button
+            type="button"
+            onClick={() => setCollapsed(false)}
+            className="block w-full text-left text-[11px] text-ink-ghost/70 select-none cursor-pointer"
+          >
+            {t("markdown.codeCollapsed", { defaultValue: "… 已折叠，点击展开" })}
+          </button>
+        ) : (
+          children
+        )}
       </pre>
-      {language && (
-        <span className="absolute top-2 left-3 text-[10px] font-mono text-ink-faint/70 uppercase tracking-wider select-none">
-          {language}
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={handleCopy}
-        className="absolute top-2 right-2 px-1.5 py-0.5 rounded text-[10px] font-mono bg-paper-deep/30 text-ink-ghost opacity-0 group-hover:opacity-100 hover:bg-paper-deep/50 hover:text-ink-soft transition-all cursor-pointer"
-      >
-        {copied
-          ? t("markdown.copied", { defaultValue: "已复制" })
-          : t("markdown.copy", { defaultValue: "复制" })}
-      </button>
+      <span className="cm-md-code-toolbar">
+        {language && <span className="cm-md-code-lang">{language}</span>}
+        <button
+          type="button"
+          onClick={handleCopy}
+          className={`cm-md-code-btn ${copied ? "is-copied" : ""}`}
+          title={
+            copied
+              ? t("markdown.copied", { defaultValue: "已复制" })
+              : t("markdown.copy", { defaultValue: "复制" })
+          }
+          aria-label={t("markdown.copy", { defaultValue: "复制" })}
+        >
+          {copied ? CHECK_SVG : COPY_SVG}
+        </button>
+        <button
+          type="button"
+          onClick={() => setCollapsed((value) => !value)}
+          className="cm-md-code-btn"
+          title={
+            collapsed
+              ? t("markdown.expand", { defaultValue: "展开" })
+              : t("markdown.collapse", { defaultValue: "折叠" })
+          }
+          aria-label={
+            collapsed
+              ? t("markdown.expand", { defaultValue: "展开" })
+              : t("markdown.collapse", { defaultValue: "折叠" })
+          }
+        >
+          {collapsed ? CHEVRON_DOWN_SVG : CHEVRON_UP_SVG}
+        </button>
+      </span>
     </div>
   );
 }
@@ -68,6 +167,8 @@ interface MarkdownPreviewProps {
   content: string;
   fontSize?: number;
   renderHtml?: boolean;
+  /** When false, code blocks scroll horizontally instead of wrapping (default: wrap). */
+  codeWrap?: boolean;
   imageBaseDir?: string;
 }
 
@@ -212,10 +313,9 @@ const staticComponents: Components = {
   code: ({ className, children }) => {
     const isBlock = className?.startsWith("language-") || String(children).includes("\n");
     if (isBlock) {
+      // white-space 由外层 <pre> 决定（换行/横滚由 codeWrap 控制），此处不写死。
       return (
-        <code className="text-[0.85em] font-mono text-ink-soft leading-[1.8] whitespace-pre">
-          {children}
-        </code>
+        <code className="text-[0.85em] font-mono text-ink-soft leading-[1.8]">{children}</code>
       );
     }
     return (
@@ -223,21 +323,6 @@ const staticComponents: Components = {
         {children}
       </code>
     );
-  },
-  pre: ({ children }) => {
-    // Extract language from the <code> element's className
-    let language = "";
-    if (
-      children != null &&
-      typeof children === "object" &&
-      "props" in (children as React.ReactElement)
-    ) {
-      const codeProps = (children as React.ReactElement<{ className?: string }>).props;
-      const match = codeProps.className?.match(/language-(\S+)/);
-      if (match) language = match[1];
-    }
-
-    return <CodeBlock language={language}>{children}</CodeBlock>;
   },
   a: ({ href, children }) => (
     <a
@@ -281,6 +366,7 @@ export function MarkdownPreview({
   content,
   fontSize = 14,
   renderHtml = false,
+  codeWrap = true,
   imageBaseDir,
 }: MarkdownPreviewProps) {
   const { t } = useTranslation();
@@ -299,8 +385,27 @@ export function MarkdownPreview({
           />
         );
       },
+      pre: ({ children }) => {
+        // Extract language from the <code> element's className.
+        let language = "";
+        if (
+          children != null &&
+          typeof children === "object" &&
+          "props" in (children as React.ReactElement)
+        ) {
+          const codeProps = (children as React.ReactElement<{ className?: string }>).props;
+          const match = codeProps.className?.match(/language-(\S+)/);
+          if (match) language = match[1];
+        }
+
+        return (
+          <CodeBlock language={language} codeWrap={codeWrap}>
+            {children}
+          </CodeBlock>
+        );
+      },
     }),
-    [imageBaseDir],
+    [imageBaseDir, codeWrap],
   );
   return (
     <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>

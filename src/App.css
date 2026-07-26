@@ -751,3 +751,126 @@ input::placeholder {
 :root[data-theme="dark"] .markdown-alert-caution .markdown-alert-title {
   color: #e87462;
 }
+
+/* ---- WYSIWYG live editor (CodeMirror) ---- */
+.cm-live-editor {
+  height: 100%;
+}
+.cm-live-editor .cm-editor {
+  height: 100%;
+}
+.cm-live-editor .cm-scroller {
+  scrollbar-width: thin;
+}
+
+/* 即时模式「代码块自动换行」关闭：覆盖 lineWrapping 继承的 pre-wrap，让代码块不换行、
+   由 .cm-scroller(overflow:auto) 整条横向滚动；正文仍按 lineWrapping 换行。 */
+.cm-live-editor.code-nowrap .cm-md-code-block {
+  white-space: pre;
+}
+
+/* Rendered table widget */
+.cm-md-table-wrap {
+  margin: 0.6em 0;
+  overflow-x: auto;
+  cursor: text;
+}
+.cm-md-table {
+  border-collapse: collapse;
+  font-size: 0.93em;
+  border: 1px solid color-mix(in srgb, var(--color-paper-deep) 60%, transparent);
+}
+.cm-md-table th,
+.cm-md-table td {
+  border: 1px solid color-mix(in srgb, var(--color-paper-deep) 50%, transparent);
+  padding: 0.35em 0.7em;
+  text-align: left;
+}
+.cm-md-table th {
+  font-weight: 600;
+  color: var(--color-ink);
+  background: color-mix(in srgb, var(--color-paper-warm) 60%, transparent);
+}
+.cm-md-table td {
+  color: var(--color-ink-soft);
+}
+.cm-md-table-source {
+  font-family: var(--font-mono);
+  font-size: 0.88em;
+}
+
+/* Code-block line numbers (per-block, optional) */
+.cm-md-code-content {
+  position: relative;
+  padding-left: 3.2em !important;
+}
+.cm-md-code-content::before {
+  content: attr(data-ln);
+  position: absolute;
+  left: 0;
+  width: 2.2em;
+  text-align: right;
+  color: var(--color-ink-ghost);
+  opacity: 0.65;
+  font-variant-numeric: tabular-nums;
+  user-select: none;
+  pointer-events: none;
+}
+
+/* Code-block toolbar (language · copy · fold) anchored top-right of the block */
+.cm-md-code-block-first {
+  position: relative;
+}
+.cm-md-code-toolbar {
+  position: absolute;
+  top: 0.2em;
+  right: 0.5em;
+  display: flex;
+  align-items: center;
+  gap: 0.35em;
+  z-index: 2;
+  user-select: none;
+}
+.cm-md-code-lang {
+  font-family: var(--font-mono);
+  font-size: 0.78em;
+  color: var(--color-ink-faint);
+  letter-spacing: 0.04em;
+}
+.cm-md-code-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border: none;
+  background: transparent;
+  color: var(--color-ink-ghost);
+  cursor: pointer;
+  border-radius: 4px;
+  opacity: 0.65;
+  transition:
+    opacity 0.15s ease,
+    color 0.15s ease,
+    background 0.15s ease;
+}
+.cm-md-code-btn:hover {
+  opacity: 1;
+  color: var(--color-ink-soft);
+  background: color-mix(in srgb, var(--color-paper-deep) 55%, transparent);
+}
+.cm-md-code-btn.is-copied {
+  color: var(--color-bamboo);
+  opacity: 1;
+}
+.cm-md-fold-placeholder {
+  display: inline-block;
+  margin: 0 0.5em;
+  padding: 0 0.5em;
+  color: var(--color-ink-ghost);
+  cursor: pointer;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--color-paper-deep) 40%, transparent);
+}
+.cm-md-fold-placeholder:hover {
+  color: var(--color-ink-soft);
+}

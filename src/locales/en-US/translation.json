@@ -57,8 +57,11 @@
     "unsupportedShortcutGeneric": "Shortcut configuration is invalid"
   },
   "markdown": {
+    "codeCollapsed": "… collapsed, click to expand",
+    "collapse": "Collapse",
     "copied": "Copied",
     "copy": "Copy",
+    "expand": "Expand",
     "emptyHint": "Preview of the current note",
     "alert": {
       "note": "Note",
@@ -210,9 +213,17 @@
     "autostart": "Launch on Startup",
     "closeTitle": "Close Settings",
     "closeToTray": "Close to Tray",
+    "activeHighlight": {
+      "block": "Block",
+      "blockLine": "Block+Line",
+      "label": "Highlight active line/block (Live)",
+      "line": "Line",
+      "off": "Off"
+    },
     "defaultView": {
       "edit": "Edit",
       "label": "Default view",
+      "live": "Live",
       "preview": "Preview",
       "split": "Split"
     },
@@ -269,6 +280,9 @@
     "tileSaveReturnsToPin": "Return to tile after saving",
     "renderHtmlMarkdown": "Render HTML tags in Markdown",
     "splitScrollSync": "Split view scroll sync",
+    "codeBlockLineNumbers": "Code block line numbers (Live)",
+    "codeWrap": "Code block wrapping",
+    "editorLineNumbers": "Editor line-number gutter (Live)",
     "title": "Settings",
     "update": {
       "advanced": "Advanced",
