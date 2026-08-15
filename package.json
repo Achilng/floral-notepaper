@@ -53,7 +53,7 @@
     "vitest": "^4.0.0"
   },
   "lint-staged": {
-    "*.{ts,tsx,js,jsx,css,json,yml,yaml,html,md}": "oxfmt",
+    "*.{ts,tsx,js,jsx,css,json,yml,yaml,html,md}": "oxfmt --no-error-on-unmatched-pattern",
     "src-tauri/**/*.rs": "cargo fmt --manifest-path src-tauri/Cargo.toml --"
   }
 }
