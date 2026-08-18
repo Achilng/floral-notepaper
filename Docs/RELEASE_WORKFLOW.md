@@ -430,6 +430,19 @@ AArch64 安装器测试还额外关注：
 
 若修复需要修改仓库内容，应通过新 Commit 和新版本 Tag 发布，不应让同一 Tag 对应不同源码或不同 Workflow。
 
+## Rebuild Release（补充/重建产物）
+
+[`rebuild-release.yml`](../.github/workflows/rebuild-release.yml) 用于为**已发布**的版本补充或重建产物
+（例如旧版本没有 Windows AArch64 架构、产物构建失败需重传、产物被误删需恢复）。
+
+- 仅支持手动触发（Actions → Rebuild Release → Run workflow），必填输入 `tag`（`vMAJOR.MINOR.PATCH`）；
+- 要求该 Tag 存在、指向 `main` 历史，且对应 Release 已发布（不存在则失败）；
+- 重建全部 10 个产物（与主发布链相同的构建、SignPath 签名与安装测试链路）；
+- 上传策略：同名资产覆盖（`--clobber`）、缺失资产新增、其他未知附件保留；
+- **不修改** Release 的标题、正文与 Notes，**不发布** Microsoft Store；
+- 产物版本号与原 Tag 一致，已安装用户不会收到重复更新提示；
+- 构建/签名/验证链路与主发布链为复制关系，主链改动需同步此文件。
+
 ## 维护要求
 
 修改以下内容时，应同步更新本文档：
