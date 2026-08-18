@@ -1,0 +1,159 @@
+name: Rebuild Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (vMAJOR.MINOR.PATCH)"
+        required: true
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ inputs.tag }}
+  cancel-in-progress: false
+
+permissions: {}
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  RUST_TOOLCHAIN: "1.96.1"
+
+jobs:
+  validate-release:
+    name: Validate release source
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      commit: ${{ steps.release.outputs.commit }}
+      version: ${{ steps.release.outputs.version }}
+      tag: ${{ steps.release.outputs.tag }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ inputs.tag }}
+
+      - name: Validate source, versions, and signing scope
+        id: release
+        shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+
+          package_version="$(jq -r '.version' package.json)"
+          tauri_version="$(jq -r '.version' src-tauri/tauri.conf.json)"
+          cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)"
+
+          tag="$INPUT_TAG"
+          if [[ -z "$tag" ]]; then
+            echo "workflow_dispatch requires the tag input." >&2
+            exit 1
+          fi
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release tags must use the stable SemVer form vMAJOR.MINOR.PATCH: $tag" >&2
+            exit 1
+          fi
+          version="${tag#v}"
+
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main'
+
+          remote_tag_commit="$(
+            git ls-remote origin \
+              "refs/tags/${tag}" \
+              "refs/tags/${tag}^{}" |
+              awk '
+                $2 ~ /\^\{\}$/ { peeled = $1 }
+                $2 !~ /\^\{\}$/ { direct = $1 }
+                END {
+                  if (peeled != "") print peeled
+                  else print direct
+                }
+              '
+          )"
+          if [[ -z "$remote_tag_commit" ]]; then
+            echo "Release tag no longer exists on origin: $tag" >&2
+            exit 1
+          fi
+          release_commit="$remote_tag_commit"
+
+          if ! git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then
+            echo "Release tag $tag must point to a commit contained in main." >&2
+            exit 1
+          fi
+
+          for entry in \
+            "package.json:$package_version" \
+            "src-tauri/tauri.conf.json:$tauri_version" \
+            "src-tauri/Cargo.toml:$cargo_version"; do
+            file="${entry%%:*}"
+            actual="${entry#*:}"
+            if [[ "$actual" != "$version" ]]; then
+              echo "Version mismatch in $file: expected $version, got $actual" >&2
+              exit 1
+            fi
+          done
+
+          release_note_file="Docs/release-note/${version}.md"
+          if [[ ! -f "$release_note_file" ]]; then
+            echo "Release note file not found: $release_note_file" >&2
+            exit 1
+          fi
+
+          executable_targets=()
+          while IFS= read -r target; do
+            executable_targets+=("$target")
+          done < <(
+            cargo metadata --manifest-path src-tauri/Cargo.toml --format-version 1 --no-deps |
+              jq -r '.packages[] | select(.name == "floral-notepaper") | .targets[] | select(.kind | index("bin")) | .name' |
+              sort
+          )
+          if [[ ${#executable_targets[@]} -ne 1 || "${executable_targets[0]}" != "floral-notepaper" ]]; then
+            echo 'The executable target set has changed; update the SignPath configuration before releasing:' >&2
+            printf '%s\n' "${executable_targets[@]}" >&2
+            exit 1
+          fi
+
+          external_bins="$(jq -r '.bundle.externalBin // [] | .[]' src-tauri/tauri.conf.json)"
+          if [[ -n "$external_bins" ]]; then
+            echo "bundle.externalBin is not empty; update the SignPath signing scope before releasing:" >&2
+            printf '%s\n' "$external_bins" >&2
+            exit 1
+          fi
+
+          executable_resources="$({
+            jq -r '
+              (.bundle.resources // [])
+              | if type == "array" then .[] else keys[] end
+            ' src-tauri/tauri.conf.json
+          } | grep -Ei '\.(exe|dll)(\*|$)' || true)"
+          if [[ -n "$executable_resources" ]]; then
+            echo "Executable bundle resources are not covered by the current SignPath configurations:" >&2
+            printf '%s\n' "$executable_resources" >&2
+            exit 1
+          fi
+
+          install_mode="$(jq -r '.bundle.windows.nsis.installMode // "currentUser"' src-tauri/tauri.conf.json)"
+          if [[ "$install_mode" != "both" ]]; then
+            echo "The release workflow tests Current User and All Users installs, but installMode is $install_mode." >&2
+            exit 1
+          fi
+
+          echo "commit=$release_commit" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+
+      - name: Verify release exists
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG does not exist; rebuild requires an existing release." >&2
+            exit 1
+          fi
