@@ -1180,7 +1180,7 @@ jobs:
 
           $releaseDir = 'unsigned-release-assets'
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-          $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+          $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
           Copy-Item -LiteralPath $binaryPath -Destination $asset -Force
 
           $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $asset).Path)
@@ -1199,7 +1199,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          path: unsigned-release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64.exe
+          path: unsigned-release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64.exe
           archive: false
           if-no-files-found: error
           overwrite: true
@@ -1359,7 +1359,7 @@ jobs:
             }
           }
 
-          $mainBinary = "signed-windows-binary-arm64/floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+          $mainBinary = "signed-windows-binary-arm64/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
           Assert-AuthenticodeSignature -Path $mainBinary
 
           $binaryContent = [System.Text.Encoding]::Latin1.GetString(
@@ -1392,7 +1392,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: signed-windows-binaries-arm64
-          path: signed-windows-binary-arm64/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64.exe
+          path: signed-windows-binary-arm64/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64.exe
           if-no-files-found: error
           overwrite: true
           retention-days: 7
@@ -1452,7 +1452,7 @@ jobs:
           New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
           $binaries = @(
             @{
-              Source = "signed-windows-binaries-arm64/floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+              Source = "signed-windows-binaries-arm64/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
               Target = Join-Path $targetDir 'floral-notepaper.exe'
               Output = 'main_sha256'
             }
@@ -1631,7 +1631,7 @@ jobs:
 
           $releaseDir = 'unsigned-release-assets'
           New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
-          $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_arm64-setup.exe"
+          $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_aarch64-setup.exe"
           Copy-Item -LiteralPath $installers[0].FullName -Destination $asset -Force
 
           $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $asset).Path)
@@ -1650,7 +1650,7 @@ jobs:
         id: upload
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          path: unsigned-release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64-setup.exe
+          path: unsigned-release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64-setup.exe
           archive: false
           if-no-files-found: error
           overwrite: true
@@ -1950,8 +1950,8 @@ jobs:
             Assert-PathRemoved -Description "$Mode uninstall registry entry" -Path $uninstallRegistryPath
           }
 
-          $installer = "signed-windows-installer-arm64/floral-notepaper_$($env:RELEASE_VERSION)_arm64-setup.exe"
-          $portable = "signed-windows-binaries-arm64/floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+          $installer = "signed-windows-installer-arm64/floral-notepaper_$($env:RELEASE_VERSION)_aarch64-setup.exe"
+          $portable = "signed-windows-binaries-arm64/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
           Assert-AuthenticodeSignature -Path $installer
           Assert-AuthenticodeSignature -Path $portable
           $expectedBinarySha256 = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash
@@ -1993,7 +1993,7 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: signed-windows-installer-arm64
-          path: signed-windows-installer-arm64/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64-setup.exe
+          path: signed-windows-installer-arm64/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64-setup.exe
           if-no-files-found: error
           overwrite: true
           retention-days: 7
@@ -2005,7 +2005,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]
+        arch: [x64, aarch64]
     permissions:
       contents: read
     outputs:
@@ -2041,7 +2041,7 @@ jobs:
           if ($env:MATRIX_ARCH -eq 'x64') {
             $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION).exe"
           } else {
-            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
           }
           $sourcePath = Join-Path 'signed-windows-binaries' $sourceFile
           if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
@@ -2102,10 +2102,10 @@ jobs:
 
       - name: Upload unsigned MSIX for SignPath (AArch64)
         id: upload-arm64
-        if: matrix.arch == 'arm64'
+        if: matrix.arch == 'aarch64'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          path: msix-out/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64.msix
+          path: msix-out/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64.msix
           archive: false
           if-no-files-found: error
           overwrite: true
@@ -2121,7 +2121,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        arch: [x64, arm64]
+        arch: [x64, aarch64]
     permissions:
       actions: read
       contents: read
@@ -2303,14 +2303,16 @@ jobs:
           if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
             throw "Unexpected identity Version in signed MSIX: $($identity.Version)"
           }
-          if ($identity.ProcessorArchitecture -ne $env:MATRIX_ARCH) {
+          # File names use "aarch64"; AppxManifest ProcessorArchitecture stays "arm64"
+          $manifestArch = if ($env:MATRIX_ARCH -eq 'aarch64') { 'arm64' } else { $env:MATRIX_ARCH }
+          if ($identity.ProcessorArchitecture -ne $manifestArch) {
             throw "Unexpected ProcessorArchitecture in signed MSIX: $($identity.ProcessorArchitecture)"
           }
 
           if ($env:MATRIX_ARCH -eq 'x64') {
             $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION).exe"
           } else {
-            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
           }
           $sourcePath = Join-Path 'signed-windows-binaries' $sourceFile
           if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
@@ -2354,7 +2356,7 @@ jobs:
         include:
           - arch: x64
             runner: windows-latest
-          - arch: arm64
+          - arch: aarch64
             runner: windows-11-arm
     permissions:
       contents: read
@@ -2431,7 +2433,9 @@ jobs:
           if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
             throw "Unexpected identity Version in MSIX: $($identity.Version)"
           }
-          if ($identity.ProcessorArchitecture -ne $env:MATRIX_ARCH) {
+          # File names use "aarch64"; AppxManifest ProcessorArchitecture stays "arm64"
+          $manifestArch = if ($env:MATRIX_ARCH -eq 'aarch64') { 'arm64' } else { $env:MATRIX_ARCH }
+          if ($identity.ProcessorArchitecture -ne $manifestArch) {
             throw "Unexpected ProcessorArchitecture in MSIX: $($identity.ProcessorArchitecture)"
           }
 
@@ -2594,7 +2598,7 @@ jobs:
       - name: Download signed MSIX (AArch64)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: signed-windows-msix-arm64
+          name: signed-windows-msix-aarch64
           path: signed-windows-msix
 
       - name: Verify both MSIX packages
@@ -2615,7 +2619,7 @@ jobs:
             throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
           }
 
-          foreach ($arch in @('x64', 'arm64')) {
+          foreach ($arch in @('x64', 'aarch64')) {
             $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$arch.msix"
             if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
               throw "Signed MSIX package was not found at $msix."
@@ -2664,7 +2668,9 @@ jobs:
             if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
               throw "Unexpected identity Version in $msix : $($identity.Version)"
             }
-            if ($identity.ProcessorArchitecture -ne $arch) {
+            # File names use "aarch64"; AppxManifest ProcessorArchitecture stays "arm64"
+            $manifestArch = if ($arch -eq 'aarch64') { 'arm64' } else { $arch }
+            if ($identity.ProcessorArchitecture -ne $manifestArch) {
               throw "Unexpected ProcessorArchitecture in $msix : $($identity.ProcessorArchitecture)"
             }
 
@@ -2681,7 +2687,7 @@ jobs:
             -Version $env:RELEASE_VERSION `
             -MsixPaths @(
               "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_x64.msix",
-              "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_arm64.msix"
+              "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.msix"
             ) `
             -OutputDir 'upload-out'
           if ($LASTEXITCODE -ne 0) {
@@ -2992,7 +2998,7 @@ jobs:
       - name: Download signed MSIX (AArch64)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: signed-windows-msix-arm64
+          name: signed-windows-msix-aarch64
           path: release-assets
 
       - name: Download Linux release assets
@@ -3027,9 +3033,9 @@ jobs:
           required_assets=(
             "floral-notepaper_${RELEASE_VERSION}.exe"
             "floral-notepaper_${RELEASE_VERSION}_x64-setup.exe"
-            "floral-notepaper_${RELEASE_VERSION}_arm64-setup.exe"
+            "floral-notepaper_${RELEASE_VERSION}_aarch64-setup.exe"
             "floral-notepaper_${RELEASE_VERSION}_x64.msix"
-            "floral-notepaper_${RELEASE_VERSION}_arm64.msix"
+            "floral-notepaper_${RELEASE_VERSION}_aarch64.msix"
             "floral-notepaper_${RELEASE_VERSION}_amd64.deb"
             "floral-notepaper-${RELEASE_VERSION}-1.x86_64.rpm"
             "floral-notepaper_${RELEASE_VERSION}_amd64.AppImage"

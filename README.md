@@ -78,13 +78,18 @@
 
 ##### 下载参考
 
-| 系统    | 架构                    | 类型     | 文件名                                    |
-| ------- | ----------------------- | -------- | ----------------------------------------- |
-| Windows | x64                     | 安装程序 | floral-notepaper\_版本号\_x64-setup.exe   |
-| Windows | x64                     | 便携版   | floral-notepaper\_版本号.exe              |
-| Windows | AArch64                 | 安装程序 | floral-notepaper\_版本号\_arm64-setup.exe |
-| macOS   | AArch64 (Apple Silicon) | DMG      | floral-notepaper\_版本号\_aarch64.dmg     |
-| macOS   | x64 (Intel)             | DMG      | floral-notepaper\_版本号\_x64.dmg         |
+| 系统    | 架构                    | 类型             | 文件名                                      |
+| ------- | ----------------------- | ---------------- | ------------------------------------------- |
+| Windows | x64                     | 安装程序（推荐） | floral-notepaper\_版本号\_x64-setup.exe     |
+| Windows | x64                     | 便携版           | floral-notepaper\_版本号.exe                |
+| Windows | x64                     | 安装包           | floral-notepaper\_版本号\_x64.msix          |
+| Windows | AArch64                 | 安装程序（推荐） | floral-notepaper\_版本号\_aarch64-setup.exe |
+| macOS   | AArch64 (Apple Silicon) | DMG              | floral-notepaper\_版本号\_aarch64.dmg       |
+| macOS   | x64 (Intel)             | DMG              | floral-notepaper\_版本号\_x64.dmg           |
+
+#### 通过 Microsoft Store 下载
+
+前往 [Microsoft Store](https://apps.microsoft.com/detail/9NRCC0ZSG81R) 下载花笺
 
 #### macOS 版安装指引
 

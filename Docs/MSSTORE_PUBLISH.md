@@ -119,7 +119,7 @@ msstore CLI **不支持创建首个 submission**（源码中对首次提交直�
 ## 人工核验清单（每次发布）
 
 1. `verify-windows-msix-install` 摘要：x64 与 AArch64 安装/启动/卸载通过；
-2. GitHub Draft Release 含 `floral-notepaper_X.Y.Z_x64.msix` 与 `_arm64.msix`，SHA256SUMS 一致；
+2. GitHub Draft Release 含 `floral-notepaper_X.Y.Z_x64.msix` 与 `_aarch64.msix`，SHA256SUMS 一致；
 3. Partner Center 中该版本 submission 的包列表包含 x64 与 AArch64；
 4. Store 上架资料（截图、描述、分级）无需更新（如版本无重大变化可沿用）；
 5. 认证完成后抽查 Store 页面版本号与本次 Tag 一致。

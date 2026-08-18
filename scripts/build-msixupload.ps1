@@ -25,7 +25,7 @@
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts/build-msixupload.ps1 `
     -Version 1.1.0 `
-    -MsixPaths signed-x64/floral-notepaper_1.1.0_x64.msix, signed-arm64/floral-notepaper_1.1.0_arm64.msix `
+    -MsixPaths signed-x64/floral-notepaper_1.1.0_x64.msix, signed-arm64/floral-notepaper_1.1.0_aarch64.msix `
     -OutputDir upload-out
 #>
 [CmdletBinding()]

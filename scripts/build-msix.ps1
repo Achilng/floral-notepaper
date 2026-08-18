@@ -27,7 +27,9 @@
   Publisher display name written to the manifest Properties.
 
 .PARAMETER Arch
-  Processor architecture of the package: x64 or AArch64.
+  Architecture label used in the output file name: x64 or aarch64.
+  The AppxManifest ProcessorArchitecture is derived from it (aarch64 is
+  written as arm64, the only value Windows manifests accept).
 
 .PARAMETER BinaryPath
   Path to the signed floral-notepaper.exe to embed.
@@ -52,7 +54,7 @@ param(
   [Parameter(Mandatory = $true)][string]$IdentityName,
   [Parameter(Mandatory = $true)][string]$PublisherCN,
   [Parameter(Mandatory = $true)][string]$PublisherDisplayName,
-  [Parameter(Mandatory = $true)][ValidateSet('x64', 'arm64')][string]$Arch,
+  [Parameter(Mandatory = $true)][ValidateSet('x64', 'aarch64')][string]$Arch,
   [Parameter(Mandatory = $true)][string]$BinaryPath,
   [Parameter(Mandatory = $true)][string]$IconsDir,
   [Parameter(Mandatory = $true)][string]$OutputDir
@@ -137,7 +139,9 @@ $manifest = $manifest.Replace('__VERSION__', $manifestVersion)
 $manifest = $manifest.Replace('__IDENTITY_NAME__', $IdentityName)
 $manifest = $manifest.Replace('__PUBLISHER_CN__', $PublisherCN)
 $manifest = $manifest.Replace('__PUBLISHER_DISPLAY_NAME__', $PublisherDisplayName)
-$manifest = $manifest.Replace('__ARCH__', $Arch)
+# The output file name uses "aarch64", but AppxManifest only accepts "arm64" here
+$manifestArch = if ($Arch -eq 'aarch64') { 'arm64' } else { $Arch }
+$manifest = $manifest.Replace('__ARCH__', $manifestArch)
 Assert-ManifestPlaceholdersFilled -Content $manifest
 
 # --- Assemble the layout ----------------------------------------------------
@@ -265,8 +269,8 @@ if ($identity.Publisher -ne $PublisherCN) {
 if ($identity.Version -ne $manifestVersion) {
   throw "Unexpected identity Version in packed manifest: $($identity.Version), expected $manifestVersion"
 }
-if ($identity.ProcessorArchitecture -ne $Arch) {
-  throw "Unexpected ProcessorArchitecture in packed manifest: $($identity.ProcessorArchitecture), expected $Arch"
+if ($identity.ProcessorArchitecture -ne $manifestArch) {
+  throw "Unexpected ProcessorArchitecture in packed manifest: $($identity.ProcessorArchitecture), expected $manifestArch"
 }
 
 $packedBinaryPath = Join-Path $verifyDir 'floral-notepaper.exe'

@@ -231,7 +231,7 @@ NSIS 打包前，Workflow 会记录已签名主程序的 SHA-256。打包后再�
 x64 与 AArch64 的差异仅在目标路径与 bundle 参数：
 
 - x64：`src-tauri/target/release/`，`tauri bundle --bundles nsis`，产物 `floral-notepaper_<v>_x64-setup.exe`；
-- AArch64：`src-tauri/target/aarch64-pc-windows-msvc/release/`，`tauri bundle --target aarch64-pc-windows-msvc --bundles nsis`，产物 `floral-notepaper_<v>_arm64-setup.exe`。
+- AArch64：`src-tauri/target/aarch64-pc-windows-msvc/release/`，`tauri bundle --target aarch64-pc-windows-msvc --bundles nsis`，产物 `floral-notepaper_<v>_aarch64-setup.exe`。
 
 ### 安装测试
 
@@ -263,18 +263,18 @@ x64 安装器在 `windows-latest` 上测试；AArch64 安装器在 `windows-11-a
 
 Workflow 要求以下十个产物全部存在：
 
-| 平台                 | 文件名                                     |
-| -------------------- | ------------------------------------------ |
-| Windows portable     | `floral-notepaper_VERSION.exe`             |
-| Windows NSIS x64     | `floral-notepaper_VERSION_x64-setup.exe`   |
-| Windows NSIS AArch64 | `floral-notepaper_VERSION_arm64-setup.exe` |
-| Windows MSIX x64     | `floral-notepaper_VERSION_x64.msix`        |
-| Windows MSIX AArch64 | `floral-notepaper_VERSION_arm64.msix`      |
-| Linux DEB            | `floral-notepaper_VERSION_amd64.deb`       |
-| Linux RPM            | `floral-notepaper-VERSION-1.x86_64.rpm`    |
-| Linux AppImage       | `floral-notepaper_VERSION_amd64.AppImage`  |
-| macOS Intel          | `floral-notepaper_VERSION_x64.dmg`         |
-| macOS Apple Silicon  | `floral-notepaper_VERSION_aarch64.dmg`     |
+| 平台                 | 文件名                                       |
+| -------------------- | -------------------------------------------- |
+| Windows portable     | `floral-notepaper_VERSION.exe`               |
+| Windows NSIS x64     | `floral-notepaper_VERSION_x64-setup.exe`     |
+| Windows NSIS AArch64 | `floral-notepaper_VERSION_aarch64-setup.exe` |
+| Windows MSIX x64     | `floral-notepaper_VERSION_x64.msix`          |
+| Windows MSIX AArch64 | `floral-notepaper_VERSION_aarch64.msix`      |
+| Linux DEB            | `floral-notepaper_VERSION_amd64.deb`         |
+| Linux RPM            | `floral-notepaper-VERSION-1.x86_64.rpm`      |
+| Linux AppImage       | `floral-notepaper_VERSION_amd64.AppImage`    |
+| macOS Intel          | `floral-notepaper_VERSION_x64.dmg`           |
+| macOS Apple Silicon  | `floral-notepaper_VERSION_aarch64.dmg`       |
 
 其中 `VERSION` 是不带 `v` 的版本号。
 
