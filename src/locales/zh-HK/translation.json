@@ -350,6 +350,7 @@
         "mirrorChyanDownloadNeedCdk": "Mirror 醬未返回下載連結，請配置有效的 CDK 後重試",
         "platformUnsupported": "目前平台或安裝型態暫不支援應用內更新",
         "portableManualOnly": "目前可攜版僅支援手動下載更新包後覆蓋升級",
+        "storeManagedManualOnly": "此版本由 Microsoft Store 管理更新，請在 Microsoft Store 中取得更新",
         "providerFixtureUnreadable": "無法讀取本地更新測試清單",
         "secureStoreUnavailable": "系統安全儲存區暫不可用，請稍後重試",
         "sourceNotConfigured": "更新來源尚未配置，目前階段僅支援本地測試清單注入",
@@ -387,6 +388,7 @@
       "saved": "更新設定已儲存",
       "settingsTitle": "更新設定",
       "speed": "速度：{{speed}}",
+      "storeManagedNotice": "此版本由 Microsoft Store 管理更新，請從 Microsoft Store 取得更新。",
       "checkSource": {
         "label": "檢查更新來源",
         "github": "GitHub",

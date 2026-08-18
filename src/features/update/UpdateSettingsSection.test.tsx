@@ -173,6 +173,23 @@ describe("UpdateSettingsSection", () => {
     expect(markup).toContain("/tmp/install-1.0.5.log");
   });
 
+  test("renders a Store-managed notice instead of update controls for MSIX installs", () => {
+    const msixStatus: UpdateState = {
+      ...status,
+      installKind: "windowsMsix",
+    };
+
+    const markup = renderToStaticMarkup(
+      <UpdateSettingsSection initialSettings={settings} initialStatus={msixStatus} mode="full" />,
+    );
+
+    expect(markup).toContain("由 Microsoft Store 管理更新");
+    expect(markup).not.toContain("检查更新");
+    expect(markup).not.toContain("自动检查更新");
+    expect(markup).not.toContain("下载更新");
+    expect(markup).not.toContain("当前版本：");
+  });
+
   test("uses the latest channel when deriving optimistic download state without prior status", () => {
     const nextStatus = deriveDownloadProgressState(
       null,

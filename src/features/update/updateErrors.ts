@@ -290,6 +290,10 @@ export function getUpdateErrorMessage(error: unknown, translate: TFunction = t):
       return translate("settings.update.error.portableManualOnly", {
         defaultValue: "当前便携版仅支持手动下载更新包后覆盖升级",
       });
+    case "updateStoreManagedManualOnly":
+      return translate("settings.update.error.storeManagedManualOnly", {
+        defaultValue: "此版本由 Microsoft Store 管理更新，请在 Microsoft Store 中获取更新",
+      });
     case "updateInstallAssetExtractFailed":
       return translate("settings.update.error.installAssetExtractFailed", {
         defaultValue: "无法解包更新资源，请重新下载后重试",

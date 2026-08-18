@@ -4,6 +4,20 @@ on:
   push:
     tags:
       - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (vMAJOR.MINOR.PATCH)"
+        required: true
+        type: string
+      publish-to-store:
+        description: "是否发布到 Microsoft Store"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -31,10 +45,13 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Validate source, versions, and signing scope
         id: release
         shell: bash
+        env:
+          INPUT_TAG: ${{ inputs.tag }}
         run: |
           set -euo pipefail
 
@@ -42,24 +59,27 @@ jobs:
           tauri_version="$(jq -r '.version' src-tauri/tauri.conf.json)"
           cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)"
 
-          if [[ "$GITHUB_REF_TYPE" != "tag" ]]; then
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+            release_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
+            tag="$INPUT_TAG"
+            if [[ -z "$tag" ]]; then
+              echo "workflow_dispatch requires the tag input." >&2
+              exit 1
+            fi
+          else
             echo "Unsupported release source: $GITHUB_REF_TYPE $GITHUB_REF_NAME" >&2
             exit 1
           fi
-          tag="$GITHUB_REF_NAME"
           if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "Release tags must use the stable SemVer form vMAJOR.MINOR.PATCH: $tag" >&2
             exit 1
           fi
           version="${tag#v}"
-          release_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
 
           git fetch --no-tags origin \
             '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then
-            echo "Release tag $tag must point to a commit contained in main." >&2
-            exit 1
-          fi
 
           remote_tag_commit="$(
             git ls-remote origin \
@@ -78,8 +98,18 @@ jobs:
             echo "Release tag no longer exists on origin: $tag" >&2
             exit 1
           fi
-          if [[ "$remote_tag_commit" != "$release_commit" ]]; then
-            echo "Release tag $tag moved: expected $release_commit, got $remote_tag_commit." >&2
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            if [[ "$remote_tag_commit" != "$release_commit" ]]; then
+              echo "Release tag $tag moved: expected $release_commit, got $remote_tag_commit." >&2
+              exit 1
+            fi
+          else
+            release_commit="$remote_tag_commit"
+          fi
+
+          if ! git merge-base --is-ancestor "$release_commit" refs/remotes/origin/main; then
+            echo "Release tag $tag must point to a commit contained in main." >&2
             exit 1
           fi
 
@@ -157,6 +187,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -285,6 +316,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Revalidate release tag before signing
         shell: bash
@@ -323,7 +355,7 @@ jobs:
       - name: Submit binary signing request
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
         with:
-          api-token: ${{ secrets.SIGNPATH_RELEASE_API_TOKEN }}
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
           signing-policy-slug: release-signing
@@ -339,9 +371,9 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
-          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_SUBJECT }}
-          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_ISSUER }}
-          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_SHA1 }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -366,15 +398,15 @@ jobs:
             param([Parameter(Mandatory = $true)][string]$Path)
 
             if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
-              throw 'SIGNPATH_RELEASE_CERTIFICATE_SUBJECT is not configured.'
+              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
             }
             if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
-              throw 'SIGNPATH_RELEASE_CERTIFICATE_ISSUER is not configured.'
+              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
             }
 
             $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
             if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-              throw 'SIGNPATH_RELEASE_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
             }
 
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
@@ -471,6 +503,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -497,15 +530,15 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
-          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_SUBJECT }}
-          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_ISSUER }}
-          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_SHA1 }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
           $ErrorActionPreference = 'Stop'
 
           $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
           if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-            throw 'SIGNPATH_RELEASE_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
           }
           $targetDir = 'src-tauri/target/release'
           New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
@@ -730,6 +763,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Revalidate release tag before signing
         shell: bash
@@ -768,7 +802,7 @@ jobs:
       - name: Submit installer signing request
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
         with:
-          api-token: ${{ secrets.SIGNPATH_RELEASE_API_TOKEN }}
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
           organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
           project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
           signing-policy-slug: release-signing
@@ -788,9 +822,9 @@ jobs:
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
-          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_SUBJECT }}
-          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_ISSUER }}
-          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_RELEASE_CERTIFICATE_SHA1 }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
           $ErrorActionPreference = 'Stop'
 
@@ -815,15 +849,15 @@ jobs:
             param([Parameter(Mandatory = $true)][string]$Path)
 
             if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
-              throw 'SIGNPATH_RELEASE_CERTIFICATE_SUBJECT is not configured.'
+              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
             }
             if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
-              throw 'SIGNPATH_RELEASE_CERTIFICATE_ISSUER is not configured.'
+              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
             }
 
             $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
             if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-              throw 'SIGNPATH_RELEASE_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
             }
 
             $signature = Get-AuthenticodeSignature -LiteralPath $Path
@@ -1051,6 +1085,1654 @@ jobs:
           overwrite: true
           retention-days: 7
 
+  build-windows-binary-aarch64:
+    name: Build unsigned Windows AArch64 binary
+    needs: validate-release
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      unsigned_artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build AArch64 executable without bundling
+        # The AArch64 binary feeds both the NSIS installer and the MSIX package
+        # (like the x64 binary), so the NSIS bundle type marker is patched
+        # before code signing below.
+        run: npm run tauri -- build --target aarch64-pc-windows-msvc --no-bundle --no-sign
+
+      - name: Mark AArch64 executable for NSIS bundling
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $binaryPath = 'src-tauri/target/aarch64-pc-windows-msvc/release/floral-notepaper.exe'
+          if (-not (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
+            throw "AArch64 Windows executable was not found at $binaryPath."
+          }
+
+          $unknownMarker = '__TAURI_BUNDLE_TYPE_VAR_UNK'
+          $nsisMarker = '__TAURI_BUNDLE_TYPE_VAR_NSS'
+          if ($unknownMarker.Length -ne $nsisMarker.Length) {
+            throw 'Tauri bundle type markers must have the same length.'
+          }
+
+          $bytes = [System.IO.File]::ReadAllBytes($binaryPath)
+          $content = [System.Text.Encoding]::Latin1.GetString($bytes)
+          $markerIndex = $content.IndexOf($unknownMarker, [System.StringComparison]::Ordinal)
+          if ($markerIndex -lt 0) {
+            throw 'The Tauri unknown bundle type marker was not found.'
+          }
+          if ($content.IndexOf($unknownMarker, $markerIndex + 1, [System.StringComparison]::Ordinal) -ge 0) {
+            throw 'More than one Tauri unknown bundle type marker was found.'
+          }
+          if ($content.Contains($nsisMarker, [System.StringComparison]::Ordinal)) {
+            throw 'The executable already contains an NSIS bundle type marker.'
+          }
+
+          $nsisMarkerBytes = [System.Text.Encoding]::ASCII.GetBytes($nsisMarker)
+          [System.Array]::Copy($nsisMarkerBytes, 0, $bytes, $markerIndex, $nsisMarkerBytes.Length)
+          [System.IO.File]::WriteAllBytes($binaryPath, $bytes)
+
+          $patchedContent = [System.Text.Encoding]::Latin1.GetString(
+            [System.IO.File]::ReadAllBytes($binaryPath)
+          )
+          if (
+            $patchedContent.Contains($unknownMarker, [System.StringComparison]::Ordinal) -or
+            -not $patchedContent.Contains($nsisMarker, [System.StringComparison]::Ordinal)
+          ) {
+            throw 'Failed to apply the Tauri NSIS bundle type marker.'
+          }
+
+          Write-Host 'Marked the AArch64 executable for NSIS bundling before code signing.'
+
+      - name: Collect unsigned AArch64 Windows binary
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $binaryPath = 'src-tauri/target/aarch64-pc-windows-msvc/release/floral-notepaper.exe'
+          if (-not (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
+            throw "AArch64 Windows executable was not found at $binaryPath."
+          }
+
+          $releaseDir = 'unsigned-release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+          Copy-Item -LiteralPath $binaryPath -Destination $asset -Force
+
+          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $asset).Path)
+          $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
+          $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
+          foreach ($entry in @{
+              FileVersion = $versionInfo.FileVersion
+              ProductVersion = $versionInfo.ProductVersion
+            }.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
+              throw "Unexpected PE $($entry.Key) for $binaryPath: expected $env:RELEASE_VERSION, got $($entry.Value)."
+            }
+          }
+
+      - name: Upload unsigned AArch64 binary for SignPath
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          path: unsigned-release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64.exe
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  sign-windows-binary-aarch64:
+    name: Sign and verify Windows AArch64 binary
+    needs: [validate-release, build-windows-binary-aarch64]
+    runs-on: windows-latest
+    environment:
+      name: release-signing
+      deployment: false
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Revalidate release tag before signing
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
+            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
+            exit 1
+          fi
+
+          remote_tag_commit="$(
+            git ls-remote origin \
+              "refs/tags/${RELEASE_TAG}" \
+              "refs/tags/${RELEASE_TAG}^{}" |
+              awk '
+                $2 ~ /\^\{\}$/ { peeled = $1 }
+                $2 !~ /\^\{\}$/ { direct = $1 }
+                END {
+                  if (peeled != "") print peeled
+                  else print direct
+                }
+              '
+          )"
+          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "Release tag $RELEASE_TAG was deleted or moved before AArch64 binary signing." >&2
+            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
+            exit 1
+          fi
+
+      - name: Submit AArch64 binary signing request
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_BINARY_ARM64_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ needs.build-windows-binary-aarch64.outputs.unsigned_artifact_id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-windows-binary-arm64
+          skip-decompress: false
+          parameters: |
+            version: ${{ toJSON(needs.validate-release.outputs.version) }}
+
+      - name: Verify signed AArch64 executable
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-SignToolPath {
+            $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
+            if ($command) {
+              return $command.Source
+            }
+
+            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
+              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $candidate) {
+              throw 'signtool.exe was not found on the runner.'
+            }
+            return $candidate.FullName
+          }
+
+          function Get-PinnedSignerCertificate {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
+              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
+            }
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
+              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
+            }
+
+            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if (-not $signature.SignerCertificate) {
+              throw "The Authenticode signature does not contain a signer certificate: $Path"
+            }
+
+            $certificate = $signature.SignerCertificate
+            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if ($actualThumbprint -ne $expectedThumbprint) {
+              throw "Unexpected certificate thumbprint: $actualThumbprint"
+            }
+            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
+              throw "Unexpected certificate subject: $($certificate.Subject)"
+            }
+            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
+              throw "Unexpected certificate issuer: $($certificate.Issuer)"
+            }
+
+            return $certificate
+          }
+
+          function Assert-AuthenticodeSignature {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+              throw "Signed file was not found: $Path"
+            }
+
+            Get-PinnedSignerCertificate -Path $Path | Out-Null
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+            if (-not $signature.TimeStamperCertificate) {
+              throw "The signature does not contain a trusted timestamp: $Path"
+            }
+
+            if ($signature.Status -ne 'Valid') {
+              throw "Authenticode signature is not valid for ${Path}: $($signature.Status): $($signature.StatusMessage)"
+            }
+
+            $signTool = Get-SignToolPath
+            & $signTool verify /pa /all /v $Path
+            if ($LASTEXITCODE -ne 0) {
+              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
+            }
+          }
+
+          $mainBinary = "signed-windows-binary-arm64/floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+          Assert-AuthenticodeSignature -Path $mainBinary
+
+          $binaryContent = [System.Text.Encoding]::Latin1.GetString(
+            [System.IO.File]::ReadAllBytes($mainBinary)
+          )
+          $unknownMarker = '__TAURI_BUNDLE_TYPE_VAR_UNK'
+          $nsisMarker = '__TAURI_BUNDLE_TYPE_VAR_NSS'
+          $nsisMarkerIndex = $binaryContent.IndexOf($nsisMarker, [System.StringComparison]::Ordinal)
+          if (
+            $binaryContent.Contains($unknownMarker, [System.StringComparison]::Ordinal) -or
+            $nsisMarkerIndex -lt 0 -or
+            $binaryContent.IndexOf($nsisMarker, $nsisMarkerIndex + 1, [System.StringComparison]::Ordinal) -ge 0
+          ) {
+            throw 'The signed AArch64 executable does not contain exactly one Tauri NSIS bundle type marker.'
+          }
+
+          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $mainBinary).Path)
+          $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
+          $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
+          foreach ($entry in @{
+              FileVersion = $versionInfo.FileVersion
+              ProductVersion = $versionInfo.ProductVersion
+            }.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
+              throw "Unexpected $($entry.Key) after signing: expected $env:RELEASE_VERSION, got $($entry.Value)."
+            }
+          }
+
+      - name: Upload verified signed AArch64 binary
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signed-windows-binaries-arm64
+          path: signed-windows-binary-arm64/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64.exe
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  build-windows-installer-aarch64:
+    name: Bundle unsigned Windows AArch64 installer
+    needs: [validate-release, sign-windows-binary-aarch64]
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    outputs:
+      unsigned_artifact_id: ${{ steps.upload.outputs.artifact-id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-pc-windows-msvc
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Download signed AArch64 Windows binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-binaries-arm64
+          path: signed-windows-binaries-arm64
+
+      - name: Restore signed AArch64 Windows binary
+        id: restore
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+          }
+          $targetDir = 'src-tauri/target/aarch64-pc-windows-msvc/release'
+          New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
+          $binaries = @(
+            @{
+              Source = "signed-windows-binaries-arm64/floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+              Target = Join-Path $targetDir 'floral-notepaper.exe'
+              Output = 'main_sha256'
+            }
+          )
+
+          foreach ($binary in $binaries) {
+            if (-not (Test-Path -LiteralPath $binary.Source -PathType Leaf)) {
+              throw "Signed AArch64 executable was not found at $($binary.Source)."
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $binary.Source
+            $certificate = $signature.SignerCertificate
+            if (-not $certificate) {
+              throw "The restored executable does not contain a signer certificate: $($binary.Source)"
+            }
+            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if (
+              $actualThumbprint -ne $expectedThumbprint -or
+              $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
+              $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
+            ) {
+              throw "The restored executable was signed by an unexpected certificate: $($binary.Source)"
+            }
+            if (-not $signature.TimeStamperCertificate) {
+              throw "The restored executable does not contain a trusted timestamp: $($binary.Source)"
+            }
+
+            if ($signature.Status -ne 'Valid') {
+              throw "The restored executable is not validly signed: $($binary.Source): $($signature.Status): $($signature.StatusMessage)"
+            }
+
+            Copy-Item -LiteralPath $binary.Source -Destination $binary.Target -Force
+            $sha256 = (Get-FileHash -LiteralPath $binary.Target -Algorithm SHA256).Hash
+            "$($binary.Output)=$sha256" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Preload Tauri NSIS toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-FileWithRetry {
+            param(
+              [Parameter(Mandatory = $true)][string]$Uri,
+              [Parameter(Mandatory = $true)][string]$OutFile,
+              [Parameter(Mandatory = $true)][string]$Sha1
+            )
+
+            for ($attempt = 1; $attempt -le 5; $attempt++) {
+              try {
+                if (Test-Path $OutFile) {
+                  Remove-Item $OutFile -Force
+                }
+
+                Write-Host "Downloading $Uri (attempt $attempt/5)"
+                Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 180
+
+                $actual = (Get-FileHash -Path $OutFile -Algorithm SHA1).Hash.ToUpperInvariant()
+                if ($actual -ne $Sha1.ToUpperInvariant()) {
+                  throw "SHA1 mismatch for $OutFile. Expected $Sha1, got $actual."
+                }
+
+                return
+              } catch {
+                Write-Warning $_
+                if ($attempt -eq 5) {
+                  throw
+                }
+                Start-Sleep -Seconds (10 * $attempt)
+              }
+            }
+          }
+
+          $tauriTools = Join-Path $env:LOCALAPPDATA 'tauri'
+          $nsisPath = Join-Path $tauriTools 'NSIS'
+          New-Item -ItemType Directory -Path $tauriTools -Force | Out-Null
+
+          $requiredFiles = @(
+            'makensis.exe',
+            'Bin/makensis.exe',
+            'Stubs/lzma-x86-unicode',
+            'Stubs/lzma_solid-x86-unicode',
+            'Plugins/x86-unicode/additional/nsis_tauri_utils.dll',
+            'Include/MUI2.nsh',
+            'Include/FileFunc.nsh',
+            'Include/x64.nsh',
+            'Include/nsDialogs.nsh',
+            'Include/WinMessages.nsh',
+            'Include/Win/COM.nsh',
+            'Include/Win/Propkey.nsh',
+            'Include/Win/RestartManager.nsh'
+          )
+
+          $missingRequiredFile = $false
+          if (-not (Test-Path $nsisPath)) {
+            $missingRequiredFile = $true
+          } else {
+            foreach ($file in $requiredFiles) {
+              if (-not (Test-Path (Join-Path $nsisPath $file))) {
+                $missingRequiredFile = $true
+                break
+              }
+            }
+          }
+
+          if ($missingRequiredFile) {
+            if (Test-Path $nsisPath) {
+              Remove-Item $nsisPath -Recurse -Force
+            }
+
+            $zipPath = Join-Path $env:RUNNER_TEMP 'nsis-3.11.zip'
+            Get-FileWithRetry `
+              -Uri 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip' `
+              -OutFile $zipPath `
+              -Sha1 'EF7FF767E5CBD9EDD22ADD3A32C9B8F4500BB10D'
+
+            $extractedPath = Join-Path $tauriTools 'nsis-3.11'
+            if (Test-Path $extractedPath) {
+              Remove-Item $extractedPath -Recurse -Force
+            }
+
+            Expand-Archive -Path $zipPath -DestinationPath $tauriTools -Force
+            Rename-Item -Path $extractedPath -NewName 'NSIS'
+          }
+
+          $pluginDir = Join-Path $nsisPath 'Plugins/x86-unicode/additional'
+          $pluginPath = Join-Path $pluginDir 'nsis_tauri_utils.dll'
+          New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
+
+          $pluginNeedsDownload = -not (Test-Path $pluginPath)
+          if (-not $pluginNeedsDownload) {
+            $actualPluginSha1 = (Get-FileHash -Path $pluginPath -Algorithm SHA1).Hash.ToUpperInvariant()
+            $pluginNeedsDownload = $actualPluginSha1 -ne '75197FEE3C6A814FE035788D1C34EAD39349B860'
+          }
+
+          if ($pluginNeedsDownload) {
+            Get-FileWithRetry `
+              -Uri 'https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll' `
+              -OutFile $pluginPath `
+              -Sha1 '75197FEE3C6A814FE035788D1C34EAD39349B860'
+          }
+
+          Write-Host "Tauri NSIS toolchain is ready at $nsisPath"
+
+      - name: Bundle AArch64 NSIS installer without recompiling
+        run: npm run tauri -- bundle --target aarch64-pc-windows-msvc --bundles nsis --no-sign
+
+      - name: Verify binary hash and collect AArch64 installer
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          EXPECTED_MAIN_SHA256: ${{ steps.restore.outputs.main_sha256 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $binaries = @(
+            @{
+              Path = 'src-tauri/target/aarch64-pc-windows-msvc/release/floral-notepaper.exe'
+              ExpectedSha256 = $env:EXPECTED_MAIN_SHA256
+            }
+          )
+          foreach ($binary in $binaries) {
+            $actualSha256 = (Get-FileHash -LiteralPath $binary.Path -Algorithm SHA256).Hash
+            if ($actualSha256 -ne $binary.ExpectedSha256) {
+              throw "A signed executable was replaced while bundling: $($binary.Path). Expected $($binary.ExpectedSha256), got $actualSha256."
+            }
+          }
+
+          $installers = @(
+            Get-ChildItem -Path 'src-tauri/target/aarch64-pc-windows-msvc/release/bundle/nsis' -File -Recurse -Filter '*.exe'
+          )
+          if ($installers.Count -ne 1) {
+            $names = ($installers | ForEach-Object FullName) -join "`n"
+            throw "Expected exactly one AArch64 NSIS installer, found $($installers.Count):`n$names"
+          }
+
+          $releaseDir = 'unsigned-release-assets'
+          New-Item -ItemType Directory -Path $releaseDir -Force | Out-Null
+          $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_arm64-setup.exe"
+          Copy-Item -LiteralPath $installers[0].FullName -Destination $asset -Force
+
+          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $asset).Path)
+          $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
+          $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
+          foreach ($entry in @{
+              FileVersion = $versionInfo.FileVersion
+              ProductVersion = $versionInfo.ProductVersion
+            }.GetEnumerator()) {
+            if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
+              throw "Unexpected installer $($entry.Key): expected $env:RELEASE_VERSION, got $($entry.Value)."
+            }
+          }
+
+      - name: Upload unsigned AArch64 installer for SignPath
+        id: upload
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          path: unsigned-release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64-setup.exe
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  sign-and-verify-windows-installer-aarch64:
+    name: Sign and install-test Windows AArch64 installer
+    needs: [validate-release, sign-windows-binary-aarch64, build-windows-installer-aarch64]
+    runs-on: windows-11-arm
+    environment:
+      name: release-signing
+      deployment: false
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Revalidate release tag before AArch64 installer signing
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
+            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
+            exit 1
+          fi
+
+          remote_tag_commit="$(
+            git ls-remote origin \
+              "refs/tags/${RELEASE_TAG}" \
+              "refs/tags/${RELEASE_TAG}^{}" |
+              awk '
+                $2 ~ /\^\{\}$/ { peeled = $1 }
+                $2 !~ /\^\{\}$/ { direct = $1 }
+                END {
+                  if (peeled != "") print peeled
+                  else print direct
+                }
+              '
+          )"
+          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "Release tag $RELEASE_TAG was deleted or moved before AArch64 installer signing." >&2
+            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
+            exit 1
+          fi
+
+      - name: Submit AArch64 installer signing request
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_INSTALLER_ARM64_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ needs.build-windows-installer-aarch64.outputs.unsigned_artifact_id }}
+          wait-for-completion: true
+          output-artifact-directory: signed-windows-installer-arm64
+          skip-decompress: true
+
+      - name: Download signed AArch64 Windows binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-binaries-arm64
+          path: signed-windows-binaries-arm64
+
+      - name: Verify AArch64 installer and installed executable
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+          ARM64_RUNTIME_TEST: ${{ vars.MSIX_ARM64_RUNTIME_TEST }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-SignToolPath {
+            $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
+            if ($command) {
+              return $command.Source
+            }
+
+            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
+              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $candidate) {
+              throw 'signtool.exe was not found on the runner.'
+            }
+            return $candidate.FullName
+          }
+
+          function Get-PinnedSignerCertificate {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
+              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
+            }
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
+              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
+            }
+
+            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if (-not $signature.SignerCertificate) {
+              throw "The Authenticode signature does not contain a signer certificate: $Path"
+            }
+
+            $certificate = $signature.SignerCertificate
+            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if ($actualThumbprint -ne $expectedThumbprint) {
+              throw "Unexpected certificate thumbprint: $actualThumbprint"
+            }
+            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
+              throw "Unexpected certificate subject: $($certificate.Subject)"
+            }
+            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
+              throw "Unexpected certificate issuer: $($certificate.Issuer)"
+            }
+
+            return $certificate
+          }
+
+          function Assert-AuthenticodeSignature {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+              throw "Signed file was not found: $Path"
+            }
+
+            Get-PinnedSignerCertificate -Path $Path | Out-Null
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+            if (-not $signature.TimeStamperCertificate) {
+              throw "The signature does not contain a trusted timestamp: $Path"
+            }
+
+            if ($signature.Status -ne 'Valid') {
+              throw "Authenticode signature is not valid for ${Path}: $($signature.Status): $($signature.StatusMessage)"
+            }
+
+            $signTool = Get-SignToolPath
+            & $signTool verify /pa /all /v $Path
+            if ($LASTEXITCODE -ne 0) {
+              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
+            }
+          }
+
+          function Test-PortableExecutable {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            $stream = [System.IO.File]::OpenRead((Resolve-Path -LiteralPath $Path).Path)
+            $reader = [System.IO.BinaryReader]::new($stream)
+            try {
+              if ($stream.Length -lt 64 -or $reader.ReadUInt16() -ne 0x5A4D) {
+                return $false
+              }
+
+              $stream.Position = 0x3C
+              $peOffset = $reader.ReadInt32()
+              if ($peOffset -lt 64 -or $peOffset -gt ($stream.Length - 4)) {
+                return $false
+              }
+
+              $stream.Position = $peOffset
+              return $reader.ReadUInt32() -eq 0x00004550
+            } finally {
+              $reader.Dispose()
+              $stream.Dispose()
+            }
+          }
+
+          function Get-InstallEntry {
+            param(
+              [Parameter(Mandatory = $true)][string]$Mode,
+              [Parameter(Mandatory = $true)][string[]]$RegistryRoots
+            )
+
+            $entries = foreach ($root in $RegistryRoots) {
+              if (-not (Test-Path -LiteralPath $root)) {
+                continue
+              }
+              Get-ChildItem -LiteralPath $root -ErrorAction SilentlyContinue |
+                ForEach-Object { Get-ItemProperty -LiteralPath $_.PSPath -ErrorAction SilentlyContinue } |
+                Where-Object { $_.DisplayName -eq '花笺' }
+            }
+            $entries = @($entries)
+            if ($entries.Count -ne 1) {
+              throw "Expected exactly one $Mode uninstall registry entry, found $($entries.Count)."
+            }
+            if ([string]::IsNullOrWhiteSpace($entries[0].InstallLocation)) {
+              throw "The $Mode uninstall registry entry has no InstallLocation."
+            }
+            return $entries[0]
+          }
+
+          function Assert-PathRemoved {
+            param(
+              [Parameter(Mandatory = $true)][string]$Description,
+              [Parameter(Mandatory = $true)][string]$Path
+            )
+
+            for ($attempt = 0; $attempt -lt 30; $attempt++) {
+              if (-not (Test-Path -LiteralPath $Path)) {
+                return
+              }
+              Start-Sleep -Milliseconds 500
+            }
+            throw "$Description remains after uninstall: $Path"
+          }
+
+          function Invoke-InstallVerification {
+            param(
+              [Parameter(Mandatory = $true)][string]$Mode,
+              [Parameter(Mandatory = $true)][string]$ModeSwitch,
+              [Parameter(Mandatory = $true)][string[]]$RegistryRoots,
+              [Parameter(Mandatory = $true)][string]$InstallerPath,
+              [Parameter(Mandatory = $true)][string]$ExpectedBinarySha256
+            )
+
+            $installProcess = Start-Process -FilePath $InstallerPath -ArgumentList @('/S', $ModeSwitch) -PassThru -Wait
+            if ($installProcess.ExitCode -ne 0) {
+              throw "The $Mode NSIS install failed with exit code $($installProcess.ExitCode)."
+            }
+
+            $installEntry = Get-InstallEntry -Mode $Mode -RegistryRoots $RegistryRoots
+            $installDir = $installEntry.InstallLocation.Trim('"')
+            $installedBinary = Join-Path $installDir 'floral-notepaper.exe'
+            $uninstaller = Join-Path $installDir 'uninstall.exe'
+            Assert-AuthenticodeSignature -Path $installedBinary
+
+            $installedSha256 = (Get-FileHash -LiteralPath $installedBinary -Algorithm SHA256).Hash
+            if ($installedSha256 -ne $ExpectedBinarySha256) {
+              throw "$Mode installed executable hash mismatch. Expected $ExpectedBinarySha256, got $installedSha256."
+            }
+
+            if (-not (Test-Path -LiteralPath $uninstaller -PathType Leaf)) {
+              throw "The $Mode NSIS uninstaller was not found at $uninstaller."
+            }
+            if (-not (Test-PortableExecutable -Path $uninstaller)) {
+              throw "The $Mode NSIS uninstaller is not a valid PE file: $uninstaller"
+            }
+
+            $resolvedBinary = (Resolve-Path -LiteralPath $installedBinary).Path
+            $resolvedUninstaller = (Resolve-Path -LiteralPath $uninstaller).Path
+            $unexpectedPortableExecutables = @(
+              Get-ChildItem -LiteralPath $installDir -File -Recurse |
+                Where-Object { Test-PortableExecutable -Path $_.FullName } |
+                Where-Object {
+                  $_.FullName -ine $resolvedBinary -and
+                  $_.FullName -ine $resolvedUninstaller
+                } |
+                Select-Object -ExpandProperty FullName
+            )
+            if ($unexpectedPortableExecutables.Count -ne 0) {
+              throw "Unexpected PE files are outside the SignPath allowlist:`n$($unexpectedPortableExecutables -join "`n")"
+            }
+
+            $uninstallerSha256 = (Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
+            $uninstallerSignature = Get-AuthenticodeSignature -LiteralPath $uninstaller
+            if ($uninstallerSignature.Status -eq 'Valid') {
+              Assert-AuthenticodeSignature -Path $uninstaller
+            } elseif ($uninstallerSignature.Status -ne 'NotSigned') {
+              throw "$Mode uninstaller has an unexpected Authenticode state: $($uninstallerSignature.Status): $($uninstallerSignature.StatusMessage)"
+            }
+
+            # Tauri generates this PE during installation. Until the SignPath artifact
+            # configuration supports deep signing it, only NotSigned is accepted as
+            # an explicit exception; any invalid or unexpected signature fails closed.
+            "- ${Mode}: installed executable signature and hash verified; PE scope verified" >> $env:GITHUB_STEP_SUMMARY
+            "- ${Mode} uninstaller: SHA-256 $uninstallerSha256; Authenticode $($uninstallerSignature.Status) (unsigned is a documented release exception)" >> $env:GITHUB_STEP_SUMMARY
+
+            $uninstallRegistryPath = $installEntry.PSPath
+            $uninstallProcess = Start-Process -FilePath $uninstaller -ArgumentList @('/S', $ModeSwitch) -PassThru -Wait
+            if ($uninstallProcess.ExitCode -ne 0) {
+              throw "The $Mode NSIS uninstall failed with exit code $($uninstallProcess.ExitCode)."
+            }
+
+            Assert-PathRemoved -Description "$Mode installed executable" -Path $installedBinary
+            Assert-PathRemoved -Description "$Mode install directory" -Path $installDir
+            Assert-PathRemoved -Description "$Mode uninstall registry entry" -Path $uninstallRegistryPath
+          }
+
+          $installer = "signed-windows-installer-arm64/floral-notepaper_$($env:RELEASE_VERSION)_arm64-setup.exe"
+          $portable = "signed-windows-binaries-arm64/floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+          Assert-AuthenticodeSignature -Path $installer
+          Assert-AuthenticodeSignature -Path $portable
+          $expectedBinarySha256 = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash
+
+          "### Windows AArch64 signing verification" >> $env:GITHUB_STEP_SUMMARY
+          "- Installer: valid Authenticode signature and timestamp" >> $env:GITHUB_STEP_SUMMARY
+
+          if ($env:ARM64_RUNTIME_TEST -eq 'false') {
+            "- AArch64 runtime install tests skipped by MSIX_ARM64_RUNTIME_TEST" >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            $installCases = @(
+              @{
+                Mode = 'Current User'
+                Switch = '/CurrentUser'
+                RegistryRoots = @(
+                  'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall'
+                )
+              },
+              @{
+                Mode = 'All Users'
+                Switch = '/AllUsers'
+                RegistryRoots = @(
+                  'HKLM:\Software\Microsoft\Windows\CurrentVersion\Uninstall',
+                  'HKLM:\Software\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall'
+                )
+              }
+            )
+            foreach ($installCase in $installCases) {
+              Invoke-InstallVerification `
+                -Mode $installCase.Mode `
+                -ModeSwitch $installCase.Switch `
+                -RegistryRoots $installCase.RegistryRoots `
+                -InstallerPath $installer `
+                -ExpectedBinarySha256 $expectedBinarySha256
+            }
+          }
+
+      - name: Upload verified signed AArch64 installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signed-windows-installer-arm64
+          path: signed-windows-installer-arm64/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64-setup.exe
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  build-windows-msix:
+    name: Build unsigned MSIX (${{ matrix.arch }})
+    needs: [validate-release, sign-windows-binary, sign-windows-binary-aarch64]
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    permissions:
+      contents: read
+    outputs:
+      unsigned_artifact_id_x64: ${{ steps.upload-x64.outputs.artifact-id }}
+      unsigned_artifact_id_arm64: ${{ steps.upload-arm64.outputs.artifact-id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Download signed Windows binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ matrix.arch == 'x64' && 'signed-windows-binaries' || 'signed-windows-binaries-arm64' }}
+          path: signed-windows-binaries
+
+      - name: Restore signed binary and build MSIX package
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER_CN: ${{ vars.MSIX_PUBLISHER_CN }}
+          MSIX_PUBLISHER_DISPLAY_NAME: ${{ vars.MSIX_PUBLISHER_DISPLAY_NAME }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if ($env:MATRIX_ARCH -eq 'x64') {
+            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION).exe"
+          } else {
+            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+          }
+          $sourcePath = Join-Path 'signed-windows-binaries' $sourceFile
+          if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            throw "Signed executable was not found at $sourcePath."
+          }
+
+          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $sourcePath
+          $certificate = $signature.SignerCertificate
+          if (-not $certificate) {
+            throw "The restored executable does not contain a signer certificate: $sourcePath"
+          }
+          $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+          if (
+            $actualThumbprint -ne $expectedThumbprint -or
+            $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
+            $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
+          ) {
+            throw "The restored executable was signed by an unexpected certificate: $sourcePath"
+          }
+          if (-not $signature.TimeStamperCertificate) {
+            throw "The restored executable does not contain a trusted timestamp: $sourcePath"
+          }
+          if ($signature.Status -ne 'Valid') {
+            throw "The restored executable is not validly signed: $sourcePath: $($signature.Status): $($signature.StatusMessage)"
+          }
+
+          $layoutDir = 'msix-layout'
+          New-Item -ItemType Directory -Path $layoutDir -Force | Out-Null
+          Copy-Item -LiteralPath $sourcePath -Destination (Join-Path $layoutDir 'floral-notepaper.exe') -Force
+
+          & 'scripts/build-msix.ps1' `
+            -Version $env:RELEASE_VERSION `
+            -IdentityName $env:MSIX_IDENTITY_NAME `
+            -PublisherCN $env:MSIX_PUBLISHER_CN `
+            -PublisherDisplayName $env:MSIX_PUBLISHER_DISPLAY_NAME `
+            -Arch $env:MATRIX_ARCH `
+            -BinaryPath (Join-Path $layoutDir 'floral-notepaper.exe') `
+            -IconsDir 'src-tauri/icons' `
+            -OutputDir 'msix-out'
+          if ($LASTEXITCODE -ne 0) {
+            throw "build-msix.ps1 failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Upload unsigned MSIX for SignPath (x64)
+        id: upload-x64
+        if: matrix.arch == 'x64'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          path: msix-out/floral-notepaper_${{ needs.validate-release.outputs.version }}_x64.msix
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+      - name: Upload unsigned MSIX for SignPath (AArch64)
+        id: upload-arm64
+        if: matrix.arch == 'arm64'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          path: msix-out/floral-notepaper_${{ needs.validate-release.outputs.version }}_arm64.msix
+          archive: false
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
+  sign-windows-msix:
+    name: Sign and verify MSIX (${{ matrix.arch }})
+    needs: [validate-release, build-windows-msix]
+    runs-on: windows-latest
+    environment:
+      name: release-signing
+      deployment: false
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [x64, arm64]
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Revalidate release tag before signing
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
+            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
+            exit 1
+          fi
+
+          remote_tag_commit="$(
+            git ls-remote origin \
+              "refs/tags/${RELEASE_TAG}" \
+              "refs/tags/${RELEASE_TAG}^{}" |
+              awk '
+                $2 ~ /\^\{\}$/ { peeled = $1 }
+                $2 !~ /\^\{\}$/ { direct = $1 }
+                END {
+                  if (peeled != "") print peeled
+                  else print direct
+                }
+              '
+          )"
+          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "Release tag $RELEASE_TAG was deleted or moved before MSIX signing." >&2
+            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
+            exit 1
+          fi
+
+      - name: Submit MSIX signing request
+        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
+        with:
+          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
+          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
+          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
+          signing-policy-slug: release-signing
+          artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_MSIX_ARTIFACT_CONFIGURATION_SLUG }}
+          github-artifact-id: ${{ matrix.arch == 'x64' && needs.build-windows-msix.outputs.unsigned_artifact_id_x64 || needs.build-windows-msix.outputs.unsigned_artifact_id_arm64 }}
+          wait-for-completion: true
+          output-artifact-directory: signed-windows-msix
+          skip-decompress: true
+
+      - name: Download original signed Windows binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: ${{ matrix.arch == 'x64' && 'signed-windows-binaries' || 'signed-windows-binaries-arm64' }}
+          path: signed-windows-binaries
+
+      - name: Verify signed MSIX package
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER_CN: ${{ vars.MSIX_PUBLISHER_CN }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          function Get-MakeAppxPath {
+            $command = Get-Command makeappx.exe -ErrorAction SilentlyContinue
+            if ($command) {
+              return $command.Source
+            }
+
+            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $candidate = Get-ChildItem -Path $kitsRoot -Filter makeappx.exe -File -Recurse |
+              Where-Object { $_.FullName -match '[\\/]x64[\\/]makeappx\.exe$' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+            if (-not $candidate) {
+              throw 'makeappx.exe was not found on the runner.'
+            }
+            return $candidate.FullName
+          }
+
+          function Get-PinnedSignerCertificate {
+            param([Parameter(Mandatory = $true)][string]$Path)
+
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
+              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
+            }
+            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
+              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
+            }
+
+            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $Path
+            if (-not $signature.SignerCertificate) {
+              throw "The Authenticode signature does not contain a signer certificate: $Path"
+            }
+
+            $certificate = $signature.SignerCertificate
+            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if ($actualThumbprint -ne $expectedThumbprint) {
+              throw "Unexpected certificate thumbprint: $actualThumbprint"
+            }
+            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
+              throw "Unexpected certificate subject: $($certificate.Subject)"
+            }
+            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
+              throw "Unexpected certificate issuer: $($certificate.Issuer)"
+            }
+
+            return $certificate
+          }
+
+          $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
+          if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
+            throw "Signed MSIX package was not found at $msix."
+          }
+
+          Get-PinnedSignerCertificate -Path $msix | Out-Null
+          $signature = Get-AuthenticodeSignature -LiteralPath $msix
+          $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
+          if (-not $signature.TimeStamperCertificate) {
+            throw "The MSIX signature does not contain a trusted timestamp: $msix"
+          }
+          if ($signature.Status -ne 'Valid') {
+            throw "MSIX signature is not valid for ${msix}: $($signature.Status): $($signature.StatusMessage)"
+          }
+
+          $signTool = Get-Command signtool.exe -ErrorAction SilentlyContinue
+          if (-not $signTool) {
+            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+            $signTool = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
+              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
+              Sort-Object FullName -Descending |
+              Select-Object -First 1
+          }
+          if (-not $signTool) {
+            throw 'signtool.exe was not found on the runner.'
+          }
+          & $signTool.FullName verify /pa /all /v $msix
+          if ($LASTEXITCODE -ne 0) {
+            throw "signtool verification failed for $msix with exit code $LASTEXITCODE."
+          }
+
+          $verifyDir = Join-Path $env:RUNNER_TEMP "msix-verify-$($env:MATRIX_ARCH)"
+          if (Test-Path -LiteralPath $verifyDir) {
+            Remove-Item -LiteralPath $verifyDir -Recurse -Force
+          }
+          New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
+          $makeAppx = Get-MakeAppxPath
+          & $makeAppx unpack /p $msix /d $verifyDir /o
+          if ($LASTEXITCODE -ne 0) {
+            throw "makeappx unpack verification failed with exit code $LASTEXITCODE."
+          }
+
+          [xml]$packedManifest = Get-Content -LiteralPath (Join-Path $verifyDir 'AppxManifest.xml') -Raw -Encoding UTF8
+          $identity = $packedManifest.Package.Identity
+          if ($identity.Name -ne $env:MSIX_IDENTITY_NAME) {
+            throw "Unexpected identity Name in signed MSIX: $($identity.Name)"
+          }
+          if ($identity.Publisher -ne $env:MSIX_PUBLISHER_CN) {
+            throw "Unexpected identity Publisher in signed MSIX: $($identity.Publisher)"
+          }
+          if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
+            throw "Unexpected identity Version in signed MSIX: $($identity.Version)"
+          }
+          if ($identity.ProcessorArchitecture -ne $env:MATRIX_ARCH) {
+            throw "Unexpected ProcessorArchitecture in signed MSIX: $($identity.ProcessorArchitecture)"
+          }
+
+          if ($env:MATRIX_ARCH -eq 'x64') {
+            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION).exe"
+          } else {
+            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION)_arm64.exe"
+          }
+          $sourcePath = Join-Path 'signed-windows-binaries' $sourceFile
+          if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+            throw "Original signed executable was not found at $sourcePath."
+          }
+          $sourceSha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+          $packedBinary = Join-Path $verifyDir 'floral-notepaper.exe'
+          if (-not (Test-Path -LiteralPath $packedBinary -PathType Leaf)) {
+            throw "floral-notepaper.exe was not found inside the signed MSIX."
+          }
+          $packedSha256 = (Get-FileHash -LiteralPath $packedBinary -Algorithm SHA256).Hash
+          if ($packedSha256 -eq $sourceSha256) {
+            "- Embedded executable hash preserved: $packedSha256" >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            # SignPath may re-sign the embedded executable (deep signing); the
+            # embedded file must then still carry the pinned certificate.
+            Get-PinnedSignerCertificate -Path $packedBinary | Out-Null
+            $packedSignature = Get-AuthenticodeSignature -LiteralPath $packedBinary
+            if (-not $packedSignature.TimeStamperCertificate -or $packedSignature.Status -ne 'Valid') {
+              throw "The embedded executable was modified without a valid pinned signature: $packedSha256"
+            }
+            "- Embedded executable was deep-signed by SignPath; hash $sourceSha256 -> $packedSha256" >> $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Upload verified signed MSIX
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signed-windows-msix-${{ matrix.arch }}
+          path: signed-windows-msix/floral-notepaper_${{ needs.validate-release.outputs.version }}_${{ matrix.arch }}.msix
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
+
+  verify-windows-msix-install:
+    name: Install-test MSIX package (${{ matrix.arch }})
+    needs: [validate-release, sign-windows-msix]
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            runner: windows-latest
+          - arch: arm64
+            runner: windows-11-arm
+    permissions:
+      contents: read
+    steps:
+      - name: Download signed MSIX
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-msix-${{ matrix.arch }}
+          path: signed-windows-msix
+
+      - name: Verify MSIX signature and manifest
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER_CN: ${{ vars.MSIX_PUBLISHER_CN }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+          $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
+          if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
+            throw "Signed MSIX package was not found at $msix."
+          }
+
+          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+          }
+          $signature = Get-AuthenticodeSignature -LiteralPath $msix
+          $certificate = $signature.SignerCertificate
+          if (-not $certificate) {
+            throw "The MSIX does not contain a signer certificate: $msix"
+          }
+          $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+          if (
+            $actualThumbprint -ne $expectedThumbprint -or
+            $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
+            $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
+          ) {
+            throw "The MSIX was signed by an unexpected certificate: $msix"
+          }
+          if (-not $signature.TimeStamperCertificate -or $signature.Status -ne 'Valid') {
+            throw "The MSIX signature is not valid and timestamped: $($signature.Status): $($signature.StatusMessage)"
+          }
+
+          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $msix).Path)
+          try {
+            $manifestEntry = $zip.GetEntry('AppxManifest.xml')
+            if (-not $manifestEntry) {
+              throw 'AppxManifest.xml was not found in the MSIX.'
+            }
+            $reader = New-Object System.IO.StreamReader($manifestEntry.Open())
+            try {
+              [xml]$manifest = $reader.ReadToEnd()
+            } finally {
+              $reader.Dispose()
+            }
+          } finally {
+            $zip.Dispose()
+          }
+
+          $identity = $manifest.Package.Identity
+          if ($identity.Name -ne $env:MSIX_IDENTITY_NAME) {
+            throw "Unexpected identity Name in MSIX: $($identity.Name)"
+          }
+          if ($identity.Publisher -ne $env:MSIX_PUBLISHER_CN) {
+            throw "Unexpected identity Publisher in MSIX: $($identity.Publisher)"
+          }
+          if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
+            throw "Unexpected identity Version in MSIX: $($identity.Version)"
+          }
+          if ($identity.ProcessorArchitecture -ne $env:MATRIX_ARCH) {
+            throw "Unexpected ProcessorArchitecture in MSIX: $($identity.ProcessorArchitecture)"
+          }
+
+          "### MSIX verification ($($env:MATRIX_ARCH))" >> $env:GITHUB_STEP_SUMMARY
+          "- Package signature: valid, pinned, timestamped" >> $env:GITHUB_STEP_SUMMARY
+          "- Identity: $($identity.Name) / $($identity.Publisher) / $($identity.Version) / $($identity.ProcessorArchitecture)" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Install, launch and uninstall test
+        if: matrix.arch == 'x64' || vars.MSIX_ARM64_RUNTIME_TEST != 'false'
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          MATRIX_ARCH: ${{ matrix.arch }}
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
+
+          Add-AppxPackage -Path (Resolve-Path -LiteralPath $msix).Path -ForceApplicationShutdown
+          if ($LASTEXITCODE -ne 0) {
+            throw "Add-AppxPackage failed with exit code $LASTEXITCODE."
+          }
+
+          $package = Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME
+          if (-not $package) {
+            throw "Installed package was not found for identity $env:MSIX_IDENTITY_NAME."
+          }
+          if ($package.Version -ne "$($env:RELEASE_VERSION).0") {
+            throw "Installed package version mismatch: $($package.Version)"
+          }
+          if (-not $package.SignatureKind -or $package.SignatureKind -eq 'None') {
+            throw "Installed package has no signature: $($package.SignatureKind)"
+          }
+          $installDir = $package.InstallLocation
+          if ([string]::IsNullOrWhiteSpace($installDir)) {
+            throw 'Installed package has no InstallLocation.'
+          }
+          "- Installed: $($package.PackageFullName)" >> $env:GITHUB_STEP_SUMMARY
+          "- SignatureKind: $($package.SignatureKind)" >> $env:GITHUB_STEP_SUMMARY
+          "- InstallLocation: $installDir" >> $env:GITHUB_STEP_SUMMARY
+
+          $exe = Join-Path $installDir 'floral-notepaper.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "Installed executable was not found at $exe."
+          }
+
+          # The runner session is headless: the process must stay alive or the
+          # app must at least reach the Rust setup stage (creating the
+          # unvirtualized config dir). WebView rendering is reviewed manually.
+          $process = Start-Process -FilePath $exe -PassThru
+          $configDir = Join-Path $env:APPDATA 'floral-notepaper'
+          $deadline = (Get-Date).AddSeconds(20)
+          while ((Get-Date) -lt $deadline) {
+            Start-Sleep -Milliseconds 500
+            if ($process.HasExited -and (Test-Path -LiteralPath $configDir)) {
+              break
+            }
+            if (-not $process.HasExited) {
+              break
+            }
+          }
+
+          if (-not (Test-Path -LiteralPath $configDir)) {
+            if ($process.HasExited) {
+              throw "The app exited before creating the config dir (exit code $($process.ExitCode))."
+            }
+            throw 'The config dir was not created by the running app.'
+          }
+          "- Config dir created: $configDir" >> $env:GITHUB_STEP_SUMMARY
+          if ($process.HasExited) {
+            "- The app exited during the headless session (exit code $($process.ExitCode)); WebView rendering must be reviewed manually" >> $env:GITHUB_STEP_SUMMARY
+          } else {
+            "- The app process stayed alive for the headless smoke test" >> $env:GITHUB_STEP_SUMMARY
+
+            # Single-instance forwarding: a second launch must exit on its own.
+            $second = Start-Process -FilePath $exe -PassThru
+            $secondDeadline = (Get-Date).AddSeconds(10)
+            while (-not $second.HasExited -and (Get-Date) -lt $secondDeadline) {
+              Start-Sleep -Milliseconds 500
+            }
+            if (-not $second.HasExited) {
+              Stop-Process -Id $second.Id -Force
+              throw 'The second instance did not exit; single-instance forwarding failed.'
+            }
+            "- Single-instance forwarding verified (second instance exited)" >> $env:GITHUB_STEP_SUMMARY
+
+            Stop-Process -Id $process.Id -Force
+            Wait-Process -Id $process.Id -ErrorAction SilentlyContinue
+          }
+
+          Remove-AppxPackage -Package $package.PackageFullName
+          if ($LASTEXITCODE -ne 0) {
+            throw "Remove-AppxPackage failed with exit code $LASTEXITCODE."
+          }
+          if (Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME) {
+            throw 'The package is still registered after uninstall.'
+          }
+          "- Uninstall verified" >> $env:GITHUB_STEP_SUMMARY
+
+  publish-msix-store:
+    name: Publish MSIX to Microsoft Store
+    needs: [validate-release, sign-windows-msix, verify-windows-msix-install]
+    if: |
+      (github.event_name == 'workflow_dispatch' &&
+        inputs['publish-to-store'] == 'true') ||
+      (github.event_name != 'workflow_dispatch' &&
+        vars.MSSTORE_PUBLISH_ENABLED != 'false')
+    runs-on: windows-latest
+    permissions:
+      actions: read
+      contents: read
+    steps:
+      - name: Checkout release source
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+
+      - name: Revalidate release tag before publishing
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          git fetch --no-tags origin \
+            '+refs/heads/main:refs/remotes/origin/main'
+          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
+            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
+            exit 1
+          fi
+
+          remote_tag_commit="$(
+            git ls-remote origin \
+              "refs/tags/${RELEASE_TAG}" \
+              "refs/tags/${RELEASE_TAG}^{}" |
+              awk '
+                $2 ~ /\^\{\}$/ { peeled = $1 }
+                $2 !~ /\^\{\}$/ { direct = $1 }
+                END {
+                  if (peeled != "") print peeled
+                  else print direct
+                }
+              '
+          )"
+          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
+            echo "Release tag $RELEASE_TAG was deleted or moved before Store publishing." >&2
+            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
+            exit 1
+          fi
+
+      - name: Download signed MSIX (x64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-msix-x64
+          path: signed-windows-msix
+
+      - name: Download signed MSIX (AArch64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-msix-arm64
+          path: signed-windows-msix
+
+      - name: Verify both MSIX packages
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
+          MSIX_PUBLISHER_CN: ${{ vars.MSIX_PUBLISHER_CN }}
+          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
+          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
+          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+
+          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
+          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
+            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
+          }
+
+          foreach ($arch in @('x64', 'arm64')) {
+            $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$arch.msix"
+            if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
+              throw "Signed MSIX package was not found at $msix."
+            }
+
+            $signature = Get-AuthenticodeSignature -LiteralPath $msix
+            $certificate = $signature.SignerCertificate
+            if (-not $certificate) {
+              throw "The MSIX does not contain a signer certificate: $msix"
+            }
+            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
+            if (
+              $actualThumbprint -ne $expectedThumbprint -or
+              $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
+              $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
+            ) {
+              throw "The MSIX was signed by an unexpected certificate: $msix"
+            }
+            if (-not $signature.TimeStamperCertificate -or $signature.Status -ne 'Valid') {
+              throw "The MSIX signature is not valid and timestamped: $msix"
+            }
+
+            $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $msix).Path)
+            try {
+              $manifestEntry = $zip.GetEntry('AppxManifest.xml')
+              if (-not $manifestEntry) {
+                throw "AppxManifest.xml was not found in $msix"
+              }
+              $reader = New-Object System.IO.StreamReader($manifestEntry.Open())
+              try {
+                [xml]$manifest = $reader.ReadToEnd()
+              } finally {
+                $reader.Dispose()
+              }
+            } finally {
+              $zip.Dispose()
+            }
+
+            $identity = $manifest.Package.Identity
+            if ($identity.Name -ne $env:MSIX_IDENTITY_NAME) {
+              throw "Unexpected identity Name in $msix : $($identity.Name)"
+            }
+            if ($identity.Publisher -ne $env:MSIX_PUBLISHER_CN) {
+              throw "Unexpected identity Publisher in $msix : $($identity.Publisher)"
+            }
+            if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
+              throw "Unexpected identity Version in $msix : $($identity.Version)"
+            }
+            if ($identity.ProcessorArchitecture -ne $arch) {
+              throw "Unexpected ProcessorArchitecture in $msix : $($identity.ProcessorArchitecture)"
+            }
+
+            "- $arch : signature and manifest verified ($($identity.Version))" >> $env:GITHUB_STEP_SUMMARY
+          }
+
+      - name: Build MSIX upload container
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & 'scripts/build-msixupload.ps1' `
+            -Version $env:RELEASE_VERSION `
+            -MsixPaths @(
+              "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_x64.msix",
+              "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_arm64.msix"
+            ) `
+            -OutputDir 'upload-out'
+          if ($LASTEXITCODE -ne 0) {
+            throw "build-msixupload.ps1 failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Setup MSStore CLI
+        uses: microsoft/microsoft-store-apppublisher@cc9910a8d59f2eb55cbb83df0a3800cf3b5300e0 # v1.4
+
+      - name: Configure MSStore CLI credentials
+        shell: pwsh
+        env:
+          PARTNER_CENTER_TENANT_ID: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+          PARTNER_CENTER_SELLER_ID: ${{ secrets.PARTNER_CENTER_SELLER_ID }}
+          PARTNER_CENTER_CLIENT_ID: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+          PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          msstore reconfigure `
+            --tenantId $env:PARTNER_CENTER_TENANT_ID `
+            --sellerId $env:PARTNER_CENTER_SELLER_ID `
+            --clientId $env:PARTNER_CENTER_CLIENT_ID `
+            --clientSecret $env:PARTNER_CENTER_CLIENT_SECRET
+          if ($LASTEXITCODE -ne 0) {
+            throw "msstore reconfigure failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Publish submission to Microsoft Store
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          MSSTORE_APP_ID: ${{ vars.MSSTORE_APP_ID }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $upload = "upload-out/floral-notepaper_$($env:RELEASE_VERSION).msixupload"
+          msstore publish $upload -i (Split-Path $upload) -id $env:MSSTORE_APP_ID
+          if ($LASTEXITCODE -ne 0) {
+            throw "msstore publish failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Show submission status
+        shell: pwsh
+        env:
+          MSSTORE_APP_ID: ${{ vars.MSSTORE_APP_ID }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          msstore submission status $env:MSSTORE_APP_ID
+          if ($LASTEXITCODE -ne 0) {
+            throw "msstore submission status failed with exit code $LASTEXITCODE."
+          }
+
   build-linux:
     name: Build Linux release assets
     needs: validate-release
@@ -1062,6 +2744,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -1147,6 +2830,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -1207,6 +2891,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -1262,6 +2947,9 @@ jobs:
       - validate-release
       - sign-windows-binary
       - sign-and-verify-windows-installer
+      - sign-and-verify-windows-installer-aarch64
+      - sign-windows-msix
+      - verify-windows-msix-install
       - build-linux
       - build-macos-x86_64
       - build-macos-aarch64
@@ -1274,6 +2962,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
           fetch-depth: 0
 
       - name: Download signed Windows portable executable
@@ -1286,6 +2975,24 @@ jobs:
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           name: signed-windows-installer
+          path: release-assets
+
+      - name: Download signed Windows AArch64 installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-installer-arm64
+          path: release-assets
+
+      - name: Download signed MSIX (x64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-msix-x64
+          path: release-assets
+
+      - name: Download signed MSIX (AArch64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-msix-arm64
           path: release-assets
 
       - name: Download Linux release assets
@@ -1320,6 +3027,9 @@ jobs:
           required_assets=(
             "floral-notepaper_${RELEASE_VERSION}.exe"
             "floral-notepaper_${RELEASE_VERSION}_x64-setup.exe"
+            "floral-notepaper_${RELEASE_VERSION}_arm64-setup.exe"
+            "floral-notepaper_${RELEASE_VERSION}_x64.msix"
+            "floral-notepaper_${RELEASE_VERSION}_arm64.msix"
             "floral-notepaper_${RELEASE_VERSION}_amd64.deb"
             "floral-notepaper-${RELEASE_VERSION}-1.x86_64.rpm"
             "floral-notepaper_${RELEASE_VERSION}_amd64.AppImage"

@@ -20,6 +20,9 @@ jobs:
           - os: win
             arch: x64
             filename: "floral-notepaper_*_x64-setup.exe"
+          - os: win
+            arch: arm64
+            filename: "floral-notepaper_*_arm64-setup.exe"
           - os: macos
             arch: x64
             filename: "floral-notepaper_*_x64.dmg"

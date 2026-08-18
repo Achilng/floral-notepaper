@@ -501,6 +501,7 @@ impl UpdateDownloadService {
             install_mode: None,
             install_started_at: None,
             install_scheduled_at: None,
+            install_kind: None,
             last_error: None,
         };
         state::save(paths, &downloading_state)?;
@@ -532,6 +533,7 @@ impl UpdateDownloadService {
                     install_mode: None,
                     install_started_at: None,
                     install_scheduled_at: None,
+                    install_kind: None,
                     last_error: None,
                 };
                 state::save(paths, &downloaded_state)?;
@@ -1152,6 +1154,7 @@ fn failed_state(
         install_mode: None,
         install_started_at: None,
         install_scheduled_at: None,
+        install_kind: None,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),
@@ -1178,6 +1181,7 @@ fn failed_state_without_plan(current_state: &UpdateStateDto, error: &AppError) -
         install_mode: None,
         install_started_at: None,
         install_scheduled_at: None,
+        install_kind: None,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),
@@ -1257,6 +1261,7 @@ mod tests {
             install_mode: None,
             install_started_at: None,
             install_scheduled_at: None,
+            install_kind: None,
             last_error: None,
         }
     }

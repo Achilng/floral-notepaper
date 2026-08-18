@@ -368,6 +368,7 @@
         "mirrorChyanResourceNotFound": "No resource available for this platform on MirrorChyan; use GitHub instead",
         "platformUnsupported": "This platform or install type does not support in-app updates yet",
         "portableManualOnly": "Portable builds must be updated manually by replacing the downloaded package",
+        "storeManagedManualOnly": "Updates are managed by the Microsoft Store. Get the latest version from the Microsoft Store.",
         "providerFixtureUnreadable": "The local update manifest fixture could not be read",
         "providerNotConfigured": "The update source has not been configured with a test manifest",
         "secureStoreUnavailable": "System secure storage is unavailable. Try again later.",
@@ -406,6 +407,7 @@
       "saved": "Update settings saved",
       "settingsTitle": "Update Settings",
       "speed": "Speed: {{speed}}",
+      "storeManagedNotice": "Updates are managed by the Microsoft Store. Get the latest version from the Microsoft Store.",
       "checkSource": {
         "label": "Check API source",
         "github": "GitHub",

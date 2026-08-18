@@ -44,6 +44,7 @@ impl PlatformInfo {
         self.os != Os::Unsupported
             && self.arch != Arch::Unsupported
             && self.install_kind != InstallKind::Unknown
+            && self.install_kind != InstallKind::WindowsMsix
     }
 
     pub fn ensure_in_app_updates_supported(&self) -> Result<(), AppError> {
@@ -68,6 +69,7 @@ impl PlatformInfo {
         match self.install_kind {
             InstallKind::WindowsNsis | InstallKind::MacosAppBundle => Ok(()),
             InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
+            InstallKind::WindowsMsix => Err(errors::store_managed_manual_only()),
             InstallKind::Unknown => Err(errors::unsupported_platform()),
         }
     }
@@ -113,6 +115,14 @@ fn current_arch() -> Arch {
 }
 
 fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
+    detect_install_kind_with_package(os, current_exe, has_package_identity())
+}
+
+fn detect_install_kind_with_package(
+    os: Os,
+    current_exe: Option<&Path>,
+    has_package_identity: bool,
+) -> InstallKind {
     match os {
         Os::Macos => {
             if current_exe.and_then(find_macos_app_bundle).is_some() {
@@ -122,6 +132,12 @@ fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
             }
         }
         Os::Windows => {
+            if has_package_identity {
+                // MSIX packages are managed (and updated) by the Microsoft
+                // Store; in-app updates must never run against the read-only
+                // WindowsApps layout.
+                return InstallKind::WindowsMsix;
+            }
             let Some(path) = current_exe else {
                 return InstallKind::Unknown;
             };
@@ -140,6 +156,34 @@ fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
         }
         Os::Unsupported => InstallKind::Unknown,
     }
+}
+
+/// Whether the current process was launched with an MSIX package identity.
+///
+/// Unpackaged processes receive `APPMODEL_ERROR_NO_PACKAGE`; any other
+/// outcome (success or an insufficient buffer) means a package identity is
+/// present.
+#[cfg(target_os = "windows")]
+pub fn has_package_identity() -> bool {
+    use windows_sys::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
+
+    const ERROR_SUCCESS: u32 = 0;
+    const APPMODEL_ERROR_NO_PACKAGE: u32 = 15700;
+
+    let mut length: u32 = 0;
+    let status = unsafe { GetCurrentPackageFullName(&mut length, std::ptr::null_mut()) };
+    match status {
+        ERROR_SUCCESS => true,
+        APPMODEL_ERROR_NO_PACKAGE => false,
+        // ERROR_INSUFFICIENT_BUFFER (and anything else) means a package
+        // identity exists but the caller's buffer was too small.
+        _ => true,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn has_package_identity() -> bool {
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -421,5 +465,67 @@ mod tests {
             .expect_err("portable installs should not support in-app updates");
 
         assert_eq!(error.code, "updatePortableManualOnly");
+    }
+
+    #[test]
+    fn detects_windows_msix_installation() {
+        let install_kind = detect_install_kind_with_package(
+            Os::Windows,
+            Some(Path::new(
+                r"C:\Program Files\WindowsApps\FloralNotepaper_1.1.0.0_x64__abcdefgh\floral-notepaper.exe",
+            )),
+            true,
+        );
+
+        assert_eq!(install_kind, InstallKind::WindowsMsix);
+    }
+
+    #[test]
+    fn treats_windowsapps_path_without_package_identity_as_nsis() {
+        // Without a package identity the path-based fallback must stay intact
+        // so that unpackaged binaries keep their current classification.
+        let install_kind = detect_install_kind_with_package(
+            Os::Windows,
+            Some(Path::new(
+                r"C:\Program Files\WindowsApps\floral-notepaper.exe",
+            )),
+            false,
+        );
+
+        assert_eq!(install_kind, InstallKind::WindowsNsis);
+    }
+
+    #[test]
+    fn rejects_windows_msix_for_in_app_updates() {
+        let platform = PlatformInfo {
+            os: Os::Windows,
+            arch: Arch::Aarch64,
+            app_version: "1.0.3".into(),
+            app_id: APP_ID.into(),
+            install_kind: InstallKind::WindowsMsix,
+            current_exe: None,
+            current_app_bundle: None,
+        };
+
+        let error = platform
+            .ensure_in_app_updates_supported()
+            .expect_err("MSIX installs should not support in-app updates");
+
+        assert_eq!(error.code, "updateStoreManagedManualOnly");
+    }
+
+    #[test]
+    fn msix_installs_do_not_support_update_assets() {
+        let platform = PlatformInfo {
+            os: Os::Windows,
+            arch: Arch::Aarch64,
+            app_version: "1.0.3".into(),
+            app_id: APP_ID.into(),
+            install_kind: InstallKind::WindowsMsix,
+            current_exe: None,
+            current_app_bundle: None,
+        };
+
+        assert!(!platform.supports_update_assets());
     }
 }

@@ -421,6 +421,7 @@ impl UpdateCheckService {
                 install_mode: None,
                 install_started_at: None,
                 install_scheduled_at: None,
+                install_kind: None,
                 last_error: None,
             };
             return Ok((result, next_state));
@@ -455,6 +456,7 @@ impl UpdateCheckService {
                 install_mode: None,
                 install_started_at: None,
                 install_scheduled_at: None,
+                install_kind: None,
                 last_error: None,
             };
             return Ok((result, next_state));
@@ -1168,6 +1170,7 @@ fn failed_state(
         install_mode: context.previous_state.install_mode.clone(),
         install_started_at: context.previous_state.install_started_at,
         install_scheduled_at: context.previous_state.install_scheduled_at,
+        install_kind: None,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),

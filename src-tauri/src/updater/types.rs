@@ -66,6 +66,7 @@ pub enum UpdateCheckStatus {
 pub enum InstallKind {
     WindowsNsis,
     WindowsPortable,
+    WindowsMsix,
     MacosAppBundle,
     Unknown,
 }
@@ -145,6 +146,7 @@ pub struct UpdateStateDto {
     pub install_mode: Option<UpdateInstallMode>,
     pub install_started_at: Option<DateTime<Utc>>,
     pub install_scheduled_at: Option<DateTime<Utc>>,
+    pub install_kind: Option<InstallKind>,
     pub last_error: Option<UpdateErrorDto>,
 }
 
@@ -172,6 +174,7 @@ impl UpdateStateDto {
             install_mode: None,
             install_started_at: None,
             install_scheduled_at: None,
+            install_kind: None,
             last_error: None,
         }
     }

@@ -115,13 +115,19 @@ export function UpdateSettingsSection({
     if (initialSettings && initialStatus) return;
     let alive = true;
 
-    Promise.all([getUpdateSettings(), getUpdateStatus()])
-      .then(([loadedSettings, loadedStatus]) => {
+    getUpdateStatus()
+      .then((loadedStatus) => {
         if (!alive) return;
-        latestChannelRef.current = loadedSettings.channel ?? loadedStatus.channel;
-        setSettings(loadedSettings);
         setStatus(loadedStatus);
         setNotice(getInitialUpdateStatusNotice(loadedStatus, t));
+        // MSIX installs are updated by the Microsoft Store; there are no
+        // in-app update settings to load for them.
+        if (loadedStatus.installKind === "windowsMsix") return;
+        return getUpdateSettings().then((loadedSettings) => {
+          if (!alive) return;
+          latestChannelRef.current = loadedSettings.channel ?? loadedStatus.channel;
+          setSettings(loadedSettings);
+        });
       })
       .catch((error) => {
         if (!alive) return;
@@ -239,6 +245,7 @@ export function UpdateSettingsSection({
   }, []);
 
   const currentVersion = status?.currentVersion ?? "--";
+  const storeManaged = status?.installKind === "windowsMsix";
   const showCheckControls = mode !== "settingsOnly";
   const showSettingsControls = mode !== "checkOnly";
   const intervalValue: IntervalOption = String(settings?.checkIntervalHours ?? 24);
@@ -467,6 +474,18 @@ export function UpdateSettingsSection({
       setBusyAction(null);
     }
   };
+
+  if (storeManaged) {
+    return (
+      <section className="space-y-3 pt-2 border-t border-paper-deep/25">
+        <p className="text-[11px] text-ink-soft leading-relaxed">
+          {t("settings.update.storeManagedNotice", {
+            defaultValue: "此版本由 Microsoft Store 管理更新，请从 Microsoft Store 获取更新。",
+          })}
+        </p>
+      </section>
+    );
+  }
 
   return (
     <section className="space-y-3 pt-2 border-t border-paper-deep/25">
