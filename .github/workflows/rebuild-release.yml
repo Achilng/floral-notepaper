@@ -2515,3 +2515,211 @@ jobs:
             throw 'The package is still registered after uninstall.'
           }
           "- Uninstall verified" >> $env:GITHUB_STEP_SUMMARY
+
+  build-linux:
+    name: Build Linux release assets
+    needs: validate-release
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf libssl-dev libxdo-dev
+
+      - name: Install frontend dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run tauri -- build --no-sign
+
+      - name: Collect release assets
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+
+          require_one() {
+            local description="$1"
+            shift
+            local files=("$@")
+
+            if [[ ${#files[@]} -ne 1 ]]; then
+              printf 'Expected exactly one %s, found %d:\n' \
+                "$description" "${#files[@]}" >&2
+              printf '%s\n' "${files[@]}" >&2
+              exit 1
+            fi
+          }
+
+          deb_candidates=()
+          while IFS= read -r candidate; do
+            deb_candidates+=("$candidate")
+          done < <(find src-tauri/target/release/bundle/deb -type f -name '*.deb' | sort)
+          require_one 'DEB package' "${deb_candidates[@]}"
+          cp "${deb_candidates[0]}" "release-assets/floral-notepaper_${RELEASE_VERSION}_amd64.deb"
+
+          rpm_candidates=()
+          while IFS= read -r candidate; do
+            rpm_candidates+=("$candidate")
+          done < <(find src-tauri/target/release/bundle/rpm -type f -name '*.rpm' | sort)
+          require_one 'RPM package' "${rpm_candidates[@]}"
+          cp "${rpm_candidates[0]}" "release-assets/floral-notepaper-${RELEASE_VERSION}-1.x86_64.rpm"
+
+          appimage_candidates=()
+          while IFS= read -r candidate; do
+            appimage_candidates+=("$candidate")
+          done < <(find src-tauri/target/release/bundle/appimage -type f -name '*.AppImage' | sort)
+          require_one 'AppImage' "${appimage_candidates[@]}"
+          cp "${appimage_candidates[0]}" "release-assets/floral-notepaper_${RELEASE_VERSION}_amd64.AppImage"
+
+      - name: Upload Linux release assets
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: linux-release-assets
+          path: release-assets/*
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  build-macos-x86_64:
+    name: Build macOS Intel release asset
+    needs: validate-release
+    runs-on: macos-15-intel
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: x86_64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build without signing
+        run: npm run tauri -- build --target x86_64-apple-darwin --no-sign
+
+      - name: Collect release asset
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          dmg_candidates=()
+          while IFS= read -r candidate; do
+            dmg_candidates+=("$candidate")
+          done < <(find src-tauri/target/x86_64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort)
+          if [[ ${#dmg_candidates[@]} -ne 1 ]]; then
+            printf 'Expected exactly one macOS x86_64 DMG, found %s:\n' "${#dmg_candidates[@]}" >&2
+            printf '%s\n' "${dmg_candidates[@]}" >&2
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          dmg_asset="release-assets/floral-notepaper_${RELEASE_VERSION}_x64.dmg"
+          cp "${dmg_candidates[0]}" "$dmg_asset"
+          xattr -cr "$dmg_asset"
+
+      - name: Upload macOS Intel release asset
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: macos-x64-release-asset
+          path: release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_x64.dmg
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
+
+  build-macos-aarch64:
+    name: Build macOS Apple Silicon release asset
+    needs: validate-release
+    runs-on: macos-15
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: "24"
+          cache: npm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: aarch64-apple-darwin
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build without signing
+        run: npm run tauri -- build --target aarch64-apple-darwin --no-sign
+
+      - name: Collect release asset
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+        run: |
+          set -euo pipefail
+          dmg_candidates=()
+          while IFS= read -r candidate; do
+            dmg_candidates+=("$candidate")
+          done < <(find src-tauri/target/aarch64-apple-darwin/release/bundle/dmg -type f -name '*.dmg' | sort)
+          if [[ ${#dmg_candidates[@]} -ne 1 ]]; then
+            printf 'Expected exactly one macOS aarch64 DMG, found %s:\n' "${#dmg_candidates[@]}" >&2
+            printf '%s\n' "${dmg_candidates[@]}" >&2
+            exit 1
+          fi
+
+          mkdir -p release-assets
+          dmg_asset="release-assets/floral-notepaper_${RELEASE_VERSION}_aarch64.dmg"
+          cp "${dmg_candidates[0]}" "$dmg_asset"
+          xattr -cr "$dmg_asset"
+
+      - name: Upload macOS Apple Silicon release asset
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: macos-aarch64-release-asset
+          path: release-assets/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64.dmg
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 7
