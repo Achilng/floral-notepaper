@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="AppName">
+    <value>Floral Notepaper</value>
+  </data>
+  <data name="AppDescription">
+    <value>Floral Notepaper - lightweight local note app</value>
+  </data>
+</root>

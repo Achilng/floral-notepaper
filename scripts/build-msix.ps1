@@ -4,10 +4,12 @@
 
 .DESCRIPTION
   Renders AppxManifest.xml from src-tauri/msix/AppxManifest.template.xml,
-  assembles the MSIX layout (manifest + signed exe + Store icons), packs it
-  with MakeAppx.exe and unpacks the result to verify that the manifest
-  identity, version, processor architecture and the embedded executable hash
-  match the inputs.
+  assembles the MSIX layout (manifest + signed exe + Store icons), generates
+  resources.pri with MakePri.exe from the lang-*/resources.resw files (the
+  manifest DisplayName / Description resolve via ms-resource references),
+  packs it with MakeAppx.exe and unpacks the result to verify that the
+  manifest identity, version, processor architecture, resources.pri and the
+  embedded executable hash match the inputs.
 
 .PARAMETER Version
   Release version in MAJOR.MINOR.PATCH form. The manifest version becomes
@@ -71,6 +73,23 @@ function Get-MakeAppxPath {
     Select-Object -First 1
   if (-not $candidate) {
     throw 'makeappx.exe was not found on the runner.'
+  }
+  return $candidate.FullName
+}
+
+function Get-MakePriPath {
+  $command = Get-Command makepri.exe -ErrorAction SilentlyContinue
+  if ($command) {
+    return $command.Source
+  }
+
+  $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+  $candidate = Get-ChildItem -Path $kitsRoot -Filter makepri.exe -File -Recurse |
+    Where-Object { $_.FullName -match '[\\/]x64[\\/]makepri\.exe$' } |
+    Sort-Object FullName -Descending |
+    Select-Object -First 1
+  if (-not $candidate) {
+    throw 'makepri.exe was not found on the runner.'
   }
   return $candidate.FullName
 }
@@ -157,6 +176,42 @@ foreach ($asset in $logoAssets) {
   Copy-Item -LiteralPath $source -Destination (Join-Path $layoutDir $asset) -Force
 }
 
+# --- Generate resources.pri --------------------------------------------------
+
+$msixDir = Join-Path $PSScriptRoot '..\src-tauri\msix'
+$resRoot = Join-Path (Join-Path $env:TEMP 'floral-msix-res') $Arch
+if (Test-Path -LiteralPath $resRoot) {
+  Remove-Item -LiteralPath $resRoot -Recurse -Force
+}
+New-Item -ItemType Directory -Path $resRoot -Force | Out-Null
+
+$resLanguages = @('lang-zh-CN', 'lang-en-US', 'lang-zh-HK')
+foreach ($langDir in $resLanguages) {
+  $source = Join-Path (Join-Path $msixDir $langDir) 'resources.resw'
+  if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+    throw "Required MSIX resource file is missing: $source"
+  }
+  Copy-Item -LiteralPath $source -Destination (Join-Path $resRoot $langDir) -Force
+}
+
+$makePri = Get-MakePriPath
+Write-Host "Using MakePri at $makePri"
+
+$priConfig = Join-Path $resRoot 'priconfig.xml'
+& $makePri createconfig /cf $priConfig /dq zh-CN /o
+if ($LASTEXITCODE -ne 0) {
+  throw "makepri createconfig failed with exit code $LASTEXITCODE."
+}
+
+$layoutPri = Join-Path $layoutDir 'resources.pri'
+& $makePri new /pr $resRoot /cf $priConfig /of $layoutPri /o
+if ($LASTEXITCODE -ne 0) {
+  throw "makepri new failed with exit code $LASTEXITCODE."
+}
+if (-not (Test-Path -LiteralPath $layoutPri -PathType Leaf)) {
+  throw "resources.pri was not produced: $layoutPri"
+}
+
 # --- Pack -------------------------------------------------------------------
 
 $makeAppx = Get-MakeAppxPath
@@ -192,6 +247,11 @@ if ($LASTEXITCODE -ne 0) {
 $manifestPath = Join-Path $verifyDir 'AppxManifest.xml'
 if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
   throw 'AppxManifest.xml was not found in the packed package.'
+}
+
+$packedPriPath = Join-Path $verifyDir 'resources.pri'
+if (-not (Test-Path -LiteralPath $packedPriPath -PathType Leaf)) {
+  throw 'resources.pri was not found in the packed package.'
 }
 
 [xml]$packedManifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8

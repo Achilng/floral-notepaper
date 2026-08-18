@@ -19,6 +19,11 @@
     windows.fullTrustProcess extension.
   - File type associations are declared as uap extensions; activation delivers
     the file path on the command line, which desktop.rs already handles.
+  - DisplayName / Description use ms-resource references resolved from
+    resources.pri, which scripts/build-msix.ps1 generates with MakePri from
+    the lang-*/resources.resw files in this directory. The system shows the
+    name matching the user's language; the Resources list below must stay in
+    sync with those resw files.
 -->
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
@@ -33,7 +38,7 @@
     Version="__VERSION__"
     ProcessorArchitecture="__ARCH__" />
   <Properties>
-    <DisplayName>花笺</DisplayName>
+    <DisplayName>ms-resource:AppName</DisplayName>
     <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
     <Logo>StoreLogo.png</Logo>
     <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
@@ -56,8 +61,8 @@
       Executable="floral-notepaper.exe"
       EntryPoint="Windows.FullTrustApplication">
       <uap:VisualElements
-        DisplayName="花笺"
-        Description="花笺 - 轻量本地笔记应用"
+        DisplayName="ms-resource:AppName"
+        Description="ms-resource:AppDescription"
         BackgroundColor="transparent"
         Square150x150Logo="Square150x150Logo.png"
         Square44x44Logo="Square44x44Logo.png"
