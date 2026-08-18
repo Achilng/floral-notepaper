@@ -91,6 +91,14 @@
 
 前往 [Microsoft Store](https://apps.microsoft.com/detail/9NRCC0ZSG81R) 下载花笺
 
+<!-- markdownlint-disable -->
+
+<a href="https://apps.microsoft.com/detail/9NRCC0ZSG81R?referrer=appbadge&mode=full" target="_blank"  rel="noopener noreferrer">
+	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
+</a>
+
+<!-- markdownlint-restore -->
+
 #### macOS 版安装指引
 
 如遇安装问题，请参考：

@@ -78,13 +78,26 @@
 
 ##### 下載參考
 
-| 系統    | 架構                    | 類型     | 檔案名稱                                  |
-| ------- | ----------------------- | -------- | ----------------------------------------- |
-| Windows | x64                     | 安裝程式 | floral-notepaper\_版本號\_x64-setup.exe   |
-| Windows | x64                     | 可攜版   | floral-notepaper\_版本號.exe              |
-| Windows | AArch64                 | 安裝程式 | floral-notepaper\_版本號\_arm64-setup.exe |
-| macOS   | AArch64 (Apple Silicon) | DMG      | floral-notepaper\_版本號\_aarch64.dmg     |
-| macOS   | x64 (Intel)             | DMG      | floral-notepaper\_版本號\_x64.dmg         |
+| 系統    | 架構                    | 類型             | 檔案名稱                                    |
+| ------- | ----------------------- | ---------------- | ------------------------------------------- |
+| Windows | x64                     | 安裝程式（推薦） | floral-notepaper\_版本號\_x64-setup.exe     |
+| Windows | x64                     | 可攜版           | floral-notepaper\_版本號.exe                |
+| Windows | x64                     | 安裝包           | floral-notepaper\_版本號\_x64.msix          |
+| Windows | AArch64                 | 安裝程式（推薦） | floral-notepaper\_版本號\_aarch64-setup.exe |
+| macOS   | AArch64 (Apple Silicon) | DMG              | floral-notepaper\_版本號\_aarch64.dmg       |
+| macOS   | x64 (Intel)             | DMG              | floral-notepaper\_版本號\_x64.dmg           |
+
+#### 透過 Microsoft Store 下載
+
+前往 [Microsoft Store](https://apps.microsoft.com/detail/9NRCC0ZSG81R) 下載花箋
+
+<!-- markdownlint-disable -->
+
+<a href="https://apps.microsoft.com/detail/9NRCC0ZSG81R?referrer=appbadge&mode=full" target="_blank"  rel="noopener noreferrer">
+	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
+</a>
+
+<!-- markdownlint-restore -->
 
 #### macOS 版安裝指引
 
