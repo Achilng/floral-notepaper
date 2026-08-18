@@ -404,10 +404,10 @@
         "title": "MirrorChyan CDK"
       },
       "notAvailable": "You are on the latest version",
+      "openInStore": "View updates in Microsoft Store",
       "saved": "Update settings saved",
       "settingsTitle": "Update Settings",
       "speed": "Speed: {{speed}}",
-      "storeManagedNotice": "Updates are managed by the Microsoft Store. Get the latest version from the Microsoft Store.",
       "checkSource": {
         "label": "Check API source",
         "github": "GitHub",

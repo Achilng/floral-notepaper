@@ -1,6 +1,10 @@
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test, vi } from "vitest";
-import { deriveDownloadProgressState, UpdateSettingsSection } from "./UpdateSettingsSection";
+import {
+  deriveDownloadProgressState,
+  MICROSOFT_STORE_PDP_URL,
+  UpdateSettingsSection,
+} from "./UpdateSettingsSection";
 import type { UpdateSettings, UpdateState } from "./types";
 
 vi.mock("@tauri-apps/plugin-dialog", () => ({
@@ -173,7 +177,7 @@ describe("UpdateSettingsSection", () => {
     expect(markup).toContain("/tmp/install-1.0.5.log");
   });
 
-  test("renders a Store-managed notice instead of update controls for MSIX installs", () => {
+  test("links MSIX installs to the Microsoft Store instead of update controls", () => {
     const msixStatus: UpdateState = {
       ...status,
       installKind: "windowsMsix",
@@ -183,11 +187,49 @@ describe("UpdateSettingsSection", () => {
       <UpdateSettingsSection initialSettings={settings} initialStatus={msixStatus} mode="full" />,
     );
 
-    expect(markup).toContain("由 Microsoft Store 管理更新");
+    expect(MICROSOFT_STORE_PDP_URL).toBe("ms-windows-store://pdp/?productid=9NRCC0ZSG81R");
+    expect(markup).toContain("在 Microsoft Store 中查看更新");
+    expect(markup).not.toContain("由 Microsoft Store 管理更新");
     expect(markup).not.toContain("检查更新");
     expect(markup).not.toContain("自动检查更新");
     expect(markup).not.toContain("下载更新");
     expect(markup).not.toContain("当前版本：");
+  });
+
+  test("renders only a Microsoft Store link for MSIX installs in the about panel", () => {
+    const msixStatus: UpdateState = {
+      ...status,
+      installKind: "windowsMsix",
+    };
+
+    const markup = renderToStaticMarkup(
+      <UpdateSettingsSection
+        initialSettings={settings}
+        initialStatus={msixStatus}
+        mode="checkOnly"
+      />,
+    );
+
+    expect(markup).toContain("在 Microsoft Store 中查看更新");
+    expect(markup).not.toContain("检查更新");
+    expect(markup).not.toContain("当前版本：");
+  });
+
+  test("hides the update settings entirely for MSIX installs", () => {
+    const msixStatus: UpdateState = {
+      ...status,
+      installKind: "windowsMsix",
+    };
+
+    const markup = renderToStaticMarkup(
+      <UpdateSettingsSection
+        initialSettings={settings}
+        initialStatus={msixStatus}
+        mode="settingsOnly"
+      />,
+    );
+
+    expect(markup).toBe("");
   });
 
   test("uses the latest channel when deriving optimistic download state without prior status", () => {

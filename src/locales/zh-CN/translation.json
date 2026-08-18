@@ -404,10 +404,10 @@
         "title": "Mirror酱 CDK"
       },
       "notAvailable": "当前已是最新版本",
+      "openInStore": "在 Microsoft Store 中查看更新",
       "saved": "更新设置已保存",
       "settingsTitle": "更新设置",
       "speed": "速度：{{speed}}",
-      "storeManagedNotice": "此版本由 Microsoft Store 管理更新，请从 Microsoft Store 获取更新。",
       "checkSource": {
         "label": "检查更新源",
         "github": "GitHub",

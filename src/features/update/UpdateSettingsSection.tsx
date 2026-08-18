@@ -3,6 +3,11 @@ import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { message } from "@tauri-apps/plugin-dialog";
 import { useTranslation } from "react-i18next";
 import { openUrl } from "@tauri-apps/plugin-opener";
+
+// MSIX installs are updated by the Microsoft Store; the About panel links
+// there instead of exposing the in-app updater (mirror酱 sources included).
+export const MICROSOFT_STORE_PRODUCT_ID = "9NRCC0ZSG81R";
+export const MICROSOFT_STORE_PDP_URL = `ms-windows-store://pdp/?productid=${MICROSOFT_STORE_PRODUCT_ID}`;
 import { SlidingButtonGroup } from "../../components/SlidingButtonGroup";
 import {
   cancelUpdate,
@@ -476,13 +481,20 @@ export function UpdateSettingsSection({
   };
 
   if (storeManaged) {
+    // MSIX installs are updated by the Microsoft Store; hide the update
+    // settings entirely and link the About panel to the Store product page.
+    if (mode === "settingsOnly") return null;
     return (
       <section className="space-y-3 pt-2 border-t border-paper-deep/25">
-        <p className="text-[11px] text-ink-soft leading-relaxed">
-          {t("settings.update.storeManagedNotice", {
-            defaultValue: "此版本由 Microsoft Store 管理更新，请从 Microsoft Store 获取更新。",
+        <button
+          type="button"
+          onClick={() => void openUrl(MICROSOFT_STORE_PDP_URL)}
+          className="w-full h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer"
+        >
+          {t("settings.update.openInStore", {
+            defaultValue: "在 Microsoft Store 中查看更新",
           })}
-        </p>
+        </button>
       </section>
     );
   }

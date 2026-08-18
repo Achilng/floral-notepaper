@@ -385,10 +385,10 @@
         "title": "Mirror 醬 CDK"
       },
       "notAvailable": "目前已是最新版本",
+      "openInStore": "在 Microsoft Store 中檢視更新",
       "saved": "更新設定已儲存",
       "settingsTitle": "更新設定",
       "speed": "速度：{{speed}}",
-      "storeManagedNotice": "此版本由 Microsoft Store 管理更新，請從 Microsoft Store 取得更新。",
       "checkSource": {
         "label": "檢查更新來源",
         "github": "GitHub",
