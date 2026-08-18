@@ -84,6 +84,7 @@ Head over to the [Releases page](https://github.com/Achilng/floral-notepaper/rel
 | Windows  | x64                     | Portable                | floral-notepaper_x.y.z.exe               |
 | Windows  | x64                     | MSIX Package            | floral-notepaper_x.y.z_x64.msix          |
 | Windows  | AArch64                 | Installer (Recommended) | floral-notepaper_x.y.z_aarch64-setup.exe |
+| Windows  | AArch64                 | MSIX Package            | floral-notepaper_x.y.z_aarch64.msix      |
 | macOS    | AArch64 (Apple Silicon) | DMG                     | floral-notepaper_x.y.z_aarch64.dmg       |
 | macOS    | x64 (Intel)             | DMG                     | floral-notepaper_x.y.z_x64.dmg           |
 

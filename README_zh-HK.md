@@ -84,6 +84,7 @@
 | Windows | x64                     | 可攜版           | floral-notepaper\_版本號.exe                |
 | Windows | x64                     | 安裝包           | floral-notepaper\_版本號\_x64.msix          |
 | Windows | AArch64                 | 安裝程式（推薦） | floral-notepaper\_版本號\_aarch64-setup.exe |
+| Windows | AArch64                 | 安裝包           | floral-notepaper\_版本號\_aarch64.msix      |
 | macOS   | AArch64 (Apple Silicon) | DMG              | floral-notepaper\_版本號\_aarch64.dmg       |
 | macOS   | x64 (Intel)             | DMG              | floral-notepaper\_版本號\_x64.dmg           |
 
