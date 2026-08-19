@@ -37,6 +37,20 @@ import type {
   UpdateState,
 } from "./types";
 
+// Rust event payloads always carry installKind: null (the backend injects it
+// only when the install is MSIX and we hydrate it via getUpdateStatus).
+// Merging preserves the hydrated value so the MSIX store-managed gate below
+// never silently reopens after an event overwrites the status.
+export function mergeStatusPayload(
+  current: UpdateState | null,
+  incoming: UpdateState,
+): UpdateState {
+  if (incoming.installKind == null && current?.installKind != null) {
+    return { ...incoming, installKind: current.installKind };
+  }
+  return incoming;
+}
+
 type BusyAction = "settings" | "checking" | "cdk" | "download" | "cancel" | "install" | null;
 
 interface UpdateSettingsSectionProps {
@@ -159,7 +173,7 @@ export function UpdateSettingsSection({
         unlistenFns.push(
           await listen<UpdateState>("update://checking", (event) => {
             if (!active) return;
-            setStatus(event.payload);
+            setStatus((current) => mergeStatusPayload(current, event.payload));
           }),
         );
 
@@ -167,7 +181,7 @@ export function UpdateSettingsSection({
           await listen<UpdateState>("update://checked", (event) => {
             if (!active) return;
             latestChannelRef.current = event.payload.channel;
-            setStatus(event.payload);
+            setStatus((current) => mergeStatusPayload(current, event.payload));
             const nextNotice = getUpdateCheckCompletionNotice(event.payload, translateRef.current);
             if (nextNotice) {
               setNotice(nextNotice);
@@ -190,7 +204,7 @@ export function UpdateSettingsSection({
             if (!active) return;
             latestChannelRef.current = event.payload.channel;
             setDownloadProgress(null);
-            setStatus(event.payload);
+            setStatus((current) => mergeStatusPayload(current, event.payload));
           }),
         );
 
@@ -198,7 +212,7 @@ export function UpdateSettingsSection({
           await listen<UpdateState>("update://install-finished", (event) => {
             if (!active) return;
             latestChannelRef.current = event.payload.channel;
-            setStatus(event.payload);
+            setStatus((current) => mergeStatusPayload(current, event.payload));
           }),
         );
 
@@ -216,6 +230,17 @@ export function UpdateSettingsSection({
                 kind: "error",
               });
             }
+            // Re-hydrate the status so transient failures (e.g. a cancelled
+            // check) surface the latest state instead of a stale notice;
+            // mirrors the MainWindow.tsx error-listener refetch behavior.
+            void getUpdateStatus()
+              .then((loaded) => {
+                if (!active) return;
+                setStatus(loaded);
+              })
+              .catch((err) =>
+                console.warn("failed to refresh update status after error event", err),
+              );
           }),
         );
 
@@ -486,6 +511,12 @@ export function UpdateSettingsSection({
     if (mode === "settingsOnly") return null;
     return (
       <section className="space-y-3 pt-2 border-t border-paper-deep/25">
+        <p className="text-[11px] text-ink-ghost">
+          {t("settings.update.msixNoInAppUpdate", {
+            defaultValue:
+              "MSIX 侧载版本暂不支持应用内更新，请通过 GitHub 或 Microsoft Store 获取最新版本",
+          })}
+        </p>
         <button
           type="button"
           onClick={() => void openUrl(MICROSOFT_STORE_PDP_URL)}
@@ -495,6 +526,19 @@ export function UpdateSettingsSection({
             defaultValue: "在 Microsoft Store 中查看更新",
           })}
         </button>
+      </section>
+    );
+  }
+
+  // Before the status has been hydrated the install kind is unknown, so
+  // rendering any update controls risks showing them for a moment and then
+  // replacing them with the Store link once the MSIX status arrives.
+  if (status === null) {
+    return (
+      <section className="space-y-3 pt-2 border-t border-paper-deep/25">
+        <p className="text-[11px] text-ink-ghost">
+          {t("settings.update.loading", { defaultValue: "正在读取更新设置..." })}
+        </p>
       </section>
     );
   }

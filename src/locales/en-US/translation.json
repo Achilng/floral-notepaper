@@ -403,6 +403,7 @@
         "showCdk": "Show CDK",
         "title": "MirrorChyan CDK"
       },
+      "msixNoInAppUpdate": "MSIX sideloaded builds don't support in-app updates. Get the latest version from GitHub or Microsoft Store.",
       "notAvailable": "You are on the latest version",
       "openInStore": "View updates in Microsoft Store",
       "saved": "Update settings saved",

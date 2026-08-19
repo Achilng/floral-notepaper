@@ -403,6 +403,7 @@
         "showCdk": "显示 CDK",
         "title": "Mirror酱 CDK"
       },
+      "msixNoInAppUpdate": "MSIX 侧载版本暂不支持应用内更新，请通过 GitHub 或 Microsoft Store 获取最新版本",
       "notAvailable": "当前已是最新版本",
       "openInStore": "在 Microsoft Store 中查看更新",
       "saved": "更新设置已保存",

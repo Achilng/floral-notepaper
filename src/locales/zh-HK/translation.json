@@ -384,6 +384,7 @@
         "showCdk": "顯示 CDK",
         "title": "Mirror 醬 CDK"
       },
+      "msixNoInAppUpdate": "MSIX 側載版本暫不支援應用程式內更新，請透過 GitHub 或 Microsoft Store 取得最新版本",
       "notAvailable": "目前已是最新版本",
       "openInStore": "在 Microsoft Store 中檢視更新",
       "saved": "更新設定已儲存",
