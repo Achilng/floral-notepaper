@@ -92,6 +92,8 @@ Head over to the [Releases page](https://github.com/Achilng/floral-notepaper/rel
 
 Download Floral Notepaper from the [Microsoft Store](https://apps.microsoft.com/detail/9NRCC0ZSG81R)
 
+> Note: MSIX installs (from the Microsoft Store or sideloaded .msix files) do not support in-app updates. Get the latest version from the Microsoft Store or GitHub Releases.
+
 <!-- markdownlint-disable -->
 
 <a href="https://apps.microsoft.com/detail/9NRCC0ZSG81R?referrer=appbadge&mode=full" target="_blank"  rel="noopener noreferrer">

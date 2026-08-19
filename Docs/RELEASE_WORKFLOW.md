@@ -78,7 +78,6 @@ Store 发布凭据同样存放在仓库级（全局），不依赖 Environment�
 | Variable | `MSIX_PUBLISHER_CN`                                            | MSIX 清单 Publisher（证书 Subject CN），必须与账户 Publisher 匹配                                                |
 | Variable | `MSIX_PUBLISHER_DISPLAY_NAME`                                  | MSIX 清单 PublisherDisplayName                                                                                   |
 | Variable | `MSSTORE_APP_ID`                                               | Partner Center 产品 ID（`msstore publish -id` 使用）                                                             |
-| Variable | `MSSTORE_PUBLISH_ENABLED`                                      | Store 发布总开关；置 `false` 时跳过 `publish-msix-store`                                                         |
 | Variable | `MSIX_ARM64_RUNTIME_TEST`                                      | AArch64 运行时测试总开关；置 `false` 时 AArch64 MSIX 与 AArch64 NSIS 均跳过运行时安装测试（签名/结构验证仍执行） |
 
 Workflow 固定使用 SignPath policy slug `release-signing`，不会从变量动态选择测试策略。
@@ -178,31 +177,31 @@ Tag 推送后不要移动或复用该 Tag。若发现需要修复的问题，应
 也可以手动触发 Workflow（Actions → Release → Run workflow）：
 
 - **Tag**（必填）：输入 `vMAJOR.MINOR.PATCH`，必须对应远端已存在、指向 `main` 历史中某个 Commit 的 Tag；
-- **是否发布到 Microsoft Store**（必选，默认 `false`）：控制 `publish-msix-store` 是否执行；Tag Push 触发时此开关不生效，改由仓库变量 `MSSTORE_PUBLISH_ENABLED` 控制。
+- **是否发布到 Microsoft Store**（必选，默认 `false`）：控制 `publish-msix-store` 是否执行；**这是 Store 发布的唯一开关**——Tag Push 触发的发布流程永不发布到 Microsoft Store，如需 Store 发布请手动触发本 Workflow 并选择 `true`。
 
 手动触发与 Tag Push 共用同一套验证（Tag 存在性、指向 `main`、版本一致、Release Note、签名范围），构建代码与验证均以输入的 Tag 为准。
 
 ## Workflow Job 说明
 
-| Job                                         | 主要职责                                                                                                                                        |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| `validate-release`                          | 验证 Tag 来源、版本、Release Note、Rust binary target、Tauri bundle 签名范围和安装模式                                                          |
-| `build-windows-binary`                      | 构建未签名 Windows 主程序，并在签名前写入 Tauri NSIS bundle marker                                                                              |
-| `sign-windows-binary`                       | 重新验证 Tag，提交正式 SignPath 签名请求，验证签名、时间戳和正式证书固定值                                                                      |
-| `build-windows-installer`                   | 恢复已签名主程序，验证其哈希，构建未签名 NSIS 安装器                                                                                            |
-| `sign-and-verify-windows-installer`         | 签名安装器，验证 portable EXE 和安装器，执行两种安装模式的安装与卸载测试                                                                        |
-| `build-windows-binary-aarch64`              | 交叉构建未签名 Windows AArch64 主程序，并在签名前写入 Tauri NSIS bundle marker（同时供 NSIS 与 MSIX）                                           |
-| `sign-windows-binary-aarch64`               | 签名并验证 Windows AArch64 主程序（含 marker 保留校验）                                                                                         |
-| `build-windows-installer-aarch64`           | 恢复已签名 AArch64 主程序，验证其哈希，构建未签名 AArch64 NSIS 安装器                                                                           |
-| `sign-and-verify-windows-installer-aarch64` | 签名 AArch64 安装器，验证签名，在 `windows-11-arm` 上执行两种安装模式的安装与卸载测试（由 `MSIX_ARM64_RUNTIME_TEST` 门控）                      |
-| `build-windows-msix`                        | 恢复各架构已签名主程序，用 `scripts/build-msix.ps1` 构建未签名 MSIX（x64 / AArch64）                                                            |
-| `sign-windows-msix`                         | 签名并验证 MSIX 包、清单身份和嵌入主程序                                                                                                        |
-| `verify-windows-msix-install`               | `Add-AppxPackage` 安装、启动、单实例、卸载测试（AArch64 使用 Windows AArch64 runner）                                                           |
-| `publish-msix-store`                        | 合并双架构 MSIX 为 `.msixupload`，用 msstore CLI 提交（Tag Push 时由 `MSSTORE_PUBLISH_ENABLED` 控制；手动触发时由 `publish-to-store` 输入决定） |
-| `build-linux`                               | 构建并强制收集恰好一个 DEB、RPM 和 AppImage                                                                                                     |
-| `build-macos-x86_64`                        | 构建 Intel DMG                                                                                                                                  |
-| `build-macos-aarch64`                       | 构建 Apple Silicon DMG                                                                                                                          |
-| `publish-draft-release`                     | 聚合全部产物，生成 `SHA256SUMS.txt` 和 `BUILD-INFO.txt`，创建或更新 Draft Release                                                               |
+| Job                                         | 主要职责                                                                                                                   |
+| ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `validate-release`                          | 验证 Tag 来源、版本、Release Note、Rust binary target、Tauri bundle 签名范围和安装模式                                     |
+| `build-windows-binary`                      | 构建未签名 Windows 主程序，并在签名前写入 Tauri NSIS bundle marker                                                         |
+| `sign-windows-binary`                       | 重新验证 Tag，提交正式 SignPath 签名请求，验证签名、时间戳和正式证书固定值                                                 |
+| `build-windows-installer`                   | 恢复已签名主程序，验证其哈希，构建未签名 NSIS 安装器                                                                       |
+| `sign-and-verify-windows-installer`         | 签名安装器，验证 portable EXE 和安装器，执行两种安装模式的安装与卸载测试                                                   |
+| `build-windows-binary-aarch64`              | 交叉构建未签名 Windows AArch64 主程序，并在签名前写入 Tauri NSIS bundle marker（同时供 NSIS 与 MSIX）                      |
+| `sign-windows-binary-aarch64`               | 签名并验证 Windows AArch64 主程序（含 marker 保留校验）                                                                    |
+| `build-windows-installer-aarch64`           | 恢复已签名 AArch64 主程序，验证其哈希，构建未签名 AArch64 NSIS 安装器                                                      |
+| `sign-and-verify-windows-installer-aarch64` | 签名 AArch64 安装器，验证签名，在 `windows-11-arm` 上执行两种安装模式的安装与卸载测试（由 `MSIX_ARM64_RUNTIME_TEST` 门控） |
+| `build-windows-msix`                        | 恢复各架构已签名主程序，用 `scripts/build-msix.ps1` 构建未签名 MSIX（x64 / AArch64）                                       |
+| `sign-windows-msix`                         | 签名并验证 MSIX 包、清单身份和嵌入主程序                                                                                   |
+| `verify-windows-msix-install`               | `Add-AppxPackage` 安装、启动、单实例、卸载测试（AArch64 使用 Windows AArch64 runner）                                      |
+| `publish-msix-store`                        | 合并双架构 MSIX 为 `.msixupload`，用 msstore CLI 提交（仅手动触发且 `publish-to-store=true` 时执行；Tag Push 永不发布）    |
+| `build-linux`                               | 构建并强制收集恰好一个 DEB、RPM 和 AppImage                                                                                |
+| `build-macos-x86_64`                        | 构建 Intel DMG                                                                                                             |
+| `build-macos-aarch64`                       | 构建 Apple Silicon DMG                                                                                                     |
+| `publish-draft-release`                     | 聚合全部产物，生成 `SHA256SUMS.txt` 和 `BUILD-INFO.txt`，创建或更新 Draft Release                                          |
 
 发布构建统一使用固定的 Rust `1.96.1` 工具链，避免相同 Tag 在不同时间使用不同的 `stable` 编译器。
 
@@ -317,7 +316,7 @@ AArch64 包无法在 x64 主机安装，安装测试使用 GitHub Windows AArch6
 
 ### 发布到 Microsoft Store
 
-`publish-msix-store` 在 `MSSTORE_PUBLISH_ENABLED != 'false'` 时直接执行（无 Environment 审批门）：
+`publish-msix-store` 仅在手动触发且 `publish-to-store=true` 时执行（无 Environment 审批门；Tag Push 永不发布）：
 
 - 复验两个架构 MSIX 的签名与清单；
 - 用 `scripts/build-msixupload.ps1` 合并为 `.msixupload`（zip 容器，内含两个已签名 MSIX，容器本身不签名）；
@@ -327,7 +326,7 @@ AArch64 包无法在 x64 主机安装，安装测试使用 GitHub Windows AArch6
 
 - msstore CLI 仅支持免费产品的更新操作；
 - **首个 submission 不支持经 CLI 创建**，必须在 Partner Center 人工完成（含上架资料），之后版本更新可全自动；
-- 每次 Tag 都会提交新 submission；不想发布某版本时置 `MSSTORE_PUBLISH_ENABLED=false`（该 Job 直接跳过，不影响其他 Job）；
+- 每次手动发布（`publish-to-store=true`）都会提交新 submission；不想发布时选择 `false` 即可（该 Job 直接跳过，不影响其他 Job）；
 - 提交后若发现问题，可在认证完成前于 Partner Center 取消该 submission。
 
 ## Draft Release 行为
@@ -353,11 +352,12 @@ Workflow 不会：
 
 ## Store 发布顺序建议
 
-`publish-msix-store` 与 `publish-draft-release` 并行执行，两者互不依赖。由于发布 Job 无 Environment 审批门，推荐用 `MSSTORE_PUBLISH_ENABLED` 控制节奏：
+`publish-msix-store` 与 `publish-draft-release` 并行执行，两者互不依赖。由于发布 Job 无 Environment 审批门，推荐用 `publish-to-store` 输入控制节奏：
 
-1. **Tag Push 触发时**：发布前若暂不想提交 Store，先将 `MSSTORE_PUBLISH_ENABLED` 置 `false`；等待 `verify-windows-msix-install` 与 `publish-draft-release` 完成，核验 Draft Release 的 MSIX 资产与安装测试摘要后，将变量置回 `true` 并重跑 Store 发布 Job（或直接接受已自动提交的结果）；
-2. **手动触发时**：在 Run workflow 对话框的「是否发布到 Microsoft Store」下拉中选择 `false` 即可只构建不发布；确认无误后再手动触发一次（选择 `true`）或直接在 Partner Center 操作；
-3. 在 Partner Center 跟踪认证状态；认证期间发现问题可取消 submission。
+1. 手动触发 Workflow，`publish-to-store` 选 `false`：只构建与核验，不提交 Store；
+2. 等待 `verify-windows-msix-install` 与 `publish-draft-release` 完成，核验 Draft Release 的 MSIX 资产与安装测试摘要；
+3. 确认无误后，对同一 Tag 再次手动触发，`publish-to-store` 选 `true` 提交 Store（`validate-release` 会复验 Tag 未移动）；
+4. 在 Partner Center 跟踪认证状态；认证期间发现问题可取消 submission。
 
 ## 失败处理
 
@@ -422,12 +422,14 @@ AArch64 安装器测试还额外关注：
 ### Store 发布失败
 
 - `msstore publish` 失败：检查仓库级 `PARTNER_CENTER_*` 凭据（Entra ID 应用注册、Seller ID、Product ID）；确认产品为免费产品且已存在至少一个历史 submission（CLI 不支持首提交）；确认新版本高于 Store 已提交版本（Store 拒绝降级）。
-- 不想发布当前版本：置 `MSSTORE_PUBLISH_ENABLED=false` 后重跑。
+- 不想发布当前版本：手动触发时选择 `publish-to-store=false`（或已误发则按「提交成功但认证失败」处理）。
 - 提交成功但认证失败：在 Partner Center 查看认证报告，修复后发布新的补丁版本。
 
 ### 重试原则
 
 同 Tag 的运行不会并发执行。只有在确认 Tag 没有移动、代码和配置没有变化，且失败属于临时基础设施问题时，才适合重新运行失败 Job。
+
+Store 发布的重试 = 对同一 Tag 重新手动触发并选择 `true`（Tag 未移动前提下）。
 
 若修复需要修改仓库内容，应通过新 Commit 和新版本 Tag 发布，不应让同一 Tag 对应不同源码或不同 Workflow。
 
@@ -442,7 +444,7 @@ AArch64 安装器测试还额外关注：
 - 上传策略：同名资产覆盖（`--clobber`）、缺失资产新增、其他未知附件保留；
 - **不修改** Release 的标题、正文与 Notes，**不发布** Microsoft Store；
 - 产物版本号与原 Tag 一致，已安装用户不会收到重复更新提示；
-- 构建/签名/验证链路与主发布链为复制关系，主链改动需同步此文件。
+- rebuild-release.yml 与 release.yml 主体仍为复制关系（差异：rebuild 无 `publish-msix-store`、尾 Job 为 `upload-to-existing-release`）；签名验证与 NSIS 工具链预载已收敛到 `scripts/` 共享脚本（改脚本两文件同时生效），其余主链改动仍需双份同步。
 
 ## 维护要求
 
@@ -456,6 +458,8 @@ AArch64 安装器测试还额外关注：
 - 发布产物名称、平台或架构；
 - Draft Release 创建、覆盖或校验清单行为；
 - Rust 发布工具链版本；
-- 卸载器签名例外。
+- 卸载器签名例外；
+- `scripts/verify-authenticode.ps1`、`scripts/verify-msix-package.ps1`、`scripts/prepare-nsis-toolchain.ps1`（签名验证 / MSIX 验证 / NSIS 预载共享脚本，release.yml 与 rebuild-release.yml 共用）；
+- x64 与 AArch64 的 Windows 构建/签名/验证 Job 为逐字复制关系（release.yml 内成对存在），改动需成对同步。
 
 对 Release Workflow 的变更应经过安全审查，并由 CODEOWNERS 保护 Workflow 和 SignPath policy 文件。

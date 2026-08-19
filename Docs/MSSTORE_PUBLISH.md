@@ -7,7 +7,7 @@
 ## 发布链路概览
 
 ```
-Tag Push → 构建 x64/AArch64 未签名 EXE → SignPath 签名 → 构建 MSIX（x64 + AArch64）
+手动触发（publish-to-store=true）→ 构建 x64/AArch64 未签名 EXE → SignPath 签名 → 构建 MSIX（x64 + AArch64）
   → SignPath 签名 MSIX → 安装/启动/卸载测试 → msstore publish（.msixupload 合并双架构包）
   → Partner Center 认证 → 上架
 ```
@@ -80,18 +80,16 @@ msstore CLI **不支持创建首个 submission**（源码中对首次提交直�
 | 仓库 | Variable | `MSIX_PUBLISHER_CN`                                                                                                                                                                | 清单 Publisher（证书 CN）                                                                                  |
 | 仓库 | Variable | `MSIX_PUBLISHER_DISPLAY_NAME`                                                                                                                                                      | 清单 PublisherDisplayName                                                                                  |
 | 仓库 | Variable | `MSSTORE_APP_ID`                                                                                                                                                                   | Partner Center 产品 ID                                                                                     |
-| 仓库 | Variable | `MSSTORE_PUBLISH_ENABLED`                                                                                                                                                          | 置 `false` 暂停 Store 发布                                                                                 |
 | 仓库 | Variable | `MSIX_ARM64_RUNTIME_TEST`                                                                                                                                                          | AArch64 运行时测试总开关；置 `false` 跳过 AArch64 MSIX 与 AArch64 NSIS 的运行时测试（签名/结构验证仍执行） |
 | 仓库 | Secret   | `PARTNER_CENTER_TENANT_ID` / `PARTNER_CENTER_SELLER_ID` / `PARTNER_CENTER_CLIENT_ID` / `PARTNER_CENTER_CLIENT_SECRET`                                                              | msstore CLI 凭据                                                                                           |
 | 仓库 | Variable | `SIGNPATH_WINDOWS_MSIX_ARTIFACT_CONFIGURATION_SLUG` / `SIGNPATH_WINDOWS_BINARY_ARM64_ARTIFACT_CONFIGURATION_SLUG` / `SIGNPATH_WINDOWS_INSTALLER_ARM64_ARTIFACT_CONFIGURATION_SLUG` | SignPath 配置                                                                                              |
 
-发布不再依赖 Environment 审批；是否发布仅由 `MSSTORE_PUBLISH_ENABLED` 控制（置 `false` 或暂不推送 Tag 可暂停发布）。如需人工把关，可在提交前手动暂停变量或依赖 GitHub 人工流程。
+发布不再依赖 Environment 审批；是否发布仅由手动触发时的 `publish-to-store` 输入控制（Tag Push 永不发布 Store）。
 
 ## 发布行为
 
-- `publish-msix-store` 的执行条件取决于触发方式：
-  - **Tag Push**：每次 `vX.Y.Z` Tag 推送都会执行（除非 `MSSTORE_PUBLISH_ENABLED=false`）；
-  - **手动触发（workflow_dispatch）**：由必选的 `publish-to-store` 输入决定（`true` 发布 / `false` 跳过），与 `MSSTORE_PUBLISH_ENABLED` 无关；
+- `publish-msix-store` 仅在手动触发（workflow_dispatch）且 `publish-to-store=true` 时执行；
+- **Tag Push 永不发布 Store**——需要 Store 发布时，对已推送的 Tag 手动触发 Workflow 并选择 `true`（`validate-release`/Revalidate 步骤会复验 Tag 未移动）；
 - Job 会合并两个已签名 MSIX 为 `.msixupload`（zip 容器，内含 x64 与 AArch64 包，容器本身不签名）并提交**同一个 submission**；
 - 提交后 `msstore submission status` 打印状态；Store 认证通常需要数小时到数天；
 - 免费产品限制：msstore CLI 仅支持免费产品的更新操作；
@@ -103,6 +101,10 @@ msstore CLI **不支持创建首个 submission**（源码中对首次提交直�
 - 发布前确认 Tag 版本高于 Store 中已提交版本；
 - 不要通过移动 Tag 重发；需要修复时发布新的补丁版本。
 
+## 更新策略
+
+MSIX 安装（无论来自 Microsoft Store 还是侧载的 `.msix` 文件）均不支持应用内更新——应用内更新器仅适用于 EXE（NSIS）安装；请通过 Microsoft Store 或 GitHub Releases 获取新版本。
+
 ## 失败处理
 
 | 现象                                    | 处理                                                                                             |
@@ -112,7 +114,6 @@ msstore CLI **不支持创建首个 submission**（源码中对首次提交直�
 | `msstore publish` 版本冲突              | 确认新版本高于 Store 已提交版本                                                                  |
 | 提交成功但认证失败                      | Partner Center 查看认证报告，修复后发布新版本                                                    |
 | 认证期间发现问题                        | 认证完成前在 Partner Center 取消 submission                                                      |
-| 不想发布当前版本（Tag Push）            | `MSSTORE_PUBLISH_ENABLED=false` 重跑                                                             |
 | 不想发布当前版本（手动触发）            | 手动触发时 `publish-to-store` 选 `false`                                                         |
 | 包被 Store 摄取拒绝（.msixupload 结构） | 对照 Visual Studio 生成的 .msixupload（zip 内含各架构 .msix）检查 `scripts/build-msixupload.ps1` |
 

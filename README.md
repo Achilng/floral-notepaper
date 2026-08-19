@@ -92,6 +92,8 @@
 
 前往 [Microsoft Store](https://apps.microsoft.com/detail/9NRCC0ZSG81R) 下载花笺
 
+> 注意：MSIX 安装（无论来自 Microsoft Store 还是侧载的 .msix 文件）暂不支持应用内更新，请通过 Microsoft Store 或 GitHub Releases 获取最新版本。
+
 <!-- markdownlint-disable -->
 
 <a href="https://apps.microsoft.com/detail/9NRCC0ZSG81R?referrer=appbadge&mode=full" target="_blank"  rel="noopener noreferrer">
