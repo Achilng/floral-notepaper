@@ -12,6 +12,8 @@ on:
 jobs:
   mirrorchyan:
     if: ${{ github.repository_owner == 'Achilng' }}
+    permissions:
+      contents: read
     runs-on: macos-latest
     strategy:
       fail-fast: false
@@ -31,7 +33,21 @@ jobs:
             filename: "floral-notepaper_*_aarch64.dmg"
 
     steps:
+      - name: Check aarch64-setup.exe asset exists
+        if: matrix.os == 'win' && matrix.arch == 'arm64' && github.event_name == 'workflow_dispatch'
+        id: check-asset
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if gh release view "$TAG" --json assets --jq '[.assets[].name] | any(test("aarch64-setup\\.exe$"))' 2>/dev/null | grep -q true; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: MirrorChyan/uploading-action@v1
+        if: steps.check-asset.outputs.exists != 'false' || matrix.os != 'win' || matrix.arch != 'arm64'
         with:
           filetype: latest-release
           filename: ${{ matrix.filename }}

@@ -394,41 +394,6 @@ jobs:
             return $candidate.FullName
           }
 
-          function Get-PinnedSignerCertificate {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
-              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
-            }
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
-              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
-            }
-
-            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-            }
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            if (-not $signature.SignerCertificate) {
-              throw "The Authenticode signature does not contain a signer certificate: $Path"
-            }
-
-            $certificate = $signature.SignerCertificate
-            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-            if ($actualThumbprint -ne $expectedThumbprint) {
-              throw "Unexpected certificate thumbprint: $actualThumbprint"
-            }
-            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
-              throw "Unexpected certificate subject: $($certificate.Subject)"
-            }
-            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
-              throw "Unexpected certificate issuer: $($certificate.Issuer)"
-            }
-
-            return $certificate
-          }
-
           function Assert-AuthenticodeSignature {
             param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -436,17 +401,7 @@ jobs:
               throw "Signed file was not found: $Path"
             }
 
-            Get-PinnedSignerCertificate -Path $Path | Out-Null
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
-            if (-not $signature.TimeStamperCertificate) {
-              throw "The signature does not contain a trusted timestamp: $Path"
-            }
-
-            if ($signature.Status -ne 'Valid') {
-              throw "Authenticode signature is not valid for ${Path}: $($signature.Status): $($signature.StatusMessage)"
-            }
+            & 'scripts/verify-authenticode.ps1' -Path $Path -RequireTimestamp
 
             $signTool = Get-SignToolPath
             & $signTool verify /pa /all /v $Path
@@ -536,10 +491,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-          }
           $targetDir = 'src-tauri/target/release'
           New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
           $binaries = @(
@@ -555,26 +506,7 @@ jobs:
               throw "Signed executable was not found at $($binary.Source)."
             }
 
-            $signature = Get-AuthenticodeSignature -LiteralPath $binary.Source
-            $certificate = $signature.SignerCertificate
-            if (-not $certificate) {
-              throw "The restored executable does not contain a signer certificate: $($binary.Source)"
-            }
-            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-            if (
-              $actualThumbprint -ne $expectedThumbprint -or
-              $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
-              $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
-            ) {
-              throw "The restored executable was signed by an unexpected certificate: $($binary.Source)"
-            }
-            if (-not $signature.TimeStamperCertificate) {
-              throw "The restored executable does not contain a trusted timestamp: $($binary.Source)"
-            }
-
-            if ($signature.Status -ne 'Valid') {
-              throw "The restored executable is not validly signed: $($binary.Source): $($signature.Status): $($signature.StatusMessage)"
-            }
+            & 'scripts/verify-authenticode.ps1' -Path $binary.Source -RequireTimestamp
 
             Copy-Item -LiteralPath $binary.Source -Destination $binary.Target -Force
             $sha256 = (Get-FileHash -LiteralPath $binary.Target -Algorithm SHA256).Hash
@@ -584,110 +516,7 @@ jobs:
       - name: Preload Tauri NSIS toolchain
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-
-          function Get-FileWithRetry {
-            param(
-              [Parameter(Mandatory = $true)][string]$Uri,
-              [Parameter(Mandatory = $true)][string]$OutFile,
-              [Parameter(Mandatory = $true)][string]$Sha1
-            )
-
-            for ($attempt = 1; $attempt -le 5; $attempt++) {
-              try {
-                if (Test-Path $OutFile) {
-                  Remove-Item $OutFile -Force
-                }
-
-                Write-Host "Downloading $Uri (attempt $attempt/5)"
-                Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 180
-
-                $actual = (Get-FileHash -Path $OutFile -Algorithm SHA1).Hash.ToUpperInvariant()
-                if ($actual -ne $Sha1.ToUpperInvariant()) {
-                  throw "SHA1 mismatch for $OutFile. Expected $Sha1, got $actual."
-                }
-
-                return
-              } catch {
-                Write-Warning $_
-                if ($attempt -eq 5) {
-                  throw
-                }
-                Start-Sleep -Seconds (10 * $attempt)
-              }
-            }
-          }
-
-          $tauriTools = Join-Path $env:LOCALAPPDATA 'tauri'
-          $nsisPath = Join-Path $tauriTools 'NSIS'
-          New-Item -ItemType Directory -Path $tauriTools -Force | Out-Null
-
-          $requiredFiles = @(
-            'makensis.exe',
-            'Bin/makensis.exe',
-            'Stubs/lzma-x86-unicode',
-            'Stubs/lzma_solid-x86-unicode',
-            'Plugins/x86-unicode/additional/nsis_tauri_utils.dll',
-            'Include/MUI2.nsh',
-            'Include/FileFunc.nsh',
-            'Include/x64.nsh',
-            'Include/nsDialogs.nsh',
-            'Include/WinMessages.nsh',
-            'Include/Win/COM.nsh',
-            'Include/Win/Propkey.nsh',
-            'Include/Win/RestartManager.nsh'
-          )
-
-          $missingRequiredFile = $false
-          if (-not (Test-Path $nsisPath)) {
-            $missingRequiredFile = $true
-          } else {
-            foreach ($file in $requiredFiles) {
-              if (-not (Test-Path (Join-Path $nsisPath $file))) {
-                $missingRequiredFile = $true
-                break
-              }
-            }
-          }
-
-          if ($missingRequiredFile) {
-            if (Test-Path $nsisPath) {
-              Remove-Item $nsisPath -Recurse -Force
-            }
-
-            $zipPath = Join-Path $env:RUNNER_TEMP 'nsis-3.11.zip'
-            Get-FileWithRetry `
-              -Uri 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip' `
-              -OutFile $zipPath `
-              -Sha1 'EF7FF767E5CBD9EDD22ADD3A32C9B8F4500BB10D'
-
-            $extractedPath = Join-Path $tauriTools 'nsis-3.11'
-            if (Test-Path $extractedPath) {
-              Remove-Item $extractedPath -Recurse -Force
-            }
-
-            Expand-Archive -Path $zipPath -DestinationPath $tauriTools -Force
-            Rename-Item -Path $extractedPath -NewName 'NSIS'
-          }
-
-          $pluginDir = Join-Path $nsisPath 'Plugins/x86-unicode/additional'
-          $pluginPath = Join-Path $pluginDir 'nsis_tauri_utils.dll'
-          New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
-
-          $pluginNeedsDownload = -not (Test-Path $pluginPath)
-          if (-not $pluginNeedsDownload) {
-            $actualPluginSha1 = (Get-FileHash -Path $pluginPath -Algorithm SHA1).Hash.ToUpperInvariant()
-            $pluginNeedsDownload = $actualPluginSha1 -ne '75197FEE3C6A814FE035788D1C34EAD39349B860'
-          }
-
-          if ($pluginNeedsDownload) {
-            Get-FileWithRetry `
-              -Uri 'https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll' `
-              -OutFile $pluginPath `
-              -Sha1 '75197FEE3C6A814FE035788D1C34EAD39349B860'
-          }
-
-          Write-Host "Tauri NSIS toolchain is ready at $nsisPath"
+          & 'scripts/prepare-nsis-toolchain.ps1'
 
       - name: Bundle NSIS installer without recompiling
         run: npm run tauri -- bundle --bundles nsis --no-sign
@@ -845,41 +674,6 @@ jobs:
             return $candidate.FullName
           }
 
-          function Get-PinnedSignerCertificate {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
-              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
-            }
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
-              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
-            }
-
-            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-            }
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            if (-not $signature.SignerCertificate) {
-              throw "The Authenticode signature does not contain a signer certificate: $Path"
-            }
-
-            $certificate = $signature.SignerCertificate
-            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-            if ($actualThumbprint -ne $expectedThumbprint) {
-              throw "Unexpected certificate thumbprint: $actualThumbprint"
-            }
-            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
-              throw "Unexpected certificate subject: $($certificate.Subject)"
-            }
-            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
-              throw "Unexpected certificate issuer: $($certificate.Issuer)"
-            }
-
-            return $certificate
-          }
-
           function Assert-AuthenticodeSignature {
             param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -887,17 +681,7 @@ jobs:
               throw "Signed file was not found: $Path"
             }
 
-            Get-PinnedSignerCertificate -Path $Path | Out-Null
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
-            if (-not $signature.TimeStamperCertificate) {
-              throw "The signature does not contain a trusted timestamp: $Path"
-            }
-
-            if ($signature.Status -ne 'Valid') {
-              throw "Authenticode signature is not valid for ${Path}: $($signature.Status): $($signature.StatusMessage)"
-            }
+            & 'scripts/verify-authenticode.ps1' -Path $Path -RequireTimestamp
 
             $signTool = Get-SignToolPath
             & $signTool verify /pa /all /v $Path
@@ -1298,41 +1082,6 @@ jobs:
             return $candidate.FullName
           }
 
-          function Get-PinnedSignerCertificate {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
-              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
-            }
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
-              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
-            }
-
-            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-            }
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            if (-not $signature.SignerCertificate) {
-              throw "The Authenticode signature does not contain a signer certificate: $Path"
-            }
-
-            $certificate = $signature.SignerCertificate
-            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-            if ($actualThumbprint -ne $expectedThumbprint) {
-              throw "Unexpected certificate thumbprint: $actualThumbprint"
-            }
-            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
-              throw "Unexpected certificate subject: $($certificate.Subject)"
-            }
-            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
-              throw "Unexpected certificate issuer: $($certificate.Issuer)"
-            }
-
-            return $certificate
-          }
-
           function Assert-AuthenticodeSignature {
             param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -1340,17 +1089,7 @@ jobs:
               throw "Signed file was not found: $Path"
             }
 
-            Get-PinnedSignerCertificate -Path $Path | Out-Null
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
-            if (-not $signature.TimeStamperCertificate) {
-              throw "The signature does not contain a trusted timestamp: $Path"
-            }
-
-            if ($signature.Status -ne 'Valid') {
-              throw "Authenticode signature is not valid for ${Path}: $($signature.Status): $($signature.StatusMessage)"
-            }
+            & 'scripts/verify-authenticode.ps1' -Path $Path -RequireTimestamp
 
             $signTool = Get-SignToolPath
             & $signTool verify /pa /all /v $Path
@@ -1444,10 +1183,6 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-          }
           $targetDir = 'src-tauri/target/aarch64-pc-windows-msvc/release'
           New-Item -ItemType Directory -Path $targetDir -Force | Out-Null
           $binaries = @(
@@ -1463,26 +1198,7 @@ jobs:
               throw "Signed AArch64 executable was not found at $($binary.Source)."
             }
 
-            $signature = Get-AuthenticodeSignature -LiteralPath $binary.Source
-            $certificate = $signature.SignerCertificate
-            if (-not $certificate) {
-              throw "The restored executable does not contain a signer certificate: $($binary.Source)"
-            }
-            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-            if (
-              $actualThumbprint -ne $expectedThumbprint -or
-              $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
-              $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
-            ) {
-              throw "The restored executable was signed by an unexpected certificate: $($binary.Source)"
-            }
-            if (-not $signature.TimeStamperCertificate) {
-              throw "The restored executable does not contain a trusted timestamp: $($binary.Source)"
-            }
-
-            if ($signature.Status -ne 'Valid') {
-              throw "The restored executable is not validly signed: $($binary.Source): $($signature.Status): $($signature.StatusMessage)"
-            }
+            & 'scripts/verify-authenticode.ps1' -Path $binary.Source -RequireTimestamp
 
             Copy-Item -LiteralPath $binary.Source -Destination $binary.Target -Force
             $sha256 = (Get-FileHash -LiteralPath $binary.Target -Algorithm SHA256).Hash
@@ -1492,110 +1208,7 @@ jobs:
       - name: Preload Tauri NSIS toolchain
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-
-          function Get-FileWithRetry {
-            param(
-              [Parameter(Mandatory = $true)][string]$Uri,
-              [Parameter(Mandatory = $true)][string]$OutFile,
-              [Parameter(Mandatory = $true)][string]$Sha1
-            )
-
-            for ($attempt = 1; $attempt -le 5; $attempt++) {
-              try {
-                if (Test-Path $OutFile) {
-                  Remove-Item $OutFile -Force
-                }
-
-                Write-Host "Downloading $Uri (attempt $attempt/5)"
-                Invoke-WebRequest -Uri $Uri -OutFile $OutFile -TimeoutSec 180
-
-                $actual = (Get-FileHash -Path $OutFile -Algorithm SHA1).Hash.ToUpperInvariant()
-                if ($actual -ne $Sha1.ToUpperInvariant()) {
-                  throw "SHA1 mismatch for $OutFile. Expected $Sha1, got $actual."
-                }
-
-                return
-              } catch {
-                Write-Warning $_
-                if ($attempt -eq 5) {
-                  throw
-                }
-                Start-Sleep -Seconds (10 * $attempt)
-              }
-            }
-          }
-
-          $tauriTools = Join-Path $env:LOCALAPPDATA 'tauri'
-          $nsisPath = Join-Path $tauriTools 'NSIS'
-          New-Item -ItemType Directory -Path $tauriTools -Force | Out-Null
-
-          $requiredFiles = @(
-            'makensis.exe',
-            'Bin/makensis.exe',
-            'Stubs/lzma-x86-unicode',
-            'Stubs/lzma_solid-x86-unicode',
-            'Plugins/x86-unicode/additional/nsis_tauri_utils.dll',
-            'Include/MUI2.nsh',
-            'Include/FileFunc.nsh',
-            'Include/x64.nsh',
-            'Include/nsDialogs.nsh',
-            'Include/WinMessages.nsh',
-            'Include/Win/COM.nsh',
-            'Include/Win/Propkey.nsh',
-            'Include/Win/RestartManager.nsh'
-          )
-
-          $missingRequiredFile = $false
-          if (-not (Test-Path $nsisPath)) {
-            $missingRequiredFile = $true
-          } else {
-            foreach ($file in $requiredFiles) {
-              if (-not (Test-Path (Join-Path $nsisPath $file))) {
-                $missingRequiredFile = $true
-                break
-              }
-            }
-          }
-
-          if ($missingRequiredFile) {
-            if (Test-Path $nsisPath) {
-              Remove-Item $nsisPath -Recurse -Force
-            }
-
-            $zipPath = Join-Path $env:RUNNER_TEMP 'nsis-3.11.zip'
-            Get-FileWithRetry `
-              -Uri 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip' `
-              -OutFile $zipPath `
-              -Sha1 'EF7FF767E5CBD9EDD22ADD3A32C9B8F4500BB10D'
-
-            $extractedPath = Join-Path $tauriTools 'nsis-3.11'
-            if (Test-Path $extractedPath) {
-              Remove-Item $extractedPath -Recurse -Force
-            }
-
-            Expand-Archive -Path $zipPath -DestinationPath $tauriTools -Force
-            Rename-Item -Path $extractedPath -NewName 'NSIS'
-          }
-
-          $pluginDir = Join-Path $nsisPath 'Plugins/x86-unicode/additional'
-          $pluginPath = Join-Path $pluginDir 'nsis_tauri_utils.dll'
-          New-Item -ItemType Directory -Path $pluginDir -Force | Out-Null
-
-          $pluginNeedsDownload = -not (Test-Path $pluginPath)
-          if (-not $pluginNeedsDownload) {
-            $actualPluginSha1 = (Get-FileHash -Path $pluginPath -Algorithm SHA1).Hash.ToUpperInvariant()
-            $pluginNeedsDownload = $actualPluginSha1 -ne '75197FEE3C6A814FE035788D1C34EAD39349B860'
-          }
-
-          if ($pluginNeedsDownload) {
-            Get-FileWithRetry `
-              -Uri 'https://github.com/tauri-apps/nsis-tauri-utils/releases/download/nsis_tauri_utils-v0.5.3/nsis_tauri_utils.dll' `
-              -OutFile $pluginPath `
-              -Sha1 '75197FEE3C6A814FE035788D1C34EAD39349B860'
-          }
-
-          Write-Host "Tauri NSIS toolchain is ready at $nsisPath"
+          & 'scripts/prepare-nsis-toolchain.ps1'
 
       - name: Bundle AArch64 NSIS installer without recompiling
         run: npm run tauri -- bundle --target aarch64-pc-windows-msvc --bundles nsis --no-sign
@@ -1754,41 +1367,6 @@ jobs:
             return $candidate.FullName
           }
 
-          function Get-PinnedSignerCertificate {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
-              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
-            }
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
-              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
-            }
-
-            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-            }
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            if (-not $signature.SignerCertificate) {
-              throw "The Authenticode signature does not contain a signer certificate: $Path"
-            }
-
-            $certificate = $signature.SignerCertificate
-            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-            if ($actualThumbprint -ne $expectedThumbprint) {
-              throw "Unexpected certificate thumbprint: $actualThumbprint"
-            }
-            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
-              throw "Unexpected certificate subject: $($certificate.Subject)"
-            }
-            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
-              throw "Unexpected certificate issuer: $($certificate.Issuer)"
-            }
-
-            return $certificate
-          }
-
           function Assert-AuthenticodeSignature {
             param([Parameter(Mandatory = $true)][string]$Path)
 
@@ -1796,17 +1374,7 @@ jobs:
               throw "Signed file was not found: $Path"
             }
 
-            Get-PinnedSignerCertificate -Path $Path | Out-Null
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
-            if (-not $signature.TimeStamperCertificate) {
-              throw "The signature does not contain a trusted timestamp: $Path"
-            }
-
-            if ($signature.Status -ne 'Valid') {
-              throw "Authenticode signature is not valid for ${Path}: $($signature.Status): $($signature.StatusMessage)"
-            }
+            & 'scripts/verify-authenticode.ps1' -Path $Path -RequireTimestamp
 
             $signTool = Get-SignToolPath
             & $signTool verify /pa /all /v $Path
@@ -2215,55 +1783,12 @@ jobs:
             return $candidate.FullName
           }
 
-          function Get-PinnedSignerCertificate {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
-              throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
-            }
-            if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_ISSUER)) {
-              throw 'SIGNPATH_CERTIFICATE_ISSUER is not configured.'
-            }
-
-            $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-            if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-              throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-            }
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $Path
-            if (-not $signature.SignerCertificate) {
-              throw "The Authenticode signature does not contain a signer certificate: $Path"
-            }
-
-            $certificate = $signature.SignerCertificate
-            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-            if ($actualThumbprint -ne $expectedThumbprint) {
-              throw "Unexpected certificate thumbprint: $actualThumbprint"
-            }
-            if ($certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT) {
-              throw "Unexpected certificate subject: $($certificate.Subject)"
-            }
-            if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
-              throw "Unexpected certificate issuer: $($certificate.Issuer)"
-            }
-
-            return $certificate
-          }
-
           $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
           if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
             throw "Signed MSIX package was not found at $msix."
           }
 
-          Get-PinnedSignerCertificate -Path $msix | Out-Null
-          $signature = Get-AuthenticodeSignature -LiteralPath $msix
-          $signature | Format-List Status, StatusMessage, SignerCertificate, TimeStamperCertificate
-          if (-not $signature.TimeStamperCertificate) {
-            throw "The MSIX signature does not contain a trusted timestamp: $msix"
-          }
-          if ($signature.Status -ne 'Valid') {
-            throw "MSIX signature is not valid for ${msix}: $($signature.Status): $($signature.StatusMessage)"
-          }
+          & 'scripts/verify-authenticode.ps1' -Path $msix -RequireTimestamp
 
           $signTool = Get-Command signtool.exe -ErrorAction SilentlyContinue
           if (-not $signTool) {
@@ -2329,11 +1854,7 @@ jobs:
           } else {
             # SignPath may re-sign the embedded executable (deep signing); the
             # embedded file must then still carry the pinned certificate.
-            Get-PinnedSignerCertificate -Path $packedBinary | Out-Null
-            $packedSignature = Get-AuthenticodeSignature -LiteralPath $packedBinary
-            if (-not $packedSignature.TimeStamperCertificate -or $packedSignature.Status -ne 'Valid') {
-              throw "The embedded executable was modified without a valid pinned signature: $packedSha256"
-            }
+            & 'scripts/verify-authenticode.ps1' -Path $packedBinary -RequireTimestamp
             "- Embedded executable was deep-signed by SignPath; hash $sourceSha256 -> $packedSha256" >> $env:GITHUB_STEP_SUMMARY
           }
 
@@ -2378,70 +1899,9 @@ jobs:
           EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
           EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-
           $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
-          if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
-            throw "Signed MSIX package was not found at $msix."
-          }
-
-          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-          }
-          $signature = Get-AuthenticodeSignature -LiteralPath $msix
-          $certificate = $signature.SignerCertificate
-          if (-not $certificate) {
-            throw "The MSIX does not contain a signer certificate: $msix"
-          }
-          $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-          if (
-            $actualThumbprint -ne $expectedThumbprint -or
-            $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
-            $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
-          ) {
-            throw "The MSIX was signed by an unexpected certificate: $msix"
-          }
-          if (-not $signature.TimeStamperCertificate -or $signature.Status -ne 'Valid') {
-            throw "The MSIX signature is not valid and timestamped: $($signature.Status): $($signature.StatusMessage)"
-          }
-
-          $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $msix).Path)
-          try {
-            $manifestEntry = $zip.GetEntry('AppxManifest.xml')
-            if (-not $manifestEntry) {
-              throw 'AppxManifest.xml was not found in the MSIX.'
-            }
-            $reader = New-Object System.IO.StreamReader($manifestEntry.Open())
-            try {
-              [xml]$manifest = $reader.ReadToEnd()
-            } finally {
-              $reader.Dispose()
-            }
-          } finally {
-            $zip.Dispose()
-          }
-
-          $identity = $manifest.Package.Identity
-          if ($identity.Name -ne $env:MSIX_IDENTITY_NAME) {
-            throw "Unexpected identity Name in MSIX: $($identity.Name)"
-          }
-          if ($identity.Publisher -ne $env:MSIX_PUBLISHER_CN) {
-            throw "Unexpected identity Publisher in MSIX: $($identity.Publisher)"
-          }
-          if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
-            throw "Unexpected identity Version in MSIX: $($identity.Version)"
-          }
-          # File names use "aarch64"; AppxManifest ProcessorArchitecture stays "arm64"
-          $manifestArch = if ($env:MATRIX_ARCH -eq 'aarch64') { 'arm64' } else { $env:MATRIX_ARCH }
-          if ($identity.ProcessorArchitecture -ne $manifestArch) {
-            throw "Unexpected ProcessorArchitecture in MSIX: $($identity.ProcessorArchitecture)"
-          }
-
-          "### MSIX verification ($($env:MATRIX_ARCH))" >> $env:GITHUB_STEP_SUMMARY
-          "- Package signature: valid, pinned, timestamped" >> $env:GITHUB_STEP_SUMMARY
-          "- Identity: $($identity.Name) / $($identity.Publisher) / $($identity.Version) / $($identity.ProcessorArchitecture)" >> $env:GITHUB_STEP_SUMMARY
+          if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) { throw "Signed MSIX package was not found at $msix." }
+          & 'scripts/verify-msix-package.ps1' -MsixPath $msix -Arch $env:MATRIX_ARCH -Version $env:RELEASE_VERSION -RequireTimestamp
 
       - name: Install, launch and uninstall test
         if: matrix.arch == 'x64' || vars.MSIX_ARM64_RUNTIME_TEST != 'false'
@@ -2539,11 +1999,10 @@ jobs:
   publish-msix-store:
     name: Publish MSIX to Microsoft Store
     needs: [validate-release, sign-windows-msix, verify-windows-msix-install]
+    # Store 发布仅支持手动 workflow_dispatch；Tag push 永不发布。
     if: |
-      (github.event_name == 'workflow_dispatch' &&
-        inputs['publish-to-store'] == 'true') ||
-      (github.event_name != 'workflow_dispatch' &&
-        vars.MSSTORE_PUBLISH_ENABLED != 'false')
+      github.event_name == 'workflow_dispatch' &&
+        inputs['publish-to-store'] == 'true'
     runs-on: windows-latest
     permissions:
       actions: read
@@ -2612,69 +2071,12 @@ jobs:
           EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
           $ErrorActionPreference = 'Stop'
-          Add-Type -AssemblyName System.IO.Compression.FileSystem
-
-          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-          }
-
           foreach ($arch in @('x64', 'aarch64')) {
             $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$arch.msix"
             if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
               throw "Signed MSIX package was not found at $msix."
             }
-
-            $signature = Get-AuthenticodeSignature -LiteralPath $msix
-            $certificate = $signature.SignerCertificate
-            if (-not $certificate) {
-              throw "The MSIX does not contain a signer certificate: $msix"
-            }
-            $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-            if (
-              $actualThumbprint -ne $expectedThumbprint -or
-              $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
-              $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
-            ) {
-              throw "The MSIX was signed by an unexpected certificate: $msix"
-            }
-            if (-not $signature.TimeStamperCertificate -or $signature.Status -ne 'Valid') {
-              throw "The MSIX signature is not valid and timestamped: $msix"
-            }
-
-            $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $msix).Path)
-            try {
-              $manifestEntry = $zip.GetEntry('AppxManifest.xml')
-              if (-not $manifestEntry) {
-                throw "AppxManifest.xml was not found in $msix"
-              }
-              $reader = New-Object System.IO.StreamReader($manifestEntry.Open())
-              try {
-                [xml]$manifest = $reader.ReadToEnd()
-              } finally {
-                $reader.Dispose()
-              }
-            } finally {
-              $zip.Dispose()
-            }
-
-            $identity = $manifest.Package.Identity
-            if ($identity.Name -ne $env:MSIX_IDENTITY_NAME) {
-              throw "Unexpected identity Name in $msix : $($identity.Name)"
-            }
-            if ($identity.Publisher -ne $env:MSIX_PUBLISHER_CN) {
-              throw "Unexpected identity Publisher in $msix : $($identity.Publisher)"
-            }
-            if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
-              throw "Unexpected identity Version in $msix : $($identity.Version)"
-            }
-            # File names use "aarch64"; AppxManifest ProcessorArchitecture stays "arm64"
-            $manifestArch = if ($arch -eq 'aarch64') { 'arm64' } else { $arch }
-            if ($identity.ProcessorArchitecture -ne $manifestArch) {
-              throw "Unexpected ProcessorArchitecture in $msix : $($identity.ProcessorArchitecture)"
-            }
-
-            "- $arch : signature and manifest verified ($($identity.Version))" >> $env:GITHUB_STEP_SUMMARY
+            & 'scripts/verify-msix-package.ps1' -MsixPath $msix -Arch $arch -Version $env:RELEASE_VERSION -RequireTimestamp
           }
 
       - name: Build MSIX upload container
