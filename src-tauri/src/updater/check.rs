@@ -1185,7 +1185,9 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
             Some("configureUpdateSource")
         }
         "updateProviderFixtureUnreadable" => Some("fixFixturePath"),
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => Some("useSupportedInstall"),
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updateStoreManagedManualOnly" => Some("useSupportedInstall"),
         "updateGithubApi" | "updateGithubRateLimited" | "updateGithubNoAssets" => Some("retry"),
         "updateMirrorChyanApi" => Some("retry"),
         "updateMirrorChyanCdkExpired"
@@ -1515,6 +1517,13 @@ mod tests {
                 .and_then(|error| error.action.as_deref()),
             Some("useSupportedInstall")
         );
+    }
+
+    #[test]
+    fn store_managed_error_maps_to_use_supported_install_action() {
+        let error = errors::store_managed_manual_only();
+
+        assert_eq!(update_error_action(&error), Some("useSupportedInstall"));
     }
 
     #[test]

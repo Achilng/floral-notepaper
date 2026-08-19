@@ -833,7 +833,9 @@ fn install_failure_action(code: &str) -> &'static str {
         | "updateInstallAssetSizeMismatch"
         | "updateInstallAssetHashMismatch"
         | "updateInstallAssetExtractFailed" => "retryDownload",
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => "useSupportedInstall",
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updateStoreManagedManualOnly" => "useSupportedInstall",
         _ => "retryInstall",
     }
 }
@@ -1257,5 +1259,12 @@ mod tests {
             b"dll dependency"
         );
         assert!(!staged_dir.join("notes.txt").exists());
+    }
+
+    #[test]
+    fn store_managed_error_maps_to_use_supported_install_action() {
+        let error = errors::store_managed_manual_only();
+
+        assert_eq!(install_failure_action(&error.code), "useSupportedInstall");
     }
 }

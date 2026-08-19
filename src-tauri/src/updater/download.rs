@@ -1117,9 +1117,9 @@ fn download_failure_action(code: &str) -> Option<String> {
         | "updateDownloadUrlNotAllowed"
         | "updateDownloadManifestUnavailable"
         | "updateDownloadManifestUnreadable" => Some("configureUpdateSource".to_string()),
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => {
-            Some("useSupportedInstall".to_string())
-        }
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updateStoreManagedManualOnly" => Some("useSupportedInstall".to_string()),
         _ => Some("retryDownload".to_string()),
     }
 }
@@ -1657,6 +1657,16 @@ mod tests {
                 .as_ref()
                 .and_then(|error| error.action.as_deref()),
             Some("useSupportedInstall")
+        );
+    }
+
+    #[test]
+    fn store_managed_error_maps_to_use_supported_install_action() {
+        let error = errors::store_managed_manual_only();
+
+        assert_eq!(
+            download_failure_action(&error.code),
+            Some("useSupportedInstall".to_string())
         );
     }
 
