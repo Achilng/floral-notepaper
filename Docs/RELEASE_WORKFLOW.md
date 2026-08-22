@@ -181,6 +181,32 @@ Tag 推送后不要移动或复用该 Tag。若发现需要修复的问题，应
 
 手动触发与 Tag Push 共用同一套验证（Tag 存在性、指向 `main`、版本一致、Release Note、签名范围），构建代码与验证均以输入的 Tag 为准。
 
+## Windows 本地无签名构建
+
+Windows 开发机可使用 PowerShell 7 一次构建 EXE、NSIS、MSIX 和 MSIXUPLOAD：
+
+```powershell
+pwsh -File scripts/build-windows-local.ps1
+```
+
+默认同时构建 x64 与 AArch64，产物写入 `local-build/windows`。如只需构建 x64，并且已经安装过与 `package-lock.json` 一致的依赖，可以运行：
+
+```powershell
+pwsh -File scripts/build-windows-local.ps1 -Architectures x64 -SkipNpmInstall
+```
+
+本地构建环境需要：
+
+- PowerShell 7；
+- Node.js 与 npm；
+- rustup；
+- Visual Studio 2022 C++ Build Tools（同时安装 x64 与 ARM64 MSVC 工具链）；
+- Windows 10/11 SDK（包含 MakeAppx 和 MakePri）。
+
+脚本内的 MSIX 包名与发布者信息固定为 GitHub Actions 仓库变量当前使用的正式值。如果 `MSIX_IDENTITY_NAME`、`MSIX_PUBLISHER_CN` 或 `MSIX_PUBLISHER_DISPLAY_NAME` 发生变化，需要同步修改该脚本。
+
+这些本地产物均不签名，仅用于构建复现和包结构检查，不能替代正式 Release Workflow 生成的已签名发布产物。Windows 默认也不会安装发布者证书不匹配或未签名的 MSIX。
+
 ## Workflow Job 说明
 
 | Job                                         | 主要职责                                                                                                                   |

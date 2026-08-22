@@ -1,7 +1,6 @@
 <#
 .SYNOPSIS
-  Builds an .msixupload container from the signed per-architecture MSIX
-  packages (x64 + AArch64) for a single Microsoft Store submission.
+  Builds an .msixupload container from per-architecture MSIX packages.
 
 .DESCRIPTION
   The .msixupload file is a plain ZIP container holding one or more signed
@@ -9,18 +8,23 @@
   submission. This is the same shape Visual Studio produces when publishing
   multi-architecture MSIX apps.
 
-  The container itself is unsigned: only the inner .msix packages carry
-  signatures.
+  The container itself is unsigned. Inner packages must be validly signed
+  unless -AllowUnsignedPackages is explicitly supplied for a local build.
 
 .PARAMETER Version
   Release version in MAJOR.MINOR.PATCH form, used for the output file name.
 
 .PARAMETER MsixPaths
-  One or more paths to signed .msix files. Exactly the file names listed here
-  must end up at the root of the upload container.
+  One or more paths to .msix files. Exactly the file names listed here must end
+  up at the root of the upload container.
 
 .PARAMETER OutputDir
   Directory where floral-notepaper_<version>.msixupload is written.
+
+.PARAMETER AllowUnsignedPackages
+  Allows unsigned MSIX inputs for local build verification. Release workflows
+  must not use this switch; their package signature validation remains
+  mandatory.
 
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts/build-msixupload.ps1 `
@@ -32,7 +36,8 @@
 param(
   [Parameter(Mandatory = $true)][string]$Version,
   [Parameter(Mandatory = $true)][string[]]$MsixPaths,
-  [Parameter(Mandatory = $true)][string]$OutputDir
+  [Parameter(Mandatory = $true)][string]$OutputDir,
+  [switch]$AllowUnsignedPackages
 )
 
 $ErrorActionPreference = 'Stop'
@@ -58,9 +63,11 @@ foreach ($path in $MsixPaths) {
     throw "Expected a .msix file, got: $path"
   }
 
-  $signature = Get-AuthenticodeSignature -LiteralPath $path
-  if ($signature.Status -ne 'Valid') {
-    throw "MSIX package is not validly signed: $path ($($signature.Status): $($signature.StatusMessage))"
+  if (-not $AllowUnsignedPackages) {
+    $signature = Get-AuthenticodeSignature -LiteralPath $path
+    if ($signature.Status -ne 'Valid') {
+      throw "MSIX package is not validly signed: $path ($($signature.Status): $($signature.StatusMessage))"
+    }
   }
 
   $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $path).Path)
@@ -93,8 +100,15 @@ try {
     Remove-Item -LiteralPath $uploadPath -Force
   }
 
-  $stagePattern = Join-Path $stagingDir '*.msix'
-  Compress-Archive -Path $stagePattern -DestinationPath $uploadPath -CompressionLevel Optimal
+  # Compress-Archive rejects non-.zip destination extensions. ZipFile writes
+  # the same ZIP container without constraining the extension, so the Store
+  # upload can be created directly with its required .msixupload name.
+  [System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $stagingDir,
+    $uploadPath,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $false
+  )
 
   # --- Verify the container ---------------------------------------------------
 

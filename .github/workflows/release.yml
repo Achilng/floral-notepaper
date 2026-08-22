@@ -1746,6 +1746,8 @@ jobs:
           wait-for-completion: true
           output-artifact-directory: signed-windows-msix
           skip-decompress: true
+          parameters: |
+            version: ${{ toJSON(needs.validate-release.outputs.version) }}
 
       - name: Download original signed Windows binaries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8

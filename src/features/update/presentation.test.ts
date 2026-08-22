@@ -6,6 +6,7 @@ import {
   dismissAboutUpdateReminderText,
   getInitialUpdateStatusNotice,
   getUpdateCheckCompletionNotice,
+  getUpdateStatusHydrationNotice,
 } from "./presentation";
 import type { UpdateState } from "./types";
 import { describe, expect, test } from "vitest";
@@ -124,6 +125,19 @@ describe("update presentation helpers", () => {
     ).toEqual({
       tone: "error",
       text: "安装后重新打开的仍是旧版本，请直接重试安装",
+    });
+  });
+
+  test("shows status hydration failures instead of a permanent loading message", () => {
+    const failure = {
+      tone: "error" as const,
+      text: "无法读取更新状态",
+    };
+
+    expect(getUpdateStatusHydrationNotice(failure, i18n.t.bind(i18n))).toBe(failure);
+    expect(getUpdateStatusHydrationNotice(null, i18n.t.bind(i18n))).toEqual({
+      tone: "idle",
+      text: "正在读取更新设置...",
     });
   });
 });

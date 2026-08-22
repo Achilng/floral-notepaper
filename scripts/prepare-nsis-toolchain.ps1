@@ -81,7 +81,12 @@ if ($missingRequiredFile) {
     Remove-Item $nsisPath -Recurse -Force
   }
 
-  $zipPath = Join-Path $env:RUNNER_TEMP 'nsis-3.11.zip'
+  $downloadRoot = if ([string]::IsNullOrWhiteSpace($env:RUNNER_TEMP)) {
+    [System.IO.Path]::GetTempPath()
+  } else {
+    $env:RUNNER_TEMP
+  }
+  $zipPath = Join-Path $downloadRoot 'nsis-3.11.zip'
   Get-FileWithRetry `
     -Uri 'https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip' `
     -OutFile $zipPath `

@@ -1,10 +1,10 @@
 <#
 .SYNOPSIS
-  Builds an MSIX package for 花笺 (Floral Notepaper) from a signed executable.
+  Builds an MSIX package for 花笺 (Floral Notepaper) from a Windows executable.
 
 .DESCRIPTION
   Renders AppxManifest.xml from src-tauri/msix/AppxManifest.template.xml,
-  assembles the MSIX layout (manifest + signed exe + Store icons), generates
+  assembles the MSIX layout (manifest + executable + Store icons), generates
   resources.pri with MakePri.exe from the lang-*/resources.resw files (the
   manifest DisplayName / Description resolve via ms-resource references),
   packs it with MakeAppx.exe and unpacks the result to verify that the
@@ -32,7 +32,8 @@
   written as arm64, the only value Windows manifests accept).
 
 .PARAMETER BinaryPath
-  Path to the signed floral-notepaper.exe to embed.
+  Path to floral-notepaper.exe to embed. Release builds pass a signed binary;
+  local unsigned builds are also supported for package inspection.
 
 .PARAMETER IconsDir
   Directory containing the Square*Logo.png and StoreLogo.png assets

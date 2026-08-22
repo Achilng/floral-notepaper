@@ -65,15 +65,11 @@
         Description="ms-resource:AppDescription"
         BackgroundColor="transparent"
         Square150x150Logo="Square150x150Logo.png"
-        Square44x44Logo="Square44x44Logo.png"
-        Square310x310Logo="Square310x310Logo.png"
-        Square71x71Logo="Square71x71Logo.png"
-        Square89x89Logo="Square89x89Logo.png"
-        Square107x107Logo="Square107x107Logo.png"
-        Square142x142Logo="Square142x142Logo.png"
-        Square284x284Logo="Square284x284Logo.png"
-        Square30x30Logo="Square30x30Logo.png"
-        StoreLogo="StoreLogo.png" />
+        Square44x44Logo="Square44x44Logo.png">
+        <uap:DefaultTile
+          Square71x71Logo="Square71x71Logo.png"
+          Square310x310Logo="Square310x310Logo.png" />
+      </uap:VisualElements>
       <Extensions>
         <desktop:Extension
           Category="windows.fullTrustProcess"

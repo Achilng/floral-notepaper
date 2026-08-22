@@ -23,6 +23,7 @@ import {
 import {
   getInitialUpdateStatusNotice,
   getUpdateCheckCompletionNotice,
+  getUpdateStatusHydrationNotice,
   type UpdateInlineNotice,
 } from "./presentation";
 import { getUpdateErrorCode, getUpdateErrorMessage } from "./updateErrors";
@@ -534,10 +535,15 @@ export function UpdateSettingsSection({
   // rendering any update controls risks showing them for a moment and then
   // replacing them with the Store link once the MSIX status arrives.
   if (status === null) {
+    const hydrationNotice = getUpdateStatusHydrationNotice(notice, t);
     return (
       <section className="space-y-3 pt-2 border-t border-paper-deep/25">
-        <p className="text-[11px] text-ink-ghost">
-          {t("settings.update.loading", { defaultValue: "正在读取更新设置..." })}
+        <p
+          className={`text-[11px] ${
+            hydrationNotice.tone === "error" ? "text-red-400" : "text-ink-ghost"
+          }`}
+        >
+          {hydrationNotice.text}
         </p>
       </section>
     );
