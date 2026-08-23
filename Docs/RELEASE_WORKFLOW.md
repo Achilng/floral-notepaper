@@ -327,6 +327,7 @@ Tauri bundler 不生成 MSIX。`build-windows-msix` 使用 `scripts/build-msix.p
 
 - 从 `src-tauri/msix/AppxManifest.template.xml` 渲染清单（版本转四段 `X.Y.Z.0`；`ProcessorArchitecture` 为 `x64` 或 `AArch64`；`Identity Name` / `Publisher` 来自仓库级 Variables）；
 - 清单 `DisplayName` / `Description` 使用 `ms-resource:` 引用，由 `MakePri.exe` 从 `src-tauri/msix/lang-*/resources.resw`（zh-CN / en-US / zh-HK）生成 `resources.pri`，使安装后名称随系统语言显示；
+- Markdown 与纯文本关联分别使用独立的 `uap:Extension Category="windows.fileTypeAssociation"`；每个 Extension 只能包含一个 `uap:FileTypeAssociation`；
 - 清单声明 `desktop6:RegistryWriteVirtualization` / `desktop6:FileSystemWriteVirtualization` 为 `disabled`，并声明 `rescap:Capability Name="unvirtualizedResources"`，使托盘自启动（HKCU Run 键）与 `%APPDATA%\floral-notepaper` 配置写入不被 MSIX 虚拟化；
 - 用 `MakeAppx.exe` 打包，随后 `makeappx unpack` 回验清单身份、版本、架构、`resources.pri` 与内嵌主程序哈希。
 

@@ -17,8 +17,8 @@
     install instead of being redirected per-package and removed on uninstall.
   - The app is a full-trust desktop application: runFullTrust + the
     windows.fullTrustProcess extension.
-  - File type associations are declared as uap extensions; activation delivers
-    the file path on the command line, which desktop.rs already handles.
+  - Each file type association is declared in its own uap extension; activation
+    delivers the file path on the command line, which desktop.rs already handles.
   - DisplayName / Description use ms-resource references resolved from
     resources.pri, which scripts/build-msix.ps1 generates with MakePri from
     the lang-*/resources.resw files in this directory. The system shows the
@@ -82,6 +82,8 @@
               <uap:FileType>.markdown</uap:FileType>
             </uap:SupportedFileTypes>
           </uap:FileTypeAssociation>
+        </uap:Extension>
+        <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="text">
             <uap:DisplayName>Text Document</uap:DisplayName>
             <uap:SupportedFileTypes>
