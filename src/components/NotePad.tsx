@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
-import { createNote, getErrorMessage, getNote, listNotes, updateNote } from "../features/notes/api";
+import { createNote, deleteNote, getErrorMessage, getNote, listNotes, updateNote } from "../features/notes/api";
 import { useImagePaste } from "../features/images/useImagePaste";
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
 import { reportInstallPreparation } from "../features/update/api";
@@ -18,6 +18,7 @@ import {
   getCurrentWindowBounds,
   recycleCurrentNotepad,
   setCurrentWindowAlwaysOnTop,
+  setCurrentWindowDesktopPinned,
   showCurrentWindow,
   startCurrentWindowDrag,
   startCurrentWindowDragWithOffset,
@@ -144,6 +145,8 @@ export function NotePad({
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
   const [isExiting, setIsExiting] = useState(false);
+  // 便签窗口默认置顶；用户可通过工具栏按钮切换为“贴桌面”（不置顶）
+  const [isOnTop, setIsOnTop] = useState(true);
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const tileDragIntentRef = useRef<{ x: number; y: number } | null>(null);
@@ -323,6 +326,8 @@ export function NotePad({
       setStatus("empty");
       setIsExiting(false);
       setSurfaceMode("pad");
+      // 窗口回收入池时已还原为置顶状态，重新唤出时同步按钮状态
+      setIsOnTop(true);
       void refreshNotes().catch(() => undefined);
       void showCurrentWindow()
         .then(() => contentRef.current?.focus())
@@ -443,7 +448,10 @@ export function NotePad({
         const targetBounds = getSurfaceTargetBounds(nextMode, currentBounds);
 
         if (nextMode === "tile") {
+          // 切磁贴前先脱离桌面层，磁贴按自身逻辑恢复置顶
+          await setCurrentWindowDesktopPinned(false);
           await setCurrentWindowAlwaysOnTop(true);
+          setIsOnTop(true);
         }
 
         await animateCurrentWindowBounds(targetBounds);
@@ -470,6 +478,7 @@ export function NotePad({
   useEffect(() => {
     if (surfaceMode !== "tile") return;
     void setCurrentWindowAlwaysOnTop(true).catch(() => undefined);
+    setIsOnTop(true);
   }, [surfaceMode]);
 
   const handleSave = useCallback(
@@ -587,6 +596,50 @@ export function NotePad({
         await saveNote();
       }
       await switchSurfaceMode("tile");
+    } catch (error) {
+      showToast(getErrorMessage(error));
+    }
+  };
+
+  // 置顶 / 钉桌面 二态切换：
+  // - 置顶：浮于所有页面之上（默认行为）
+  // - 钉桌面：挂到桌面图标层之下，彻底只出现在桌面上，
+  //   即使之前浮在其他窗口之上也会被压到桌面层
+  const handleToggleOnTop = async () => {
+    const next = !isOnTop;
+    try {
+      if (next) {
+        // 恢复置顶：先脱离桌面层，再重新置顶
+        await setCurrentWindowDesktopPinned(false);
+        await setCurrentWindowAlwaysOnTop(true);
+      } else {
+        // 钉到桌面：先取消置顶，再挂入桌面层
+        await setCurrentWindowAlwaysOnTop(false);
+        await setCurrentWindowDesktopPinned(true);
+      }
+      setIsOnTop(next);
+    } catch (error) {
+      showToast(getErrorMessage(error));
+    }
+  };
+
+  // 删除：已保存的笔记走删除接口（带确认），未保存的草稿确认后直接丢弃
+  const handleDelete = async () => {
+    if (!editingNoteId && !title.trim() && !content.trim()) return;
+    const confirmed = window.confirm(
+      editingNoteId
+        ? t("notepad.confirm.deleteNote", {
+            defaultValue: "确定删除这篇笔记吗？删除后不可恢复。",
+          })
+        : t("notepad.confirm.discardDraft", { defaultValue: "确定丢弃当前内容吗？" }),
+    );
+    if (!confirmed) return;
+    try {
+      if (editingNoteId) {
+        await deleteNote(editingNoteId);
+      }
+      resetDraft();
+      showToast(t("notepad.toast.deleted", { defaultValue: "已删除" }));
     } catch (error) {
       showToast(getErrorMessage(error));
     }
@@ -794,6 +847,37 @@ export function NotePad({
 
               <div className="ml-auto flex items-center gap-1.5">
                 <button
+                  onClick={() => void handleToggleOnTop()}
+                  className={`group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer hover:bg-paper-warm ${
+                    isOnTop ? "text-bamboo" : "text-ink-ghost hover:text-ink-faint"
+                  }`}
+                  title={
+                    isOnTop
+                      ? t("notepad.tooltip.unpinOnTop", {
+                          defaultValue: "钉到桌面（只显示在桌面上）",
+                        })
+                      : t("notepad.tooltip.pinOnTop", {
+                          defaultValue: "置顶显示（浮于所有页面之上）",
+                        })
+                  }
+                >
+                  <svg
+                    width="14"
+                    height="14"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M12 3l5 5h-3v5h-4V8H7l5-5z" fill="currentColor" stroke="none" />
+                    <path d="M5 17h14" />
+                    <path d="M5 21h14" />
+                  </svg>
+                </button>
+
+                <button
                   onClick={() => void handlePin()}
                   className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
                   title={t("notepad.tooltip.pinToTile", { defaultValue: "转为磁贴" })}
@@ -812,6 +896,31 @@ export function NotePad({
                     <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V7a1 1 0 0 1 1-1 1 1 0 0 0 1-1V4a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v1a1 1 0 0 0 1 1 1 1 0 0 1 1 1z" />
                   </svg>
                 </button>
+
+                {(editingNoteId || title.trim() || content.trim()) && (
+                  <button
+                    onClick={() => void handleDelete()}
+                    className="group w-7 h-7 flex items-center justify-center rounded-lg text-ink-ghost hover:bg-danger-bg hover:text-red-400 transition-all duration-200 cursor-pointer"
+                    title={t("notepad.tooltip.delete", { defaultValue: "删除这篇笔记" })}
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M3 6h18" />
+                      <path d="M8 6V4a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v2" />
+                      <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6" />
+                      <path d="M10 11v6" />
+                      <path d="M14 11v6" />
+                    </svg>
+                  </button>
+                )}
 
                 <button
                   onClick={() => void handleClose()}

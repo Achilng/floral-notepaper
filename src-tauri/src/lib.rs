@@ -322,6 +322,12 @@ async fn recycle_notepad_window(app: AppHandle, label: String) -> Result<(), App
     desktop::recycle_notepad_window(&app, &label)
 }
 
+/// 把窗口钉到桌面层（只出现在桌面上）或脱离桌面层（恢复普通窗口）。
+#[tauri::command]
+fn set_desktop_pinned(window: tauri::WebviewWindow, pinned: bool) -> Result<(), AppError> {
+    desktop::set_window_desktop_pinned(&window, pinned)
+}
+
 /// Pre-shift the window by `(dx, dy)` logical px before starting an OS drag,
 /// so a JS-side deadzone (e.g. tile double-click-to-edit) does not leave the
 /// window lagging the cursor by the deadzone displacement.
@@ -497,6 +503,7 @@ pub fn run() {
             stop_shortcut_recording,
             open_notepad_window,
             recycle_notepad_window,
+            set_desktop_pinned,
             start_window_drag_with_offset,
             open_tile_window,
             toggle_tile_window,
