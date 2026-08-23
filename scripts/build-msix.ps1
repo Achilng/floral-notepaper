@@ -190,31 +190,60 @@ if (Test-Path -LiteralPath $resRoot) {
 }
 New-Item -ItemType Directory -Path $resRoot -Force | Out-Null
 
-$resLanguages = @('lang-zh-CN', 'lang-en-US', 'lang-zh-HK')
-foreach ($langDir in $resLanguages) {
-  $source = Join-Path (Join-Path $msixDir $langDir) 'resources.resw'
+$resLanguages = @(
+  @{ SourceDirectory = 'lang-zh-CN'; Language = 'zh-CN' },
+  @{ SourceDirectory = 'lang-en-US'; Language = 'en-US' },
+  @{ SourceDirectory = 'lang-zh-HK'; Language = 'zh-HK' }
+)
+foreach ($resourceLanguage in $resLanguages) {
+  $source = Join-Path (Join-Path $msixDir $resourceLanguage.SourceDirectory) 'resources.resw'
   if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
     throw "Required MSIX resource file is missing: $source"
   }
-  Copy-Item -LiteralPath $source -Destination (Join-Path $resRoot $langDir) -Force
+  # MakePri recognizes language-qualified RESW files in the standard
+  # Strings/<BCP-47>/Resources.resw layout. The repository keeps the source
+  # files under lang-* directories, so normalize the staging layout here.
+  $languageDirectory = Join-Path (Join-Path $resRoot 'Strings') $resourceLanguage.Language
+  New-Item -ItemType Directory -Path $languageDirectory -Force | Out-Null
+  Copy-Item -LiteralPath $source -Destination (Join-Path $languageDirectory 'Resources.resw') -Force
 }
 
 $makePri = Get-MakePriPath
 Write-Host "Using MakePri at $makePri"
 
 $priConfig = Join-Path $resRoot 'priconfig.xml'
-& $makePri createconfig /cf $priConfig /dq zh-CN /o
+& $makePri createconfig /cf $priConfig /dq lang-zh-CN /o
 if ($LASTEXITCODE -ne 0) {
   throw "makepri createconfig failed with exit code $LASTEXITCODE."
 }
 
 $layoutPri = Join-Path $layoutDir 'resources.pri'
-& $makePri new /pr $resRoot /cf $priConfig /of $layoutPri /o
+& $makePri new /pr $resRoot /cf $priConfig /in $IdentityName /of $layoutPri /o
 if ($LASTEXITCODE -ne 0) {
   throw "makepri new failed with exit code $LASTEXITCODE."
 }
 if (-not (Test-Path -LiteralPath $layoutPri -PathType Leaf)) {
   throw "resources.pri was not produced: $layoutPri"
+}
+
+$priDump = Join-Path $resRoot 'resources.pri.xml'
+& $makePri dump /if $layoutPri /of $priDump /dt Detailed /o
+if ($LASTEXITCODE -ne 0) {
+  throw "makepri dump failed with exit code $LASTEXITCODE."
+}
+$priDumpContent = [System.IO.File]::ReadAllText((Resolve-Path -LiteralPath $priDump).Path)
+$requiredPriFragments = @(
+  $IdentityName,
+  'AppName',
+  'AppDescription',
+  'zh-CN',
+  'en-US',
+  'zh-HK'
+)
+foreach ($fragment in $requiredPriFragments) {
+  if (-not $priDumpContent.Contains($fragment, [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "resources.pri does not contain the expected resource map fragment: $fragment"
+  }
 }
 
 # --- Pack -------------------------------------------------------------------
