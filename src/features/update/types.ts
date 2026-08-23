@@ -20,6 +20,13 @@ export type UpdateStatus =
 
 export type UpdateCheckStatus = "notAvailable" | "available" | "failed";
 
+export type InstallKind =
+  | "windowsNsis"
+  | "windowsPortable"
+  | "windowsMsix"
+  | "macosAppBundle"
+  | "unknown";
+
 export interface UpdateSettings {
   autoCheck: boolean;
   autoDownload: boolean;
@@ -57,6 +64,7 @@ export interface UpdateState {
   installMode?: UpdateInstallMode | null;
   installStartedAt?: string | null;
   installScheduledAt?: string | null;
+  installKind?: InstallKind | null;
   lastError?: UpdateErrorPayload | null;
 }
 

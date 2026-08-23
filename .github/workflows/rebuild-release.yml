@@ -1,0 +1,23 @@
+name: Rebuild Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (vMAJOR.MINOR.PATCH)"
+        required: true
+        type: string
+
+permissions: {}
+
+jobs:
+  rebuild:
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ inputs.tag }}
+      rebuild: true
+    secrets:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}

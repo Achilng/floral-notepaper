@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  MSIX package manifest template for the Microsoft Store build of 花笺.
+
+  Placeholders are filled by scripts/build-msix.ps1:
+    __VERSION__                four-part version (X.Y.Z.0)
+    __IDENTITY_NAME__          Partner Center reserved product name
+    __PUBLISHER_CN__           certificate subject CN (must match the Partner
+                               Center account publisher)
+    __PUBLISHER_DISPLAY_NAME__ publisher display name shown on the Store
+    __ARCH__                   ProcessorArchitecture (x64 | arm64)
+
+  Notes:
+  - Registry and AppData writes are unvirtualized (desktop6 properties plus the
+    unvirtualizedResources restricted capability) so the tray autostart
+    registry key and %APPDATA%\floral-notepaper keep behaving like the NSIS
+    install instead of being redirected per-package and removed on uninstall.
+  - The app is a full-trust desktop application: runFullTrust + the
+    windows.fullTrustProcess extension.
+  - File type associations are declared as uap extensions; activation delivers
+    the file path on the command line, which desktop.rs already handles.
+  - DisplayName / Description use ms-resource references resolved from
+    resources.pri, which scripts/build-msix.ps1 generates with MakePri from
+    the lang-*/resources.resw files in this directory. The system shows the
+    name matching the user's language; the Resources list below must stay in
+    sync with those resw files.
+-->
+<Package
+  xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
+  xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
+  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
+  xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
+  IgnorableNamespaces="uap desktop desktop6 rescap">
+  <Identity
+    Name="__IDENTITY_NAME__"
+    Publisher="__PUBLISHER_CN__"
+    Version="__VERSION__"
+    ProcessorArchitecture="__ARCH__" />
+  <Properties>
+    <DisplayName>ms-resource:AppName</DisplayName>
+    <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
+    <Logo>StoreLogo.png</Logo>
+    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
+    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
+  </Properties>
+  <Dependencies>
+    <TargetDeviceFamily
+      Name="Windows.Desktop"
+      MinVersion="10.0.17763.0"
+      MaxVersionTested="10.0.26100.0" />
+  </Dependencies>
+  <Resources>
+    <Resource Language="zh-CN" />
+    <Resource Language="en-US" />
+    <Resource Language="zh-HK" />
+  </Resources>
+  <Applications>
+    <Application
+      Id="App"
+      Executable="floral-notepaper.exe"
+      EntryPoint="Windows.FullTrustApplication">
+      <uap:VisualElements
+        DisplayName="ms-resource:AppName"
+        Description="ms-resource:AppDescription"
+        BackgroundColor="transparent"
+        Square150x150Logo="Square150x150Logo.png"
+        Square44x44Logo="Square44x44Logo.png">
+        <uap:DefaultTile
+          Square71x71Logo="Square71x71Logo.png"
+          Square310x310Logo="Square310x310Logo.png" />
+      </uap:VisualElements>
+      <Extensions>
+        <desktop:Extension
+          Category="windows.fullTrustProcess"
+          Executable="floral-notepaper.exe" />
+        <uap:Extension Category="windows.fileTypeAssociation">
+          <uap:FileTypeAssociation Name="markdown">
+            <uap:DisplayName>Markdown Document</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.md</uap:FileType>
+              <uap:FileType>.markdown</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+          <uap:FileTypeAssociation Name="text">
+            <uap:DisplayName>Text Document</uap:DisplayName>
+            <uap:SupportedFileTypes>
+              <uap:FileType>.txt</uap:FileType>
+            </uap:SupportedFileTypes>
+          </uap:FileTypeAssociation>
+        </uap:Extension>
+      </Extensions>
+    </Application>
+  </Applications>
+  <Capabilities>
+    <rescap:Capability Name="runFullTrust" />
+    <rescap:Capability Name="unvirtualizedResources" />
+  </Capabilities>
+</Package>

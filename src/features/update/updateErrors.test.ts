@@ -32,4 +32,15 @@ describe("update error helpers", () => {
 
     expect(getUpdateErrorMessage(error, i18n.t.bind(i18n))).toBe("安装后清理临时文件失败");
   });
+
+  test("maps the Store-managed update error through locale keys", () => {
+    const error = {
+      code: "updateStoreManagedManualOnly",
+      message: "此版本由 Microsoft Store 管理更新，请在 Microsoft Store 中获取更新",
+    };
+
+    expect(getUpdateErrorMessage(error, i18n.t.bind(i18n))).toBe(
+      "此版本由 Microsoft Store 管理更新，请在 Microsoft Store 中获取更新",
+    );
+  });
 });

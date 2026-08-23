@@ -65,11 +65,12 @@ Most note-taking or sticky note apps out there are either bloated and steep to l
 > If you have trouble accessing GitHub or experience slow downloads, try downloading Floral Notepaper via MirrorChyan.<br>
 > Downloading via MirrorChyan also helps support the developer — see the [MirrorChyan website](https://mirrorchyan.com/) for details.
 
-| Platform | Arch                    | Download                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| -------- | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Windows  | x64                     | [![Windows x64 Setup](https://img.shields.io/badge/Setup-x64-blue?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgyNDJ2MjQySDB6TTI3MCAwaDI0MnYyNDJIMjcwek0wIDI3MGgyNDJ2MjQySDB6TTI3MCAyNzBoMjQydjI0MkgyNzB6Ii8%2BPC9zdmc%2B)](https://mirrorchyan.com/zh/projects?rid=floral&os=windows&arch=x64&channel=stable) |
-| macOS    | AArch64 (Apple Silicon) | [![macOS Apple Silicon](https://img.shields.io/badge/DMG-Apple%20Silicon-%23000000.svg?logo=apple)](https://mirrorchyan.com/zh/projects?rid=floral&os=macos&channel=stable&arch=arm64)                                                                                                                                                                                                                                                                             |
-| macOS    | x64 (Intel)             | [![macOS Intel](https://img.shields.io/badge/DMG-Intel%20X64-%2300A9E0.svg?logo=apple)](https://mirrorchyan.com/zh/projects?rid=floral&os=macos&channel=stable&arch=x64)                                                                                                                                                                                                                                                                                           |
+| Platform | Arch                    | Download                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| -------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Windows  | x64                     | [![Windows x64 Setup](https://img.shields.io/badge/Setup-x64-blue?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgyNDJ2MjQySDB6TTI3MCAwaDI0MnYyNDJIMjcwek0wIDI3MGgyNDJ2MjQySDB6TTI3MCAyNzBoMjQydjI0MkgyNzB6Ii8%2BPC9zdmc%2B)](https://mirrorchyan.com/zh/projects?rid=floral&os=windows&arch=x64&channel=stable)           |
+| Windows  | AArch64                 | [![Windows AArch64 Setup](https://img.shields.io/badge/Setup-AArch64-blue?logo=data%3Aimage%2Fsvg%2Bxml%3Bbase64%2CPHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI1MTIiIGhlaWdodD0iNTEyIiB2aWV3Qm94PSIwIDAgNTEyIDUxMiI%2BPHBhdGggZmlsbD0iI2ZmZiIgZD0iTTAgMGgyNDJ2MjQySDB6TTI3MCAwaDI0MnYyNDJIMjcwek0wIDI3MGgyNDJ2MjQySDB6TTI3MCAyNzBoMjQydjI0MkgyNzB6Ii8%2BPC9zdmc%2B)](https://mirrorchyan.com/zh/projects?rid=floral&os=windows&arch=arm64&channel=stable) |
+| macOS    | AArch64 (Apple Silicon) | [![macOS Apple Silicon](https://img.shields.io/badge/DMG-Apple%20Silicon-%23000000.svg?logo=apple)](https://mirrorchyan.com/zh/projects?rid=floral&os=macos&channel=stable&arch=arm64)                                                                                                                                                                                                                                                                                       |
+| macOS    | x64 (Intel)             | [![macOS Intel](https://img.shields.io/badge/DMG-Intel%20X64-%2300A9E0.svg?logo=apple)](https://mirrorchyan.com/zh/projects?rid=floral&os=macos&channel=stable&arch=x64)                                                                                                                                                                                                                                                                                                     |
 
 #### Via GitHub
 
@@ -77,12 +78,29 @@ Head over to the [Releases page](https://github.com/Achilng/floral-notepaper/rel
 
 ##### Download Reference
 
-| Platform | Arch                    | Type      | Filename                             |
-| -------- | ----------------------- | --------- | ------------------------------------ |
-| Windows  | x64                     | Installer | floral-notepaper_x.y.z_x64-setup.exe |
-| Windows  | x64                     | Portable  | floral-notepaper_x.y.z.exe           |
-| macOS    | AArch64 (Apple Silicon) | DMG       | floral-notepaper_x.y.z_aarch64.dmg   |
-| macOS    | x64 (Intel)             | DMG       | floral-notepaper_x.y.z_x64.dmg       |
+| Platform | Arch                    | Type                    | Filename                                 |
+| -------- | ----------------------- | ----------------------- | ---------------------------------------- |
+| Windows  | x64                     | Installer (Recommended) | floral-notepaper_x.y.z_x64-setup.exe     |
+| Windows  | x64                     | Portable                | floral-notepaper_x.y.z.exe               |
+| Windows  | x64                     | MSIX Package            | floral-notepaper_x.y.z_x64.msix          |
+| Windows  | AArch64                 | Installer (Recommended) | floral-notepaper_x.y.z_aarch64-setup.exe |
+| Windows  | AArch64                 | MSIX Package            | floral-notepaper_x.y.z_aarch64.msix      |
+| macOS    | AArch64 (Apple Silicon) | DMG                     | floral-notepaper_x.y.z_aarch64.dmg       |
+| macOS    | x64 (Intel)             | DMG                     | floral-notepaper_x.y.z_x64.dmg           |
+
+#### Via Microsoft Store
+
+Download Floral Notepaper from the [Microsoft Store](https://apps.microsoft.com/detail/9NRCC0ZSG81R)
+
+> Note: MSIX installs (from the Microsoft Store or sideloaded .msix files) do not support in-app updates. Get the latest version from the Microsoft Store or GitHub Releases.
+
+<!-- markdownlint-disable -->
+
+<a href="https://apps.microsoft.com/detail/9NRCC0ZSG81R?referrer=appbadge&mode=full" target="_blank"  rel="noopener noreferrer">
+	<img src="https://get.microsoft.com/images/en-us%20dark.svg" width="200"/>
+</a>
+
+<!-- markdownlint-restore -->
 
 #### macOS Installation Guidance
 

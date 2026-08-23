@@ -1,9 +1,14 @@
-use super::{errors, types::InstallKind, version, APP_ID};
+use super::{
+    errors,
+    types::{InstallKind, UpdateStateDto},
+    version, APP_ID,
+};
 use crate::services::notes::AppError;
 use serde::{Deserialize, Serialize};
 use std::{
     env,
     path::{Path, PathBuf},
+    sync::OnceLock,
 };
 
 #[cfg(target_os = "windows")]
@@ -44,6 +49,7 @@ impl PlatformInfo {
         self.os != Os::Unsupported
             && self.arch != Arch::Unsupported
             && self.install_kind != InstallKind::Unknown
+            && self.install_kind != InstallKind::WindowsMsix
     }
 
     pub fn ensure_in_app_updates_supported(&self) -> Result<(), AppError> {
@@ -68,22 +74,38 @@ impl PlatformInfo {
         match self.install_kind {
             InstallKind::WindowsNsis | InstallKind::MacosAppBundle => Ok(()),
             InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
+            InstallKind::WindowsMsix => Err(errors::store_managed_manual_only()),
             InstallKind::Unknown => Err(errors::unsupported_platform()),
         }
     }
 }
+
+/// 进程内稳定的平台信息缓存。
+///
+/// `PlatformInfo` 的全部计算依赖（`env::current_exe`、
+/// `env::consts::OS/ARCH`、包身份、注册表、`SystemRoot`）在进程生命周期内
+/// 均不会变化，因此只需计算一次。Windows 非 MSIX 下 `detect_install_kind`
+/// 会 spawn 最多 4 个 `cmd /c reg query` 子进程，缓存可避免每次调用重复
+/// 付出该代价。
+static PLATFORM_CACHE: OnceLock<PlatformInfo> = OnceLock::new();
 
 pub fn current_platform() -> PlatformInfo {
     current_platform_with_version(version::CURRENT_APP_VERSION.to_string())
 }
 
 pub fn current_platform_with_version(app_version: impl Into<String>) -> PlatformInfo {
+    let mut platform = PLATFORM_CACHE.get_or_init(compute_platform_info).clone();
+    platform.app_version = app_version.into();
+    platform
+}
+
+fn compute_platform_info() -> PlatformInfo {
     let current_exe = env::current_exe().ok();
     let os = current_os();
     PlatformInfo {
         os: os.clone(),
         arch: current_arch(),
-        app_version: app_version.into(),
+        app_version: version::CURRENT_APP_VERSION.to_string(),
         app_id: APP_ID.into(),
         install_kind: detect_install_kind(os, current_exe.as_deref()),
         current_exe: current_exe
@@ -94,6 +116,17 @@ pub fn current_platform_with_version(app_version: impl Into<String>) -> Platform
             .and_then(|path| find_macos_app_bundle(path.as_path()))
             .map(|path| path.to_string_lossy().to_string()),
     }
+}
+
+/// 在事件出口把 install_kind 注入状态（作用于 clone，绝不写回磁盘）。
+pub(crate) fn inject_install_kind(mut state: UpdateStateDto, kind: InstallKind) -> UpdateStateDto {
+    state.install_kind = Some(kind);
+    state
+}
+
+/// 当前进程的安装形态；仅在事件出口需要注入时调用。
+pub(crate) fn current_install_kind() -> InstallKind {
+    current_platform().install_kind
 }
 
 fn current_os() -> Os {
@@ -113,6 +146,14 @@ fn current_arch() -> Arch {
 }
 
 fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
+    detect_install_kind_with_package(os, current_exe, has_package_identity())
+}
+
+fn detect_install_kind_with_package(
+    os: Os,
+    current_exe: Option<&Path>,
+    has_package_identity: bool,
+) -> InstallKind {
     match os {
         Os::Macos => {
             if current_exe.and_then(find_macos_app_bundle).is_some() {
@@ -122,6 +163,12 @@ fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
             }
         }
         Os::Windows => {
+            if has_package_identity {
+                // MSIX packages are managed (and updated) by the Microsoft
+                // Store; in-app updates must never run against the read-only
+                // WindowsApps layout.
+                return InstallKind::WindowsMsix;
+            }
             let Some(path) = current_exe else {
                 return InstallKind::Unknown;
             };
@@ -140,6 +187,34 @@ fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
         }
         Os::Unsupported => InstallKind::Unknown,
     }
+}
+
+/// Whether the current process was launched with an MSIX package identity.
+///
+/// Unpackaged processes receive `APPMODEL_ERROR_NO_PACKAGE`; any other
+/// outcome (success or an insufficient buffer) means a package identity is
+/// present.
+#[cfg(target_os = "windows")]
+pub fn has_package_identity() -> bool {
+    use windows_sys::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
+
+    const ERROR_SUCCESS: u32 = 0;
+    const APPMODEL_ERROR_NO_PACKAGE: u32 = 15700;
+
+    let mut length: u32 = 0;
+    let status = unsafe { GetCurrentPackageFullName(&mut length, std::ptr::null_mut()) };
+    match status {
+        ERROR_SUCCESS => true,
+        APPMODEL_ERROR_NO_PACKAGE => false,
+        // ERROR_INSUFFICIENT_BUFFER (and anything else) means a package
+        // identity exists but the caller's buffer was too small.
+        _ => true,
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn has_package_identity() -> bool {
+    false
 }
 
 #[cfg(target_os = "windows")]
@@ -421,5 +496,92 @@ mod tests {
             .expect_err("portable installs should not support in-app updates");
 
         assert_eq!(error.code, "updatePortableManualOnly");
+    }
+
+    #[test]
+    fn detects_windows_msix_installation() {
+        let install_kind = detect_install_kind_with_package(
+            Os::Windows,
+            Some(Path::new(
+                r"C:\Program Files\WindowsApps\FloralNotepaper_1.1.0.0_x64__abcdefgh\floral-notepaper.exe",
+            )),
+            true,
+        );
+
+        assert_eq!(install_kind, InstallKind::WindowsMsix);
+    }
+
+    #[test]
+    fn treats_windowsapps_path_without_package_identity_as_nsis() {
+        // Without a package identity the path-based fallback must stay intact
+        // so that unpackaged binaries keep their current classification.
+        let install_kind = detect_install_kind_with_package(
+            Os::Windows,
+            Some(Path::new(
+                r"C:\Program Files\WindowsApps\floral-notepaper.exe",
+            )),
+            false,
+        );
+
+        assert_eq!(install_kind, InstallKind::WindowsNsis);
+    }
+
+    #[test]
+    fn rejects_windows_msix_for_in_app_updates() {
+        let platform = PlatformInfo {
+            os: Os::Windows,
+            arch: Arch::Aarch64,
+            app_version: "1.0.3".into(),
+            app_id: APP_ID.into(),
+            install_kind: InstallKind::WindowsMsix,
+            current_exe: None,
+            current_app_bundle: None,
+        };
+
+        let error = platform
+            .ensure_in_app_updates_supported()
+            .expect_err("MSIX installs should not support in-app updates");
+
+        assert_eq!(error.code, "updateStoreManagedManualOnly");
+    }
+
+    #[test]
+    fn msix_installs_do_not_support_update_assets() {
+        let platform = PlatformInfo {
+            os: Os::Windows,
+            arch: Arch::Aarch64,
+            app_version: "1.0.3".into(),
+            app_id: APP_ID.into(),
+            install_kind: InstallKind::WindowsMsix,
+            current_exe: None,
+            current_app_bundle: None,
+        };
+
+        assert!(!platform.supports_update_assets());
+    }
+
+    #[test]
+    fn inject_install_kind_injects_kind_without_touching_other_fields() {
+        let mut expected = UpdateStateDto::idle();
+        expected.install_kind = Some(InstallKind::WindowsMsix);
+
+        let injected = inject_install_kind(UpdateStateDto::idle(), InstallKind::WindowsMsix);
+
+        assert_eq!(injected.install_kind, Some(InstallKind::WindowsMsix));
+        assert_eq!(injected, expected);
+    }
+
+    #[test]
+    fn caches_platform_info_between_calls() {
+        // 连续调用：app_version 随参数变化，其余平台属性（os、install_kind、
+        // current_exe）必须命中缓存保持一致。
+        let with_version = current_platform_with_version("1.0.4");
+        let current = current_platform();
+
+        assert_eq!(with_version.app_version, "1.0.4");
+        assert_eq!(current.app_version, version::CURRENT_APP_VERSION);
+        assert_eq!(with_version.os, current.os);
+        assert_eq!(with_version.install_kind, current.install_kind);
+        assert_eq!(with_version.current_exe, current.current_exe);
     }
 }

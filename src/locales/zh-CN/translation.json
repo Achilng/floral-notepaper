@@ -368,6 +368,7 @@
         "mirrorChyanResourceNotFound": "Mirror酱暂无当前平台的资源，请改用 GitHub 下载",
         "platformUnsupported": "当前平台或安装形态暂不支持应用内更新",
         "portableManualOnly": "当前便携版仅支持手动下载更新包后覆盖升级",
+        "storeManagedManualOnly": "此版本由 Microsoft Store 管理更新，请在 Microsoft Store 中获取更新",
         "providerFixtureUnreadable": "无法读取本地更新测试清单",
         "providerNotConfigured": "更新源尚未配置测试清单",
         "secureStoreUnavailable": "系统安全存储暂不可用，请稍后重试",
@@ -402,7 +403,9 @@
         "showCdk": "显示 CDK",
         "title": "Mirror酱 CDK"
       },
+      "msixNoInAppUpdate": "MSIX 侧载版本暂不支持应用内更新，请通过 GitHub 或 Microsoft Store 获取最新版本",
       "notAvailable": "当前已是最新版本",
+      "openInStore": "在 Microsoft Store 中查看更新",
       "saved": "更新设置已保存",
       "settingsTitle": "更新设置",
       "speed": "速度：{{speed}}",
