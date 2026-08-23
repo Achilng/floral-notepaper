@@ -7,6 +7,14 @@ on:
         description: "Release tag (vMAJOR.MINOR.PATCH)"
         required: true
         type: string
+      publish-to-store:
+        description: "是否发布到 Microsoft Store"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
 
 permissions: {}
 
@@ -19,5 +27,10 @@ jobs:
     with:
       tag: ${{ inputs.tag }}
       rebuild: true
+      publish-to-store: ${{ inputs.publish-to-store }}
     secrets:
       SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      PARTNER_CENTER_TENANT_ID: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+      PARTNER_CENTER_SELLER_ID: ${{ secrets.PARTNER_CENTER_SELLER_ID }}
+      PARTNER_CENTER_CLIENT_ID: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+      PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}

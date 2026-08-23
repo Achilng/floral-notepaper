@@ -28,21 +28,26 @@ on:
         description: "Use rebuild semantics and upload to an existing published release"
         required: true
         type: boolean
+      publish-to-store:
+        description: "Publish the rebuilt MSIX packages to Microsoft Store"
+        required: false
+        type: string
+        default: "false"
     secrets:
       SIGNPATH_API_TOKEN:
         description: "Optional repository-level fallback for the release-signing environment secret"
         required: false
       PARTNER_CENTER_TENANT_ID:
-        description: "Direct Store dispatch only; the Rebuild caller does not pass this secret"
+        description: "Store publishing credential passed explicitly by reusable workflow callers"
         required: false
       PARTNER_CENTER_SELLER_ID:
-        description: "Direct Store dispatch only; the Rebuild caller does not pass this secret"
+        description: "Store publishing credential passed explicitly by reusable workflow callers"
         required: false
       PARTNER_CENTER_CLIENT_ID:
-        description: "Direct Store dispatch only; the Rebuild caller does not pass this secret"
+        description: "Store publishing credential passed explicitly by reusable workflow callers"
         required: false
       PARTNER_CENTER_CLIENT_SECRET:
-        description: "Direct Store dispatch only; the Rebuild caller does not pass this secret"
+        description: "Store publishing credential passed explicitly by reusable workflow callers"
         required: false
 
 concurrency:
@@ -66,7 +71,6 @@ jobs:
       commit: ${{ steps.release.outputs.commit }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
-      version_overrides: ${{ steps.release.outputs.version_overrides }}
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -113,14 +117,12 @@ jobs:
           fi
           version="${tag#v}"
 
-          version_overrides=false
           if [[ "$REBUILD_MODE" == "true" && "$package_version" != "$version" ]]; then
             echo "::warning file=package.json,line=3::Rebuild temporarily overrides package.json version from $package_version to $version."
             package_json_tmp="$(mktemp)"
             jq --arg version "$version" '.version = $version' package.json > "$package_json_tmp"
             mv "$package_json_tmp" package.json
             package_version="$(jq -r '.version' package.json)"
-            version_overrides=true
           fi
 
           if [[ "$REBUILD_MODE" == "true" && "$cargo_version" != "$version" ]]; then
@@ -137,7 +139,6 @@ jobs:
             ' src-tauri/Cargo.toml > "$cargo_toml_tmp"
             mv "$cargo_toml_tmp" src-tauri/Cargo.toml
             cargo_version="$(awk -F '"' '/^version = "/ { print $2; exit }' src-tauri/Cargo.toml)"
-            version_overrides=true
           fi
 
           git fetch --no-tags origin \
@@ -236,7 +237,6 @@ jobs:
             echo "commit=$release_commit"
             echo "version=$version"
             echo "tag=$tag"
-            echo "version_overrides=$version_overrides"
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify published release exists
@@ -256,14 +256,74 @@ jobs:
             exit 1
           fi
 
-      - name: Upload temporary Rebuild version overrides
-        if: steps.release.outputs.version_overrides == 'true'
+      - name: Checkout Rebuild workflow support
+        if: inputs.rebuild == true
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+          path: .release-workflow-support
+          sparse-checkout: |
+            scripts/assert-pe-version.ps1
+            scripts/build-msix.ps1
+            scripts/build-msixupload.ps1
+            scripts/prepare-nsis-toolchain.ps1
+            scripts/verify-authenticode.ps1
+            scripts/verify-msix-package.ps1
+            scripts/verify-release-tag.sh
+            src-tauri/msix
+          sparse-checkout-cone-mode: false
+
+      - name: Prepare Rebuild source overlay
+        if: inputs.rebuild == true
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          support_root='.release-workflow-support'
+          support_files=(
+            scripts/assert-pe-version.ps1
+            scripts/build-msix.ps1
+            scripts/build-msixupload.ps1
+            scripts/prepare-nsis-toolchain.ps1
+            scripts/verify-authenticode.ps1
+            scripts/verify-msix-package.ps1
+            scripts/verify-release-tag.sh
+          )
+          for file in "${support_files[@]}"; do
+            source_path="$support_root/$file"
+            if [[ ! -f "$source_path" ]]; then
+              echo "Rebuild workflow support file was not found: $source_path" >&2
+              exit 1
+            fi
+            mkdir -p "$(dirname "$file")"
+            cp "$source_path" "$file"
+          done
+
+          msix_support="$support_root/src-tauri/msix"
+          if [[ ! -d "$msix_support" ]]; then
+            echo "Rebuild MSIX support directory was not found: $msix_support" >&2
+            exit 1
+          fi
+          mkdir -p src-tauri/msix
+          cp -R "$msix_support/." src-tauri/msix/
+
+      - name: Upload Rebuild source overlay
+        if: inputs.rebuild == true
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: rebuild-version-overrides
+          name: rebuild-source-overlay
           path: |
             package.json
             src-tauri/Cargo.toml
+            scripts/assert-pe-version.ps1
+            scripts/build-msix.ps1
+            scripts/build-msixupload.ps1
+            scripts/prepare-nsis-toolchain.ps1
+            scripts/verify-authenticode.ps1
+            scripts/verify-msix-package.ps1
+            scripts/verify-release-tag.sh
+            src-tauri/msix/
           if-no-files-found: error
           overwrite: true
           retention-days: 1
@@ -283,11 +343,11 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
-      - name: Apply temporary Rebuild version overrides
-        if: needs.validate-release.outputs.version_overrides == 'true'
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: rebuild-version-overrides
+          name: rebuild-source-overlay
           path: .
 
       - name: Setup Node.js
@@ -419,13 +479,20 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Revalidate release tag before signing
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          scripts/verify-release-tag.sh \
+          bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
             --context "binary signing"
@@ -505,11 +572,11 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
-      - name: Apply temporary Rebuild version overrides
-        if: needs.validate-release.outputs.version_overrides == 'true'
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: rebuild-version-overrides
+          name: rebuild-source-overlay
           path: .
 
       - name: Setup Node.js
@@ -653,13 +720,20 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Revalidate release tag before signing
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          scripts/verify-release-tag.sh \
+          bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
             --context "installer signing"
@@ -887,11 +961,11 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
-      - name: Apply temporary Rebuild version overrides
-        if: needs.validate-release.outputs.version_overrides == 'true'
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: rebuild-version-overrides
+          name: rebuild-source-overlay
           path: .
 
       - name: Setup Node.js
@@ -1016,13 +1090,20 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Revalidate release tag before signing
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          scripts/verify-release-tag.sh \
+          bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
             --context "AArch64 binary signing"
@@ -1098,11 +1179,11 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
-      - name: Apply temporary Rebuild version overrides
-        if: needs.validate-release.outputs.version_overrides == 'true'
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: rebuild-version-overrides
+          name: rebuild-source-overlay
           path: .
 
       - name: Setup Node.js
@@ -1247,13 +1328,20 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Revalidate release tag before AArch64 installer signing
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          scripts/verify-release-tag.sh \
+          bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
             --context "AArch64 installer signing"
@@ -1491,6 +1579,13 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Download signed Windows binaries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1583,13 +1678,20 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Revalidate release tag before signing
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          scripts/verify-release-tag.sh \
+          bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
             --context "MSIX signing"
@@ -1715,6 +1817,19 @@ jobs:
     permissions:
       contents: read
     steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          ref: ${{ env.RELEASE_SOURCE_REF }}
+
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Download signed MSIX
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -1832,10 +1947,9 @@ jobs:
   publish-msix-store:
     name: Publish MSIX to Microsoft Store
     needs: [validate-release, sign-windows-msix, verify-windows-msix-install]
-    # Store 发布仅支持手动 workflow_dispatch；Tag push 永不发布。
+    # Store 发布仅支持显式启用开关的手动 Release/Rebuild；Tag push 永不发布。
     if: |
-      inputs.rebuild != true &&
-        github.event_name == 'workflow_dispatch' &&
+      github.event_name == 'workflow_dispatch' &&
         inputs['publish-to-store'] == 'true'
     runs-on: windows-latest
     permissions:
@@ -1848,13 +1962,20 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Revalidate release tag before publishing
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          scripts/verify-release-tag.sh \
+          bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
             --context "Store publishing"
@@ -1965,11 +2086,11 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
-      - name: Apply temporary Rebuild version overrides
-        if: needs.validate-release.outputs.version_overrides == 'true'
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: rebuild-version-overrides
+          name: rebuild-source-overlay
           path: .
 
       - name: Setup Node.js
@@ -2064,11 +2185,11 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
-      - name: Apply temporary Rebuild version overrides
-        if: needs.validate-release.outputs.version_overrides == 'true'
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: rebuild-version-overrides
+          name: rebuild-source-overlay
           path: .
 
       - name: Setup Node.js
@@ -2138,11 +2259,11 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
-      - name: Apply temporary Rebuild version overrides
-        if: needs.validate-release.outputs.version_overrides == 'true'
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: rebuild-version-overrides
+          name: rebuild-source-overlay
           path: .
 
       - name: Setup Node.js
@@ -2325,7 +2446,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          scripts/verify-release-tag.sh \
+          bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
             --context "publishing"
@@ -2380,13 +2501,20 @@ jobs:
           fetch-depth: 0
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply Rebuild source overlay
+        if: inputs.rebuild == true
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-source-overlay
+          path: .
+
       - name: Revalidate release tag
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          scripts/verify-release-tag.sh \
+          bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
             --context "uploading"
