@@ -1852,13 +1852,14 @@ jobs:
           $configDir = Join-Path $env:APPDATA 'floral-notepaper'
           $deadline = (Get-Date).AddSeconds(20)
           while ((Get-Date) -lt $deadline) {
+            if (Test-Path -LiteralPath $configDir) {
+              break
+            }
+            if ($process.HasExited) {
+              break
+            }
             Start-Sleep -Milliseconds 500
-            if ($process.HasExited -and (Test-Path -LiteralPath $configDir)) {
-              break
-            }
-            if (-not $process.HasExited) {
-              break
-            }
+            $process.Refresh()
           }
 
           if (-not (Test-Path -LiteralPath $configDir)) {
