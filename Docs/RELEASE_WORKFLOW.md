@@ -425,6 +425,10 @@ Workflow 不会：
 - Origin Verification 是否给出明确拒绝原因；
 - 正式证书固定值是否与 SignPath 实际证书一致。
 
+Windows x64 主程序的 SignPath artifact configuration 返回 ZIP，由 Action 解压；
+AArch64 主程序返回裸 `.exe`，因此必须使用 `skip-decompress=true` 原样保存。
+若把 AArch64 结果按 ZIP 自动解压，SignPath Action 会报 `Bad archive`。
+
 不要把 Release Workflow 临时改回测试 policy，也不要放宽正式证书验证以使构建通过。
 
 ### Linux 或 macOS 产物数量错误

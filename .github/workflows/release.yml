@@ -1119,7 +1119,7 @@ jobs:
           github-artifact-id: ${{ needs.build-windows-binary-aarch64.outputs.unsigned_artifact_id }}
           wait-for-completion: true
           output-artifact-directory: signed-windows-binary-arm64
-          skip-decompress: false
+          skip-decompress: true
           parameters: |
             version: ${{ toJSON(needs.validate-release.outputs.version) }}
 
