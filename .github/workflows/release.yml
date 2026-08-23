@@ -37,6 +37,12 @@ on:
       SIGNPATH_API_TOKEN:
         description: "Optional repository-level fallback for the release-signing environment secret"
         required: false
+      MSIX_SIGNING_CERTIFICATE_BASE64:
+        description: "Base64-encoded stable self-signed MSIX signing PFX"
+        required: false
+      MSIX_SIGNING_CERTIFICATE_PASSWORD:
+        description: "Password for the stable self-signed MSIX signing PFX"
+        required: false
       PARTNER_CENTER_TENANT_ID:
         description: "Store publishing credential passed explicitly by reusable workflow callers"
         required: false
@@ -268,6 +274,7 @@ jobs:
             scripts/build-msix.ps1
             scripts/build-msixupload.ps1
             scripts/prepare-nsis-toolchain.ps1
+            scripts/sign-msix-self-signed.ps1
             scripts/verify-authenticode.ps1
             scripts/verify-msix-package.ps1
             scripts/verify-release-tag.sh
@@ -286,6 +293,7 @@ jobs:
             scripts/build-msix.ps1
             scripts/build-msixupload.ps1
             scripts/prepare-nsis-toolchain.ps1
+            scripts/sign-msix-self-signed.ps1
             scripts/verify-authenticode.ps1
             scripts/verify-msix-package.ps1
             scripts/verify-release-tag.sh
@@ -320,6 +328,7 @@ jobs:
             scripts/build-msix.ps1
             scripts/build-msixupload.ps1
             scripts/prepare-nsis-toolchain.ps1
+            scripts/sign-msix-self-signed.ps1
             scripts/verify-authenticode.ps1
             scripts/verify-msix-package.ps1
             scripts/verify-release-tag.sh
@@ -1569,9 +1578,6 @@ jobs:
         arch: [x64, aarch64]
     permissions:
       contents: read
-    outputs:
-      unsigned_artifact_id_x64: ${{ steps.upload-x64.outputs.artifact-id }}
-      unsigned_artifact_id_arm64: ${{ steps.upload-arm64.outputs.artifact-id }}
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -1635,39 +1641,33 @@ jobs:
             throw "build-msix.ps1 failed with exit code $LASTEXITCODE."
           }
 
-      - name: Upload unsigned MSIX for SignPath (x64)
-        id: upload-x64
+      - name: Upload unsigned MSIX for self-signing (x64)
         if: matrix.arch == 'x64'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
+          name: unsigned-windows-msix-x64
           path: msix-out/floral-notepaper_${{ needs.validate-release.outputs.version }}_x64.msix
-          archive: false
           if-no-files-found: error
           overwrite: true
           retention-days: 1
 
-      - name: Upload unsigned MSIX for SignPath (AArch64)
-        id: upload-arm64
+      - name: Upload unsigned MSIX for self-signing (AArch64)
         if: matrix.arch == 'aarch64'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
+          name: unsigned-windows-msix-aarch64
           path: msix-out/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64.msix
-          archive: false
           if-no-files-found: error
           overwrite: true
           retention-days: 1
 
   sign-windows-msix:
-    name: Sign and verify MSIX (${{ matrix.arch }})
+    name: Self-sign and verify MSIX packages
     needs: [validate-release, build-windows-msix]
     runs-on: windows-latest
     environment:
       name: release-signing
       deployment: false
-    strategy:
-      fail-fast: false
-      matrix:
-        arch: [x64, aarch64]
     permissions:
       actions: read
       contents: read
@@ -1685,7 +1685,7 @@ jobs:
           name: rebuild-source-overlay
           path: .
 
-      - name: Revalidate release tag before signing
+      - name: Revalidate release tag before self-signing
         shell: bash
         env:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
@@ -1694,110 +1694,172 @@ jobs:
           bash scripts/verify-release-tag.sh \
             --commit "$RELEASE_COMMIT" \
             --tag "$RELEASE_TAG" \
-            --context "MSIX signing"
+            --context "MSIX self-signing"
 
-      - name: Submit MSIX signing request
-        uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
-        with:
-          api-token: ${{ secrets.SIGNPATH_API_TOKEN }}
-          organization-id: ${{ vars.SIGNPATH_ORGANIZATION_ID }}
-          project-slug: ${{ vars.SIGNPATH_PROJECT_SLUG }}
-          signing-policy-slug: release-signing
-          artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_MSIX_ARTIFACT_CONFIGURATION_SLUG }}
-          github-artifact-id: ${{ matrix.arch == 'x64' && needs.build-windows-msix.outputs.unsigned_artifact_id_x64 || needs.build-windows-msix.outputs.unsigned_artifact_id_arm64 }}
-          wait-for-completion: true
-          output-artifact-directory: signed-windows-msix
-          skip-decompress: true
-          parameters: |
-            version: ${{ toJSON(needs.validate-release.outputs.version) }}
-
-      - name: Download original signed Windows binaries
+      - name: Download unsigned MSIX (x64)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
-          name: ${{ matrix.arch == 'x64' && 'signed-windows-binaries' || 'signed-windows-binaries-arm64' }}
-          path: signed-windows-binaries
+          name: unsigned-windows-msix-x64
+          path: unsigned-windows-msix
 
-      - name: Verify signed MSIX package
+      - name: Download unsigned MSIX (AArch64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: unsigned-windows-msix-aarch64
+          path: unsigned-windows-msix
+
+      - name: Download original signed Windows binary (x64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-binaries
+          path: signed-windows-binaries-x64
+
+      - name: Download original signed Windows binary (AArch64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-binaries-arm64
+          path: signed-windows-binaries-aarch64
+
+      - name: Sign both MSIX packages with the stable self-signed certificate
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
-          MATRIX_ARCH: ${{ matrix.arch }}
+          MSIX_PUBLISHER_CN: ${{ vars.MSIX_PUBLISHER_CN }}
+          MSIX_SIGNING_CERTIFICATE_SHA256: ${{ vars.MSIX_SIGNING_CERTIFICATE_SHA256 }}
+          MSIX_SIGNING_CERTIFICATE_BASE64: ${{ secrets.MSIX_SIGNING_CERTIFICATE_BASE64 }}
+          MSIX_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_SIGNING_CERTIFICATE_PASSWORD }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+
+          if ([string]::IsNullOrWhiteSpace($env:MSIX_SIGNING_CERTIFICATE_BASE64)) {
+            throw 'MSIX_SIGNING_CERTIFICATE_BASE64 is not configured.'
+          }
+          if ([string]::IsNullOrWhiteSpace($env:MSIX_SIGNING_CERTIFICATE_PASSWORD)) {
+            throw 'MSIX_SIGNING_CERTIFICATE_PASSWORD is not configured.'
+          }
+
+          New-Item -ItemType Directory -Path 'signed-windows-msix' -Force | Out-Null
+          New-Item -ItemType Directory -Path 'msix-signing-certificate' -Force | Out-Null
+          $msixPaths = @(
+            "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_x64.msix",
+            "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.msix"
+          )
+          Copy-Item `
+            -LiteralPath "unsigned-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_x64.msix" `
+            -Destination $msixPaths[0] `
+            -Force
+          Copy-Item `
+            -LiteralPath "unsigned-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.msix" `
+            -Destination $msixPaths[1] `
+            -Force
+
+          $pfxPath = Join-Path $env:RUNNER_TEMP 'floral-notepaper-msix-signing.pfx'
+          try {
+            $pfxBytes = [Convert]::FromBase64String($env:MSIX_SIGNING_CERTIFICATE_BASE64)
+            [IO.File]::WriteAllBytes($pfxPath, $pfxBytes)
+            & 'scripts/sign-msix-self-signed.ps1' `
+              -MsixPaths $msixPaths `
+              -Publisher $env:MSIX_PUBLISHER_CN `
+              -PfxPath $pfxPath `
+              -PfxPassword $env:MSIX_SIGNING_CERTIFICATE_PASSWORD `
+              -ExpectedCertificateSha256 $env:MSIX_SIGNING_CERTIFICATE_SHA256 `
+              -CertificateOutputPath "msix-signing-certificate/floral-notepaper_$($env:RELEASE_VERSION)_msix.cer"
+            if ($LASTEXITCODE -ne 0) {
+              throw "sign-msix-self-signed.ps1 failed with exit code $LASTEXITCODE."
+            }
+          } finally {
+            if (Test-Path -LiteralPath $pfxPath) {
+              Remove-Item -LiteralPath $pfxPath -Force
+            }
+          }
+
+      - name: Verify both self-signed MSIX packages
+        shell: pwsh
+        env:
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
           MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
           MSIX_PUBLISHER_CN: ${{ vars.MSIX_PUBLISHER_CN }}
-          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
-          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
-          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+          MSIX_SIGNING_CERTIFICATE_SHA256: ${{ vars.MSIX_SIGNING_CERTIFICATE_SHA256 }}
         run: |
           $ErrorActionPreference = 'Stop'
 
           function Get-MakeAppxPath {
             $command = Get-Command makeappx.exe -ErrorAction SilentlyContinue
-            if ($command) {
-              return $command.Source
-            }
-
+            if ($command) { return $command.Source }
             $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
             $candidate = Get-ChildItem -Path $kitsRoot -Filter makeappx.exe -File -Recurse |
               Where-Object { $_.FullName -match '[\\/]x64[\\/]makeappx\.exe$' } |
               Sort-Object FullName -Descending |
               Select-Object -First 1
-            if (-not $candidate) {
-              throw 'makeappx.exe was not found on the runner.'
-            }
+            if (-not $candidate) { throw 'makeappx.exe was not found on the runner.' }
             return $candidate.FullName
           }
 
-          $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
-          if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
-            throw "Signed MSIX package was not found at $msix."
-          }
-
-          & 'scripts/verify-msix-package.ps1' `
-            -MsixPath $msix `
-            -Arch $env:MATRIX_ARCH `
-            -Version $env:RELEASE_VERSION `
-            -SigntoolVerify
-
-          $verifyDir = Join-Path $env:RUNNER_TEMP "msix-verify-$($env:MATRIX_ARCH)"
-          if (Test-Path -LiteralPath $verifyDir) {
-            Remove-Item -LiteralPath $verifyDir -Recurse -Force
-          }
-          New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
+          $certificatePath = "msix-signing-certificate/floral-notepaper_$($env:RELEASE_VERSION)_msix.cer"
           $makeAppx = Get-MakeAppxPath
-          & $makeAppx unpack /p $msix /d $verifyDir /o
-          if ($LASTEXITCODE -ne 0) {
-            throw "makeappx unpack verification failed with exit code $LASTEXITCODE."
+          foreach ($arch in @('x64', 'aarch64')) {
+            $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$arch.msix"
+            & 'scripts/verify-msix-package.ps1' `
+              -MsixPath $msix `
+              -Arch $arch `
+              -Version $env:RELEASE_VERSION `
+              -CertificatePath $certificatePath `
+              -ExpectedCertificateSha256 $env:MSIX_SIGNING_CERTIFICATE_SHA256 `
+              -SigntoolVerify
+
+            $verifyDir = Join-Path $env:RUNNER_TEMP "msix-verify-$arch"
+            if (Test-Path -LiteralPath $verifyDir) {
+              Remove-Item -LiteralPath $verifyDir -Recurse -Force
+            }
+            New-Item -ItemType Directory -Path $verifyDir -Force | Out-Null
+            & $makeAppx unpack /p $msix /d $verifyDir /o
+            if ($LASTEXITCODE -ne 0) {
+              throw "makeappx unpack verification failed with exit code $LASTEXITCODE."
+            }
+
+            if ($arch -eq 'x64') {
+              $sourcePath = "signed-windows-binaries-x64/floral-notepaper_$($env:RELEASE_VERSION).exe"
+            } else {
+              $sourcePath = "signed-windows-binaries-aarch64/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
+            }
+            $packedBinary = Join-Path $verifyDir 'floral-notepaper.exe'
+            if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
+              throw "Original signed executable was not found at $sourcePath."
+            }
+            if (-not (Test-Path -LiteralPath $packedBinary -PathType Leaf)) {
+              throw "floral-notepaper.exe was not found inside the signed MSIX."
+            }
+            $sourceSha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
+            $packedSha256 = (Get-FileHash -LiteralPath $packedBinary -Algorithm SHA256).Hash
+            if ($packedSha256 -ne $sourceSha256) {
+              throw "The embedded executable changed during MSIX signing: $sourceSha256 -> $packedSha256"
+            }
+            "- Embedded $arch executable hash preserved: $packedSha256" >> $env:GITHUB_STEP_SUMMARY
           }
 
-          if ($env:MATRIX_ARCH -eq 'x64') {
-            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION).exe"
-          } else {
-            $sourceFile = "floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
-          }
-          $sourcePath = Join-Path 'signed-windows-binaries' $sourceFile
-          if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
-            throw "Original signed executable was not found at $sourcePath."
-          }
-          $sourceSha256 = (Get-FileHash -LiteralPath $sourcePath -Algorithm SHA256).Hash
-          $packedBinary = Join-Path $verifyDir 'floral-notepaper.exe'
-          if (-not (Test-Path -LiteralPath $packedBinary -PathType Leaf)) {
-            throw "floral-notepaper.exe was not found inside the signed MSIX."
-          }
-          $packedSha256 = (Get-FileHash -LiteralPath $packedBinary -Algorithm SHA256).Hash
-          if ($packedSha256 -eq $sourceSha256) {
-            "- Embedded executable hash preserved: $packedSha256" >> $env:GITHUB_STEP_SUMMARY
-          } else {
-            # SignPath may re-sign the embedded executable (deep signing); the
-            # embedded file must then still carry the pinned certificate.
-            & 'scripts/verify-authenticode.ps1' -Path $packedBinary -RequireTimestamp
-            "- Embedded executable was deep-signed by SignPath; hash $sourceSha256 -> $packedSha256" >> $env:GITHUB_STEP_SUMMARY
-          }
-
-      - name: Upload verified signed MSIX
+      - name: Upload verified self-signed MSIX (x64)
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: signed-windows-msix-${{ matrix.arch }}
-          path: signed-windows-msix/floral-notepaper_${{ needs.validate-release.outputs.version }}_${{ matrix.arch }}.msix
+          name: signed-windows-msix-x64
+          path: signed-windows-msix/floral-notepaper_${{ needs.validate-release.outputs.version }}_x64.msix
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
+
+      - name: Upload verified self-signed MSIX (AArch64)
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: signed-windows-msix-aarch64
+          path: signed-windows-msix/floral-notepaper_${{ needs.validate-release.outputs.version }}_aarch64.msix
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 90
+
+      - name: Upload public MSIX signing certificate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: msix-signing-certificate
+          path: msix-signing-certificate/floral-notepaper_${{ needs.validate-release.outputs.version }}_msix.cer
           if-no-files-found: error
           overwrite: true
           retention-days: 90
@@ -1836,20 +1898,32 @@ jobs:
           name: signed-windows-msix-${{ matrix.arch }}
           path: signed-windows-msix
 
-      - name: Verify MSIX signature and manifest
+      - name: Download public MSIX signing certificate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: msix-signing-certificate
+          path: msix-signing-certificate
+
+      - name: Trust certificate and verify MSIX signature and manifest
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
           MATRIX_ARCH: ${{ matrix.arch }}
           MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
           MSIX_PUBLISHER_CN: ${{ vars.MSIX_PUBLISHER_CN }}
-          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
-          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
-          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+          MSIX_SIGNING_CERTIFICATE_SHA256: ${{ vars.MSIX_SIGNING_CERTIFICATE_SHA256 }}
         run: |
           $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
+          $certificate = "msix-signing-certificate/floral-notepaper_$($env:RELEASE_VERSION)_msix.cer"
           if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) { throw "Signed MSIX package was not found at $msix." }
-          & 'scripts/verify-msix-package.ps1' -MsixPath $msix -Arch $env:MATRIX_ARCH -Version $env:RELEASE_VERSION
+          Import-Certificate -FilePath $certificate -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
+          & 'scripts/verify-msix-package.ps1' `
+            -MsixPath $msix `
+            -Arch $env:MATRIX_ARCH `
+            -Version $env:RELEASE_VERSION `
+            -CertificatePath $certificate `
+            -ExpectedCertificateSha256 $env:MSIX_SIGNING_CERTIFICATE_SHA256 `
+            -SigntoolVerify
 
       - name: Install, launch and uninstall test
         if: matrix.arch == 'x64' || vars.MSIX_ARM64_RUNTIME_TEST != 'false'
@@ -1992,23 +2066,35 @@ jobs:
           name: signed-windows-msix-aarch64
           path: signed-windows-msix
 
+      - name: Download public MSIX signing certificate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: msix-signing-certificate
+          path: msix-signing-certificate
+
       - name: Verify both MSIX packages
         shell: pwsh
         env:
           RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
           MSIX_IDENTITY_NAME: ${{ vars.MSIX_IDENTITY_NAME }}
           MSIX_PUBLISHER_CN: ${{ vars.MSIX_PUBLISHER_CN }}
-          EXPECTED_CERTIFICATE_SUBJECT: ${{ vars.SIGNPATH_CERTIFICATE_SUBJECT }}
-          EXPECTED_CERTIFICATE_ISSUER: ${{ vars.SIGNPATH_CERTIFICATE_ISSUER }}
-          EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
+          MSIX_SIGNING_CERTIFICATE_SHA256: ${{ vars.MSIX_SIGNING_CERTIFICATE_SHA256 }}
         run: |
           $ErrorActionPreference = 'Stop'
+          $certificate = "msix-signing-certificate/floral-notepaper_$($env:RELEASE_VERSION)_msix.cer"
+          Import-Certificate -FilePath $certificate -CertStoreLocation 'Cert:\LocalMachine\TrustedPeople' | Out-Null
           foreach ($arch in @('x64', 'aarch64')) {
             $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$arch.msix"
             if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
               throw "Signed MSIX package was not found at $msix."
             }
-            & 'scripts/verify-msix-package.ps1' -MsixPath $msix -Arch $arch -Version $env:RELEASE_VERSION
+            & 'scripts/verify-msix-package.ps1' `
+              -MsixPath $msix `
+              -Arch $arch `
+              -Version $env:RELEASE_VERSION `
+              -CertificatePath $certificate `
+              -ExpectedCertificateSha256 $env:MSIX_SIGNING_CERTIFICATE_SHA256 `
+              -SigntoolVerify
           }
 
       - name: Build MSIX upload container
@@ -2375,6 +2461,12 @@ jobs:
           name: signed-windows-msix-aarch64
           path: release-assets
 
+      - name: Download public MSIX signing certificate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: msix-signing-certificate
+          path: release-assets
+
       - name: Download Linux release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -2410,6 +2502,7 @@ jobs:
             "floral-notepaper_${RELEASE_VERSION}_aarch64-setup.exe"
             "floral-notepaper_${RELEASE_VERSION}_x64.msix"
             "floral-notepaper_${RELEASE_VERSION}_aarch64.msix"
+            "floral-notepaper_${RELEASE_VERSION}_msix.cer"
             "floral-notepaper_${RELEASE_VERSION}_amd64.deb"
             "floral-notepaper-${RELEASE_VERSION}-1.x86_64.rpm"
             "floral-notepaper_${RELEASE_VERSION}_amd64.AppImage"
@@ -2565,6 +2658,12 @@ jobs:
           name: signed-windows-msix-aarch64
           path: release-assets
 
+      - name: Download public MSIX signing certificate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: msix-signing-certificate
+          path: release-assets
+
       - name: Download Linux release assets
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
@@ -2600,6 +2699,7 @@ jobs:
             "floral-notepaper_${RELEASE_VERSION}_aarch64-setup.exe"
             "floral-notepaper_${RELEASE_VERSION}_x64.msix"
             "floral-notepaper_${RELEASE_VERSION}_aarch64.msix"
+            "floral-notepaper_${RELEASE_VERSION}_msix.cer"
             "floral-notepaper_${RELEASE_VERSION}_amd64.deb"
             "floral-notepaper-${RELEASE_VERSION}-1.x86_64.rpm"
             "floral-notepaper_${RELEASE_VERSION}_amd64.AppImage"

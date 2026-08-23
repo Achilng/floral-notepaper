@@ -28,7 +28,7 @@ flowchart TD
   F2 --> G2["Current User / All Users 安装与卸载测试 (windows-11-arm)"]
   D --> M1["构建未签名 MSIX（x64 / AArch64）"]
   D2 --> M1
-  M1 --> M2["SignPath 签名并验证 MSIX（x64 / AArch64）"]
+  M1 --> M2["同一张固定自签名证书签名并验证 MSIX（x64 / AArch64）"]
   M2 --> M3["MSIX 安装 / 启动 / 卸载测试"]
   M3 --> M4["发布到 Microsoft Store（手动 Release/Rebuild 由 publish-to-store 开关决定）"]
   B --> H["构建 DEB、RPM、AppImage"]
@@ -81,17 +81,26 @@ Store 发布凭据同样存放在仓库级（全局），不依赖 Environment�
 | Variable | `SIGNPATH_WINDOWS_BINARY_ARM64_ARTIFACT_CONFIGURATION_SLUG`    | Windows AArch64 主程序签名配置                                                                                   |
 | Variable | `SIGNPATH_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG`       | Windows 安装器签名配置                                                                                           |
 | Variable | `SIGNPATH_WINDOWS_INSTALLER_ARM64_ARTIFACT_CONFIGURATION_SLUG` | Windows AArch64 安装器签名配置                                                                                   |
-| Variable | `SIGNPATH_WINDOWS_MSIX_ARTIFACT_CONFIGURATION_SLUG`            | MSIX 包签名配置（`<msix-file>` root，SHA-256）                                                                   |
 | Variable | `SIGNPATH_CERTIFICATE_SUBJECT`                                 | 正式证书 Subject 固定值                                                                                          |
 | Variable | `SIGNPATH_CERTIFICATE_ISSUER`                                  | 正式证书 Issuer 固定值                                                                                           |
 | Variable | `SIGNPATH_CERTIFICATE_SHA1`                                    | 正式证书 SHA-1 指纹                                                                                              |
 | Variable | `MSIX_IDENTITY_NAME`                                           | MSIX 清单 Identity Name，必须等于 Partner Center 保留名称                                                        |
 | Variable | `MSIX_PUBLISHER_CN`                                            | MSIX 清单 Publisher（证书 Subject CN），必须与账户 Publisher 匹配                                                |
 | Variable | `MSIX_PUBLISHER_DISPLAY_NAME`                                  | MSIX 清单 PublisherDisplayName                                                                                   |
+| Variable | `MSIX_SIGNING_CERTIFICATE_SHA256`                              | 固定 MSIX 自签名证书的 SHA-256 指纹（防止 PFX 被静默替换）                                                       |
 | Variable | `MSSTORE_APP_ID`                                               | Partner Center 产品 ID（`msstore publish -id` 使用）                                                             |
 | Variable | `MSIX_ARM64_RUNTIME_TEST`                                      | AArch64 运行时测试总开关；置 `false` 时 AArch64 MSIX 与 AArch64 NSIS 均跳过运行时安装测试（签名/结构验证仍执行） |
 
-Workflow 固定使用 SignPath policy slug `release-signing`，不会从变量动态选择测试策略。
+MSIX 不使用 SignPath，固定使用以下仓库级 Secrets 中的同一张自签名证书：
+
+| 类型   | 名称                                | 用途                                              |
+| ------ | ----------------------------------- | ------------------------------------------------- |
+| Secret | `MSIX_SIGNING_CERTIFICATE_BASE64`   | Base64 编码、密码保护的固定 MSIX Code Signing PFX |
+| Secret | `MSIX_SIGNING_CERTIFICATE_PASSWORD` | PFX 密码                                          |
+
+该证书 Subject/Issuer 必须与 `MSIX_PUBLISHER_CN` 完全一致，包含 Code Signing EKU，其公钥 DER 的 SHA-256 必须与 `MSIX_SIGNING_CERTIFICATE_SHA256` 一致。私钥不得写入仓库或 Actions Artifact。Workflow 只在临时 runner 中还原 PFX，签名后立即删除 PFX 文件，并把同一张公开 `.cer` 随 Release 发布。Rebuild 调用壳显式传递这两个 Secrets。
+
+EXE 与 NSIS 固定使用 SignPath policy slug `release-signing`，不会从变量动态选择测试策略；MSIX 不提交 SignPath 请求。
 
 建议在 SignPath 中同时启用：
 
@@ -232,7 +241,7 @@ pwsh -File scripts/build-windows-local.ps1 -Architectures x64 -SkipNpmInstall
 | `build-windows-installer-aarch64`           | 恢复已签名 AArch64 主程序，验证其哈希，构建未签名 AArch64 NSIS 安装器                                                                |
 | `sign-and-verify-windows-installer-aarch64` | 签名 AArch64 安装器，验证签名，在 `windows-11-arm` 上执行两种安装模式的安装与卸载测试（由 `MSIX_ARM64_RUNTIME_TEST` 门控）           |
 | `build-windows-msix`                        | 恢复各架构已签名主程序，用 `scripts/build-msix.ps1` 构建未签名 MSIX（x64 / AArch64）                                                 |
-| `sign-windows-msix`                         | 签名并验证 MSIX 包、清单身份和嵌入主程序                                                                                             |
+| `sign-windows-msix`                         | 用固定自签名证书同时签名两个架构的 MSIX，验证签名、清单身份和嵌入主程序，并导出公开 `.cer`                                           |
 | `verify-windows-msix-install`               | `Add-AppxPackage` 安装、启动、单实例、卸载测试（AArch64 使用 Windows AArch64 runner）                                                |
 | `publish-msix-store`                        | 合并双架构 MSIX 为 `.msixupload`，用 msstore CLI 提交（仅手动 Release/Rebuild 且 `publish-to-store=true` 时执行；Tag Push 永不发布） |
 | `build-linux`                               | 构建并强制收集恰好一个 DEB、RPM 和 AppImage                                                                                          |
@@ -258,7 +267,7 @@ Windows 主程序（x64 与 AArch64）在 SignPath 签名前都会把 Tauri bund
 - `signtool verify /pa /all /v` 必须通过；
 - 签名后的二进制仍必须恰好含一个 `NSS` marker 且不含 `UNK`（防止签名过程丢失 marker）。
 
-测试证书和不受信任根证书不会被 Release Workflow 接受。
+EXE/NSIS 的测试证书和不受信任根证书不会被 Release Workflow 接受；本节不适用于采用固定自签名证书的 MSIX。
 
 ### NSIS 构建
 
@@ -297,7 +306,7 @@ x64 安装器在 `windows-latest` 上测试；AArch64 安装器在 `windows-11-a
 
 ## 发布产物
 
-Workflow 要求以下十个产物全部存在：
+Workflow 要求以下十一个产物全部存在：
 
 | 平台                 | 文件名                                       |
 | -------------------- | -------------------------------------------- |
@@ -306,6 +315,7 @@ Workflow 要求以下十个产物全部存在：
 | Windows NSIS AArch64 | `floral-notepaper_VERSION_aarch64-setup.exe` |
 | Windows MSIX x64     | `floral-notepaper_VERSION_x64.msix`          |
 | Windows MSIX AArch64 | `floral-notepaper_VERSION_aarch64.msix`      |
+| Windows MSIX 证书    | `floral-notepaper_VERSION_msix.cer`          |
 | Linux DEB            | `floral-notepaper_VERSION_amd64.deb`         |
 | Linux RPM            | `floral-notepaper-VERSION-1.x86_64.rpm`      |
 | Linux AppImage       | `floral-notepaper_VERSION_amd64.AppImage`    |
@@ -313,6 +323,8 @@ Workflow 要求以下十个产物全部存在：
 | macOS Apple Silicon  | `floral-notepaper_VERSION_aarch64.dmg`       |
 
 其中 `VERSION` 是不带 `v` 的版本号。
+
+MSIX 公开证书是固定自签名证书，不含私钥。直接安装 GitHub Release 中的 MSIX 前，应先核对 `SHA256SUMS.txt`，再由管理员将 `.cer` 导入 `Cert:\LocalMachine\TrustedPeople`；不要导入用户证书库或 Trusted Root。Microsoft Store 安装无需此步骤。
 
 此外还会生成：
 
@@ -333,18 +345,20 @@ Tauri bundler 不生成 MSIX。`build-windows-msix` 使用 `scripts/build-msix.p
 
 ### 签名
 
-MSIX 由 SignPath 使用 `SIGNPATH_WINDOWS_MSIX_ARTIFACT_CONFIGURATION_SLUG` 配置（`<msix-file>` root，SHA-256）签名。签名后验证：
+`sign-windows-msix` 从 GitHub Secrets 还原固定 PFX，一次导入后用同一张自签名证书签署 x64 与 AArch64 包。证书 Subject 精确等于 Partner Center Publisher，因此不会出现 Manifest Publisher 与证书 Subject 不一致；MSIX 不再提交 SignPath。签名后验证：
 
-- 包签名使用固定正式证书，`Valid` 且包含时间戳；
+- 两个包使用同一张固定自签名证书，`Valid` 且包含 RFC 3161 时间戳；
+- 公钥证书与 PFX 的签名证书指纹一致，且 Subject 等于清单 Publisher；
 - `signtool verify /pa /all` 通过；
 - 清单身份、Publisher、四段版本、处理器架构与发布版本一致；
-- 内嵌主程序哈希与签名前一致；若 SignPath 对嵌入文件执行了 deep signing 导致哈希变化，则要求嵌入文件仍携带同一固定证书的有效签名（记录新哈希）。
+- 内嵌主程序哈希与签名前严格一致（自签名只修改 MSIX 外层签名，不修改内嵌 EXE）。
 
 ### 安装测试
 
 `verify-windows-msix-install` 对每个架构执行：
 
-- `Add-AppxPackage` 安装（证书为公开受信证书，无需预装；失败不静默放宽）；
+- 将 Workflow 导出的公开 `.cer` 临时导入 runner 的 `LocalMachine\TrustedPeople`，复验指纹与 Subject；
+- `Add-AppxPackage` 安装（失败不静默放宽）；
 - `Get-AppxPackage` 断言版本与 `SignatureKind`；
 - 从安装目录启动主程序：进程存活或至少创建非虚拟化的 `%APPDATA%\floral-notepaper` 配置目录（CI 无桌面会话，WebView 渲染列入人工核验）；
 - 第一实例存活时启动第二实例，断言单实例转发（第二实例自行退出）；
@@ -379,7 +393,7 @@ Workflow 不会：
 
 维护者应在 GitHub 页面人工核验：
 
-1. 十个预期平台产物全部存在；
+1. 十一个预期平台产物（含公开 MSIX 证书）全部存在；
 2. `SHA256SUMS.txt` 与实际附件一致；
 3. `BUILD-INFO.txt` 中的 Commit 是预期发布 Commit；
 4. Windows 文件的 Publisher 和签名状态正确；
@@ -458,8 +472,8 @@ AArch64 安装器测试还额外关注：
 ### MSIX 构建或签名失败
 
 - `build-windows-msix`：检查 `scripts/build-msix.ps1` 的 unpack 回验输出（清单身份/版本/架构、内嵌主程序哈希）；确认 `MSIX_IDENTITY_NAME`、`MSIX_PUBLISHER_CN` 等仓库变量已配置。
-- `sign-windows-msix`：确认 SignPath MSIX artifact configuration（`<msix-file>` root）已创建且 slug 正确；证书固定值是否与 SignPath 实际证书一致；deep signing 导致的哈希变化必须伴随有效固定证书签名。
-- `verify-windows-msix-install`：AArch64 需要 `windows-11-arm` runner 可用；无 runner 时按文档置 `MSIX_ARM64_RUNTIME_TEST=false` 降级；证书不受信时明确失败（不静默放宽）。
+- `sign-windows-msix`：确认 `MSIX_SIGNING_CERTIFICATE_BASE64` 与 `MSIX_SIGNING_CERTIFICATE_PASSWORD` 已配置且 PFX 可导入；证书必须有私钥、Code Signing EKU、自签名 Subject/Issuer，并与 `MSIX_PUBLISHER_CN` 及 `MSIX_SIGNING_CERTIFICATE_SHA256` 完全一致。不要在 Workflow 中临时生成新证书，否则会破坏跨版本固定身份。
+- `verify-windows-msix-install`：确认公开 `.cer` 与包签名指纹一致并已导入 runner 的 `LocalMachine\TrustedPeople`；AArch64 需要 `windows-11-arm` runner 可用，无 runner 时按文档置 `MSIX_ARM64_RUNTIME_TEST=false` 降级。
 
 ### Store 发布失败
 
@@ -483,7 +497,7 @@ Store 发布的重试 = 对同一 Tag 重新手动触发并选择 `true`（Tag �
 - 仅支持手动触发（Actions → Rebuild Release → Run workflow），必填输入 `tag`（`vMAJOR.MINOR.PATCH`）；
 - `publish-to-store` 与主 Release Workflow 相同，默认 `false`；仅显式选择 `true` 时才提交 Microsoft Store；
 - 要求该 Tag 存在、指向 `main` 历史，且对应 Release 已发布（不存在则失败）；
-- 重建全部 10 个产物（与主发布链相同的构建、SignPath 签名与安装测试链路）；
+- 重建全部 11 个产物（EXE/NSIS 使用 SignPath，MSIX 使用固定自签名证书，并执行相同安装测试链路）；
 - 上传策略：同名资产覆盖（`--clobber`）、缺失资产新增、其他未知附件保留；
 - **不修改** Release 的标题、正文与 Notes；Microsoft Store 是否发布由 Rebuild 自己的 `publish-to-store` 开关决定；
 - 若 Tag 中 `package.json` 或 `src-tauri/Cargo.toml` 的版本与 Tag 不一致，Rebuild 会在 Runner 工作区生成临时修正版，并分发到所有源码构建与 NSIS 打包 Job；不会提交、推送或移动 Tag；
@@ -491,7 +505,7 @@ Store 发布的重试 = 对同一 Tag 重新手动触发并选择 `true`（Tag �
 - 历史 Tag 不需要包含当前发布链新增的校验/打包辅助文件。`validate-release` 会从本次 Rebuild Workflow 的 Commit 提取受控脚本和 `src-tauri/msix` 模板，与临时版本修正合并为 `rebuild-source-overlay`，再覆盖到各 Job 的 Tag 工作区；应用源码仍来自目标 Tag；
 - 产物版本号与原 Tag 一致，已安装用户不会收到重复更新提示；
 - `rebuild-release.yml` 只是 reusable workflow 调用壳；构建、签名和验证主链只在 `release.yml` 维护。
-- 调用壳显式传递 `SIGNPATH_API_TOKEN` 和四个 `PARTNER_CENTER_*` Secrets，并将调用权限上限设为 `actions: read`、`contents: write`；不使用 `secrets: inherit`。
+- 调用壳显式传递 `SIGNPATH_API_TOKEN`、两个 `MSIX_SIGNING_CERTIFICATE_*` 和四个 `PARTNER_CENTER_*` Secrets，并将调用权限上限设为 `actions: read`、`contents: write`；不使用 `secrets: inherit`。
 - Rebuild 开始和上传前都会确认 Release 仍存在且不是 Draft；上传前还会重新验证 Tag 未移动。
 
 ## 维护要求
@@ -499,7 +513,7 @@ Store 发布的重试 = 对同一 Tag 重新手动触发并选择 `true`（Tag �
 修改以下内容时，应同步更新本文档：
 
 - `.github/workflows/release.yml` 的触发条件、Job 或权限；
-- SignPath policy、artifact configuration、证书或变量命名；
+- SignPath policy、artifact configuration、EXE/NSIS 证书或变量命名；
 - Tauri bundle target 或 Windows `installMode`；
 - MSIX 清单模板（`src-tauri/msix/AppxManifest.template.xml`）或打包脚本（`scripts/build-msix.ps1`、`scripts/build-msixupload.ps1`）；
 - Microsoft Store 产品身份（保留名称、Publisher）或发布凭据；
@@ -507,7 +521,7 @@ Store 发布的重试 = 对同一 Tag 重新手动触发并选择 `true`（Tag �
 - Draft Release 创建、覆盖或校验清单行为；
 - Rust 发布工具链版本；
 - 卸载器签名例外；
-- `scripts/verify-release-tag.sh`、`scripts/assert-pe-version.ps1`、`scripts/verify-authenticode.ps1`、`scripts/verify-msix-package.ps1`、`scripts/prepare-nsis-toolchain.ps1`（Tag / 版本 / 签名 / MSIX / NSIS 共享校验逻辑）；
+- `scripts/verify-release-tag.sh`、`scripts/assert-pe-version.ps1`、`scripts/verify-authenticode.ps1`、`scripts/verify-msix-package.ps1`、`scripts/sign-msix-self-signed.ps1`、`scripts/prepare-nsis-toolchain.ps1`（Tag / 版本 / 签名 / MSIX / NSIS 共享校验逻辑）；
 - `.github/workflows/rebuild-release.yml` 的 `workflow_call` 输入、Secret 映射或权限上限；
 - x64 与 AArch64 的 Windows 构建/签名/验证 Job 为逐字复制关系（release.yml 内成对存在），改动需成对同步。
 
