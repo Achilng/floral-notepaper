@@ -67,8 +67,7 @@
         Square150x150Logo="Square150x150Logo.png"
         Square44x44Logo="Square44x44Logo.png">
         <uap:DefaultTile
-          Square71x71Logo="Square71x71Logo.png"
-          Square310x310Logo="Square310x310Logo.png" />
+          Square71x71Logo="Square71x71Logo.png" />
       </uap:VisualElements>
       <Extensions>
         <desktop:Extension
