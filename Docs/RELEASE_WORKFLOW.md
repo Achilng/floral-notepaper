@@ -478,6 +478,8 @@ Store 发布的重试 = 对同一 Tag 重新手动触发并选择 `true`（Tag �
 - 重建全部 10 个产物（与主发布链相同的构建、SignPath 签名与安装测试链路）；
 - 上传策略：同名资产覆盖（`--clobber`）、缺失资产新增、其他未知附件保留；
 - **不修改** Release 的标题、正文与 Notes，**不发布** Microsoft Store；
+- 若 Tag 中 `package.json` 或 `src-tauri/Cargo.toml` 的版本与 Tag 不一致，Rebuild 会在 Runner 工作区生成临时修正版，并分发到所有源码构建与 NSIS 打包 Job；不会提交、推送或移动 Tag；
+- 上述自动修正仅适用于 Rebuild。Tag Push、手动 Release 以及 `src-tauri/tauri.conf.json` 的版本校验仍保持严格一致；
 - 产物版本号与原 Tag 一致，已安装用户不会收到重复更新提示；
 - `rebuild-release.yml` 只是 reusable workflow 调用壳；构建、签名和验证主链只在 `release.yml` 维护。
 - 调用壳只传递 `SIGNPATH_API_TOKEN`，并将调用权限上限设为 `actions: read`、`contents: write`；Partner Center 凭据不会传入 Rebuild 调用路径。

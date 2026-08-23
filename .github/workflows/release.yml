@@ -66,6 +66,7 @@ jobs:
       commit: ${{ steps.release.outputs.commit }}
       version: ${{ steps.release.outputs.version }}
       tag: ${{ steps.release.outputs.tag }}
+      version_overrides: ${{ steps.release.outputs.version_overrides }}
     steps:
       - name: Checkout
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -111,6 +112,33 @@ jobs:
             exit 1
           fi
           version="${tag#v}"
+
+          version_overrides=false
+          if [[ "$REBUILD_MODE" == "true" && "$package_version" != "$version" ]]; then
+            echo "::warning file=package.json,line=3::Rebuild temporarily overrides package.json version from $package_version to $version."
+            package_json_tmp="$(mktemp)"
+            jq --arg version "$version" '.version = $version' package.json > "$package_json_tmp"
+            mv "$package_json_tmp" package.json
+            package_version="$(jq -r '.version' package.json)"
+            version_overrides=true
+          fi
+
+          if [[ "$REBUILD_MODE" == "true" && "$cargo_version" != "$version" ]]; then
+            echo "::warning file=src-tauri/Cargo.toml,line=3::Rebuild temporarily overrides Cargo.toml version from $cargo_version to $version."
+            cargo_toml_tmp="$(mktemp)"
+            awk -v version="$version" '
+              !updated && /^version = "/ {
+                print "version = \"" version "\""
+                updated = 1
+                next
+              }
+              { print }
+              END { if (!updated) exit 1 }
+            ' src-tauri/Cargo.toml > "$cargo_toml_tmp"
+            mv "$cargo_toml_tmp" src-tauri/Cargo.toml
+            cargo_version="$(awk -F '"' '/^version = "/ { print $2; exit }' src-tauri/Cargo.toml)"
+            version_overrides=true
+          fi
 
           git fetch --no-tags origin \
             '+refs/heads/main:refs/remotes/origin/main'
@@ -208,6 +236,7 @@ jobs:
             echo "commit=$release_commit"
             echo "version=$version"
             echo "tag=$tag"
+            echo "version_overrides=$version_overrides"
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify published release exists
@@ -227,6 +256,18 @@ jobs:
             exit 1
           fi
 
+      - name: Upload temporary Rebuild version overrides
+        if: steps.release.outputs.version_overrides == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: rebuild-version-overrides
+          path: |
+            package.json
+            src-tauri/Cargo.toml
+          if-no-files-found: error
+          overwrite: true
+          retention-days: 1
+
   build-windows-binary:
     name: Build unsigned Windows binary
     needs: validate-release
@@ -241,6 +282,13 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
+
+      - name: Apply temporary Rebuild version overrides
+        if: needs.validate-release.outputs.version_overrides == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-version-overrides
+          path: .
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -456,6 +504,13 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
+
+      - name: Apply temporary Rebuild version overrides
+        if: needs.validate-release.outputs.version_overrides == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-version-overrides
+          path: .
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -832,6 +887,13 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply temporary Rebuild version overrides
+        if: needs.validate-release.outputs.version_overrides == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-version-overrides
+          path: .
+
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
@@ -1035,6 +1097,13 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
+
+      - name: Apply temporary Rebuild version overrides
+        if: needs.validate-release.outputs.version_overrides == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-version-overrides
+          path: .
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -1896,6 +1965,13 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply temporary Rebuild version overrides
+        if: needs.validate-release.outputs.version_overrides == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-version-overrides
+          path: .
+
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
@@ -1988,6 +2064,13 @@ jobs:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
 
+      - name: Apply temporary Rebuild version overrides
+        if: needs.validate-release.outputs.version_overrides == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-version-overrides
+          path: .
+
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
@@ -2054,6 +2137,13 @@ jobs:
         with:
           persist-credentials: false
           ref: ${{ env.RELEASE_SOURCE_REF }}
+
+      - name: Apply temporary Rebuild version overrides
+        if: needs.validate-release.outputs.version_overrides == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: rebuild-version-overrides
+          path: .
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
