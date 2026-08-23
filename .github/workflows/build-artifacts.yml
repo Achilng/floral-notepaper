@@ -122,6 +122,13 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
+          save-if: ${{ inputs.source_type == 'branch' && inputs.source_ref == 'main' }}
+
       - name: Install dependencies
         run: npm ci
 
@@ -131,10 +138,24 @@ jobs:
           $ver = "${{ needs.prepare-build.outputs.version }}"
           node scripts/set-version.mjs $ver
 
+      - name: Restore Tauri NSIS downloads
+        id: restore-nsis-downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: '~\AppData\Local\floral-notepaper-ci-cache\nsis'
+          key: tauri-nsis-downloads-${{ runner.os }}-3.11-0.5.3-v1
+
       - name: Preload Tauri NSIS toolchain
         shell: pwsh
         run: |
           & 'scripts/prepare-nsis-toolchain.ps1'
+
+      - name: Save Tauri NSIS downloads
+        if: ${{ steps.restore-nsis-downloads.outputs.cache-hit != 'true' && inputs.source_type == 'branch' && inputs.source_ref == 'main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: '~\AppData\Local\floral-notepaper-ci-cache\nsis'
+          key: ${{ steps.restore-nsis-downloads.outputs.cache-primary-key }}
 
       - name: Build
         run: npm run tauri build
@@ -180,6 +201,13 @@ jobs:
           cache: npm
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
+          save-if: ${{ inputs.source_type == 'branch' && inputs.source_ref == 'main' }}
 
       - name: Install system dependencies
         run: |
@@ -261,6 +289,13 @@ jobs:
         with:
           targets: x86_64-apple-darwin
 
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
+          save-if: ${{ inputs.source_type == 'branch' && inputs.source_ref == 'main' }}
+
       - name: Install dependencies
         run: npm ci
 
@@ -316,6 +351,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
+          save-if: ${{ inputs.source_type == 'branch' && inputs.source_ref == 'main' }}
 
       - name: Install dependencies
         run: npm ci

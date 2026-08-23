@@ -11,6 +11,8 @@ Release Workflow 由以下两种方式触发：
 - **Tag Push**：格式为 `vMAJOR.MINOR.PATCH` 的 Tag 推送，例如 `v1.2.3`；
 - **手动触发（`workflow_dispatch`）**：必须填写 Tag（`vMAJOR.MINOR.PATCH`）并选择是否发布到 Microsoft Store（`publish-to-store`，默认 `false`）。
 
+此外，[Rebuild Release](../.github/workflows/rebuild-release.yml) 通过 `workflow_call` 调用同一份 Release Workflow；调用壳传入 `tag` 和内部模式标记 `rebuild=true`，不会开放 Store 发布开关。
+
 ```mermaid
 flowchart TD
   A["推送 vMAJOR.MINOR.PATCH Tag 或手动触发（Tag + Store 开关）"] --> B["验证 Tag、main 来源、版本和签名范围"]
@@ -40,7 +42,14 @@ flowchart TD
   K --> L["维护者人工核验并发布"]
 ```
 
-同一个 Tag 的运行通过 Workflow concurrency group 串行化。新运行不会取消正在执行的发布运行。
+Tag Push、手动 Release 与 Rebuild 共用 `release-<tag>` concurrency group。同一个 Tag 的运行会串行化，新运行不会取消正在执行的发布运行。
+
+## 构建缓存
+
+- Release Workflow 的 Windows x64/AArch64、Linux、macOS Intel/Apple Silicon 编译 Job 使用固定版本的 Rust cache；仅缓存 Cargo 依赖及依赖构建结果，不缓存 workspace 最终发布产物。
+- `build-artifacts.yml` 使用相同策略，但只有明确构建 `main` 源码时才保存 Rust cache；PR 或其他分支构建只允许恢复，不能写入默认分支使用的缓存。
+- NSIS cache 只保存 `nsis-3.11.zip` 与 `nsis_tauri_utils` 下载源。`scripts/prepare-nsis-toolchain.ps1` 每次使用前都会重新验证固定 SHA-1，再解压到 Tauri 工具目录；缓存内容不被直接视为可信可执行文件。
+- GitHub Actions cache 按 Branch/Tag 隔离，新 Tag 首次运行不保证命中；同 Tag 重试以及默认分支上的可信手动构建可以受益。
 
 ## 发布权限和外部配置
 
@@ -470,7 +479,9 @@ Store 发布的重试 = 对同一 Tag 重新手动触发并选择 `true`（Tag �
 - 上传策略：同名资产覆盖（`--clobber`）、缺失资产新增、其他未知附件保留；
 - **不修改** Release 的标题、正文与 Notes，**不发布** Microsoft Store；
 - 产物版本号与原 Tag 一致，已安装用户不会收到重复更新提示；
-- rebuild-release.yml 与 release.yml 主体仍为复制关系（差异：rebuild 无 `publish-msix-store`、尾 Job 为 `upload-to-existing-release`）；签名验证与 NSIS 工具链预载已收敛到 `scripts/` 共享脚本（改脚本两文件同时生效），其余主链改动仍需双份同步。
+- `rebuild-release.yml` 只是 reusable workflow 调用壳；构建、签名和验证主链只在 `release.yml` 维护。
+- 调用壳只传递 `SIGNPATH_API_TOKEN`，并将调用权限上限设为 `actions: read`、`contents: write`；Partner Center 凭据不会传入 Rebuild 调用路径。
+- Rebuild 开始和上传前都会确认 Release 仍存在且不是 Draft；上传前还会重新验证 Tag 未移动。
 
 ## 维护要求
 
@@ -485,7 +496,8 @@ Store 发布的重试 = 对同一 Tag 重新手动触发并选择 `true`（Tag �
 - Draft Release 创建、覆盖或校验清单行为；
 - Rust 发布工具链版本；
 - 卸载器签名例外；
-- `scripts/verify-authenticode.ps1`、`scripts/verify-msix-package.ps1`、`scripts/prepare-nsis-toolchain.ps1`（签名验证 / MSIX 验证 / NSIS 预载共享脚本，release.yml 与 rebuild-release.yml 共用）；
+- `scripts/verify-release-tag.sh`、`scripts/assert-pe-version.ps1`、`scripts/verify-authenticode.ps1`、`scripts/verify-msix-package.ps1`、`scripts/prepare-nsis-toolchain.ps1`（Tag / 版本 / 签名 / MSIX / NSIS 共享校验逻辑）；
+- `.github/workflows/rebuild-release.yml` 的 `workflow_call` 输入、Secret 映射或权限上限；
 - x64 与 AArch64 的 Windows 构建/签名/验证 Job 为逐字复制关系（release.yml 内成对存在），改动需成对同步。
 
 对 Release Workflow 的变更应经过安全审查，并由 CODEOWNERS 保护 Workflow 和 SignPath policy 文件。

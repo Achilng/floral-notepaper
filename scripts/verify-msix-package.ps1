@@ -21,15 +21,14 @@
   Release version in MAJOR.MINOR.PATCH form; the manifest version must be
   MAJOR.MINOR.PATCH.0.
 
-.PARAMETER RequireTimestamp
-  Accepted for call-site compatibility; the signature check always requires a
-  trusted timestamp and a Valid status, matching the original workflow step.
+.PARAMETER SigntoolVerify
+  Also verify the package with signtool.exe verify /pa /all /v.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$MsixPath,
   [Parameter(Mandatory = $true)][ValidateSet('x64', 'aarch64')][string]$Arch,
   [Parameter(Mandatory = $true)][string]$Version,
-  [switch]$RequireTimestamp
+  [switch]$SigntoolVerify
 )
 
 $ErrorActionPreference = 'Stop'
@@ -39,7 +38,10 @@ if (-not (Test-Path -LiteralPath $MsixPath -PathType Leaf)) {
   throw "Signed MSIX package was not found at $MsixPath."
 }
 
-& (Join-Path $PSScriptRoot 'verify-authenticode.ps1') -Path $MsixPath -RequireTimestamp
+& (Join-Path $PSScriptRoot 'verify-authenticode.ps1') `
+  -Path $MsixPath `
+  -RequireTimestamp `
+  -SigntoolVerify:$SigntoolVerify
 
 $zip = [System.IO.Compression.ZipFile]::OpenRead((Resolve-Path -LiteralPath $MsixPath).Path)
 try {

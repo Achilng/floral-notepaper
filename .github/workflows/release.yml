@@ -18,9 +18,35 @@ on:
           - "false"
           - "true"
         default: "false"
+  workflow_call:
+    inputs:
+      tag:
+        description: "Release tag (vMAJOR.MINOR.PATCH)"
+        required: true
+        type: string
+      rebuild:
+        description: "Use rebuild semantics and upload to an existing published release"
+        required: true
+        type: boolean
+    secrets:
+      SIGNPATH_API_TOKEN:
+        description: "Optional repository-level fallback for the release-signing environment secret"
+        required: false
+      PARTNER_CENTER_TENANT_ID:
+        description: "Direct Store dispatch only; the Rebuild caller does not pass this secret"
+        required: false
+      PARTNER_CENTER_SELLER_ID:
+        description: "Direct Store dispatch only; the Rebuild caller does not pass this secret"
+        required: false
+      PARTNER_CENTER_CLIENT_ID:
+        description: "Direct Store dispatch only; the Rebuild caller does not pass this secret"
+        required: false
+      PARTNER_CENTER_CLIENT_SECRET:
+        description: "Direct Store dispatch only; the Rebuild caller does not pass this secret"
+        required: false
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: release-${{ github.event_name == 'push' && github.ref_name || inputs.tag }}
   cancel-in-progress: false
 
 permissions: {}
@@ -28,6 +54,7 @@ permissions: {}
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   RUST_TOOLCHAIN: "1.96.1"
+  RELEASE_SOURCE_REF: ${{ github.event_name == 'push' && github.ref || inputs.tag }}
 
 jobs:
   validate-release:
@@ -45,13 +72,14 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Validate source, versions, and signing scope
         id: release
         shell: bash
         env:
           INPUT_TAG: ${{ inputs.tag }}
+          REBUILD_MODE: ${{ inputs.rebuild }}
         run: |
           set -euo pipefail
 
@@ -59,15 +87,21 @@ jobs:
           tauri_version="$(jq -r '.version' src-tauri/tauri.conf.json)"
           cargo_version="$(sed -n 's/^version = "\([^"]*\)"/\1/p' src-tauri/Cargo.toml | head -n 1)"
 
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
-            tag="$GITHUB_REF_NAME"
-            release_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
+          if [[ "$REBUILD_MODE" == "true" ]]; then
+            tag="$INPUT_TAG"
+            if [[ -z "$tag" ]]; then
+              echo "rebuild requires the tag input." >&2
+              exit 1
+            fi
           elif [[ "$GITHUB_EVENT_NAME" == "workflow_dispatch" ]]; then
             tag="$INPUT_TAG"
             if [[ -z "$tag" ]]; then
-              echo "workflow_dispatch requires the tag input." >&2
+              echo "$GITHUB_EVENT_NAME requires the tag input." >&2
               exit 1
             fi
+          elif [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            tag="$GITHUB_REF_NAME"
+            release_commit="$(git rev-parse "${GITHUB_SHA}^{commit}")"
           else
             echo "Unsupported release source: $GITHUB_REF_TYPE $GITHUB_REF_NAME" >&2
             exit 1
@@ -99,7 +133,7 @@ jobs:
             exit 1
           fi
 
-          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+          if [[ "$REBUILD_MODE" != "true" && "$GITHUB_EVENT_NAME" == "push" && "$GITHUB_REF_TYPE" == "tag" ]]; then
             if [[ "$remote_tag_commit" != "$release_commit" ]]; then
               echo "Release tag $tag moved: expected $release_commit, got $remote_tag_commit." >&2
               exit 1
@@ -170,9 +204,28 @@ jobs:
             exit 1
           fi
 
-          echo "commit=$release_commit" >> "$GITHUB_OUTPUT"
-          echo "version=$version" >> "$GITHUB_OUTPUT"
-          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          {
+            echo "commit=$release_commit"
+            echo "version=$version"
+            echo "tag=$tag"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify published release exists
+        if: inputs.rebuild == true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            echo "Release $RELEASE_TAG does not exist; rebuild requires an existing published release." >&2
+            exit 1
+          fi
+          if [[ "$is_draft" != "false" ]]; then
+            echo "Release $RELEASE_TAG is still a draft; rebuild requires an existing published release." >&2
+            exit 1
+          fi
 
   build-windows-binary:
     name: Build unsigned Windows binary
@@ -187,7 +240,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -199,6 +252,12 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
 
       - name: Install dependencies
         run: npm ci
@@ -273,17 +332,11 @@ jobs:
             }
             Copy-Item -LiteralPath $binary.Source -Destination $binary.Destination -Force
 
-            $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $binary.Destination).Path)
-            $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
-            $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
-            foreach ($entry in @{
-                FileVersion = $versionInfo.FileVersion
-                ProductVersion = $versionInfo.ProductVersion
-              }.GetEnumerator()) {
-              if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
-                throw "Unexpected PE $($entry.Key) for $($binary.Source): expected $env:RELEASE_VERSION, got $($entry.Value)."
-              }
-            }
+            & 'scripts/assert-pe-version.ps1' `
+              -Path $binary.Destination `
+              -Version $env:RELEASE_VERSION `
+              -Kind 'PE' `
+              -ContextText $binary.Source
           }
 
           Compress-Archive `
@@ -316,7 +369,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Revalidate release tag before signing
         shell: bash
@@ -324,33 +377,10 @@ jobs:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          set -euo pipefail
-
-          git fetch --no-tags origin \
-            '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
-            exit 1
-          fi
-
-          remote_tag_commit="$(
-            git ls-remote origin \
-              "refs/tags/${RELEASE_TAG}" \
-              "refs/tags/${RELEASE_TAG}^{}" |
-              awk '
-                $2 ~ /\^\{\}$/ { peeled = $1 }
-                $2 !~ /\^\{\}$/ { direct = $1 }
-                END {
-                  if (peeled != "") print peeled
-                  else print direct
-                }
-              '
-          )"
-          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
-            echo "Release tag $RELEASE_TAG was deleted or moved before binary signing." >&2
-            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
-            exit 1
-          fi
+          scripts/verify-release-tag.sh \
+            --commit "$RELEASE_COMMIT" \
+            --tag "$RELEASE_TAG" \
+            --context "binary signing"
 
       - name: Submit binary signing request
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
@@ -377,41 +407,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          function Get-SignToolPath {
-            $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
-            if ($command) {
-              return $command.Source
-            }
-
-            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
-            $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
-              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-            if (-not $candidate) {
-              throw 'signtool.exe was not found on the runner.'
-            }
-            return $candidate.FullName
-          }
-
-          function Assert-AuthenticodeSignature {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-              throw "Signed file was not found: $Path"
-            }
-
-            & 'scripts/verify-authenticode.ps1' -Path $Path -RequireTimestamp
-
-            $signTool = Get-SignToolPath
-            & $signTool verify /pa /all /v $Path
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
-            }
-          }
-
           $mainBinary = "signed-windows-binary/floral-notepaper_$($env:RELEASE_VERSION).exe"
-          Assert-AuthenticodeSignature -Path $mainBinary
+          & 'scripts/verify-authenticode.ps1' -Path $mainBinary -RequireTimestamp -SigntoolVerify
 
           $binaryContent = [System.Text.Encoding]::Latin1.GetString(
             [System.IO.File]::ReadAllBytes($mainBinary)
@@ -458,7 +455,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -513,10 +510,24 @@ jobs:
             "$($binary.Output)=$sha256" >> $env:GITHUB_OUTPUT
           }
 
+      - name: Restore Tauri NSIS downloads
+        id: restore-nsis-downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: '~\AppData\Local\floral-notepaper-ci-cache\nsis'
+          key: tauri-nsis-downloads-${{ runner.os }}-3.11-0.5.3-v1
+
       - name: Preload Tauri NSIS toolchain
         shell: pwsh
         run: |
           & 'scripts/prepare-nsis-toolchain.ps1'
+
+      - name: Save Tauri NSIS downloads
+        if: steps.restore-nsis-downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: '~\AppData\Local\floral-notepaper-ci-cache\nsis'
+          key: ${{ steps.restore-nsis-downloads.outputs.cache-primary-key }}
 
       - name: Bundle NSIS installer without recompiling
         run: npm run tauri -- bundle --bundles nsis --no-sign
@@ -555,17 +566,10 @@ jobs:
           $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_x64-setup.exe"
           Copy-Item -LiteralPath $installers[0].FullName -Destination $asset -Force
 
-          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $asset).Path)
-          $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
-          $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
-          foreach ($entry in @{
-              FileVersion = $versionInfo.FileVersion
-              ProductVersion = $versionInfo.ProductVersion
-            }.GetEnumerator()) {
-            if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
-              throw "Unexpected installer $($entry.Key): expected $env:RELEASE_VERSION, got $($entry.Value)."
-            }
-          }
+          & 'scripts/assert-pe-version.ps1' `
+            -Path $asset `
+            -Version $env:RELEASE_VERSION `
+            -Kind 'installer'
 
       - name: Upload unsigned installer for SignPath
         id: upload
@@ -592,7 +596,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Revalidate release tag before signing
         shell: bash
@@ -600,33 +604,10 @@ jobs:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          set -euo pipefail
-
-          git fetch --no-tags origin \
-            '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
-            exit 1
-          fi
-
-          remote_tag_commit="$(
-            git ls-remote origin \
-              "refs/tags/${RELEASE_TAG}" \
-              "refs/tags/${RELEASE_TAG}^{}" |
-              awk '
-                $2 ~ /\^\{\}$/ { peeled = $1 }
-                $2 !~ /\^\{\}$/ { direct = $1 }
-                END {
-                  if (peeled != "") print peeled
-                  else print direct
-                }
-              '
-          )"
-          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
-            echo "Release tag $RELEASE_TAG was deleted or moved before installer signing." >&2
-            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
-            exit 1
-          fi
+          scripts/verify-release-tag.sh \
+            --commit "$RELEASE_COMMIT" \
+            --tag "$RELEASE_TAG" \
+            --context "installer signing"
 
       - name: Submit installer signing request
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
@@ -656,39 +637,6 @@ jobs:
           EXPECTED_CERTIFICATE_SHA1: ${{ vars.SIGNPATH_CERTIFICATE_SHA1 }}
         run: |
           $ErrorActionPreference = 'Stop'
-
-          function Get-SignToolPath {
-            $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
-            if ($command) {
-              return $command.Source
-            }
-
-            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
-            $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
-              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-            if (-not $candidate) {
-              throw 'signtool.exe was not found on the runner.'
-            }
-            return $candidate.FullName
-          }
-
-          function Assert-AuthenticodeSignature {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-              throw "Signed file was not found: $Path"
-            }
-
-            & 'scripts/verify-authenticode.ps1' -Path $Path -RequireTimestamp
-
-            $signTool = Get-SignToolPath
-            & $signTool verify /pa /all /v $Path
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
-            }
-          }
 
           function Test-PortableExecutable {
             param([Parameter(Mandatory = $true)][string]$Path)
@@ -771,7 +719,7 @@ jobs:
             $installDir = $installEntry.InstallLocation.Trim('"')
             $installedBinary = Join-Path $installDir 'floral-notepaper.exe'
             $uninstaller = Join-Path $installDir 'uninstall.exe'
-            Assert-AuthenticodeSignature -Path $installedBinary
+            & 'scripts/verify-authenticode.ps1' -Path $installedBinary -RequireTimestamp -SigntoolVerify
 
             $installedSha256 = (Get-FileHash -LiteralPath $installedBinary -Algorithm SHA256).Hash
             if ($installedSha256 -ne $ExpectedBinarySha256) {
@@ -803,7 +751,7 @@ jobs:
             $uninstallerSha256 = (Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
             $uninstallerSignature = Get-AuthenticodeSignature -LiteralPath $uninstaller
             if ($uninstallerSignature.Status -eq 'Valid') {
-              Assert-AuthenticodeSignature -Path $uninstaller
+              & 'scripts/verify-authenticode.ps1' -Path $uninstaller -RequireTimestamp -SigntoolVerify
             } elseif ($uninstallerSignature.Status -ne 'NotSigned') {
               throw "$Mode uninstaller has an unexpected Authenticode state: $($uninstallerSignature.Status): $($uninstallerSignature.StatusMessage)"
             }
@@ -827,8 +775,8 @@ jobs:
 
           $installer = "signed-windows-installer/floral-notepaper_$($env:RELEASE_VERSION)_x64-setup.exe"
           $portable = "signed-windows-binaries/floral-notepaper_$($env:RELEASE_VERSION).exe"
-          Assert-AuthenticodeSignature -Path $installer
-          Assert-AuthenticodeSignature -Path $portable
+          & 'scripts/verify-authenticode.ps1' -Path $installer -RequireTimestamp -SigntoolVerify
+          & 'scripts/verify-authenticode.ps1' -Path $portable -RequireTimestamp -SigntoolVerify
           $expectedBinarySha256 = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash
 
           "### Windows signing verification" >> $env:GITHUB_STEP_SUMMARY
@@ -882,7 +830,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -895,6 +843,12 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: aarch64-pc-windows-msvc
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
 
       - name: Install dependencies
         run: npm ci
@@ -967,17 +921,11 @@ jobs:
           $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
           Copy-Item -LiteralPath $binaryPath -Destination $asset -Force
 
-          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $asset).Path)
-          $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
-          $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
-          foreach ($entry in @{
-              FileVersion = $versionInfo.FileVersion
-              ProductVersion = $versionInfo.ProductVersion
-            }.GetEnumerator()) {
-            if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
-              throw "Unexpected PE $($entry.Key) for $binaryPath: expected $env:RELEASE_VERSION, got $($entry.Value)."
-            }
-          }
+          & 'scripts/assert-pe-version.ps1' `
+            -Path $asset `
+            -Version $env:RELEASE_VERSION `
+            -Kind 'PE' `
+            -ContextText $binaryPath
 
       - name: Upload unsigned AArch64 binary for SignPath
         id: upload
@@ -1004,7 +952,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Revalidate release tag before signing
         shell: bash
@@ -1012,33 +960,10 @@ jobs:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          set -euo pipefail
-
-          git fetch --no-tags origin \
-            '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
-            exit 1
-          fi
-
-          remote_tag_commit="$(
-            git ls-remote origin \
-              "refs/tags/${RELEASE_TAG}" \
-              "refs/tags/${RELEASE_TAG}^{}" |
-              awk '
-                $2 ~ /\^\{\}$/ { peeled = $1 }
-                $2 !~ /\^\{\}$/ { direct = $1 }
-                END {
-                  if (peeled != "") print peeled
-                  else print direct
-                }
-              '
-          )"
-          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
-            echo "Release tag $RELEASE_TAG was deleted or moved before AArch64 binary signing." >&2
-            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
-            exit 1
-          fi
+          scripts/verify-release-tag.sh \
+            --commit "$RELEASE_COMMIT" \
+            --tag "$RELEASE_TAG" \
+            --context "AArch64 binary signing"
 
       - name: Submit AArch64 binary signing request
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
@@ -1065,41 +990,8 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
 
-          function Get-SignToolPath {
-            $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
-            if ($command) {
-              return $command.Source
-            }
-
-            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
-            $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
-              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-            if (-not $candidate) {
-              throw 'signtool.exe was not found on the runner.'
-            }
-            return $candidate.FullName
-          }
-
-          function Assert-AuthenticodeSignature {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-              throw "Signed file was not found: $Path"
-            }
-
-            & 'scripts/verify-authenticode.ps1' -Path $Path -RequireTimestamp
-
-            $signTool = Get-SignToolPath
-            & $signTool verify /pa /all /v $Path
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
-            }
-          }
-
           $mainBinary = "signed-windows-binary-arm64/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
-          Assert-AuthenticodeSignature -Path $mainBinary
+          & 'scripts/verify-authenticode.ps1' -Path $mainBinary -RequireTimestamp -SigntoolVerify
 
           $binaryContent = [System.Text.Encoding]::Latin1.GetString(
             [System.IO.File]::ReadAllBytes($mainBinary)
@@ -1115,17 +1007,10 @@ jobs:
             throw 'The signed AArch64 executable does not contain exactly one Tauri NSIS bundle type marker.'
           }
 
-          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $mainBinary).Path)
-          $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
-          $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
-          foreach ($entry in @{
-              FileVersion = $versionInfo.FileVersion
-              ProductVersion = $versionInfo.ProductVersion
-            }.GetEnumerator()) {
-            if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
-              throw "Unexpected $($entry.Key) after signing: expected $env:RELEASE_VERSION, got $($entry.Value)."
-            }
-          }
+          & 'scripts/assert-pe-version.ps1' `
+            -Path $mainBinary `
+            -Version $env:RELEASE_VERSION `
+            -Kind 'signed'
 
       - name: Upload verified signed AArch64 binary
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
@@ -1149,7 +1034,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -1205,10 +1090,24 @@ jobs:
             "$($binary.Output)=$sha256" >> $env:GITHUB_OUTPUT
           }
 
+      - name: Restore Tauri NSIS downloads
+        id: restore-nsis-downloads
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: '~\AppData\Local\floral-notepaper-ci-cache\nsis'
+          key: tauri-nsis-downloads-${{ runner.os }}-3.11-0.5.3-v1
+
       - name: Preload Tauri NSIS toolchain
         shell: pwsh
         run: |
           & 'scripts/prepare-nsis-toolchain.ps1'
+
+      - name: Save Tauri NSIS downloads
+        if: steps.restore-nsis-downloads.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: '~\AppData\Local\floral-notepaper-ci-cache\nsis'
+          key: ${{ steps.restore-nsis-downloads.outputs.cache-primary-key }}
 
       - name: Bundle AArch64 NSIS installer without recompiling
         run: npm run tauri -- bundle --target aarch64-pc-windows-msvc --bundles nsis --no-sign
@@ -1247,17 +1146,10 @@ jobs:
           $asset = Join-Path $releaseDir "floral-notepaper_$($env:RELEASE_VERSION)_aarch64-setup.exe"
           Copy-Item -LiteralPath $installers[0].FullName -Destination $asset -Force
 
-          $versionInfo = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Resolve-Path $asset).Path)
-          $escapedVersion = [Regex]::Escape($env:RELEASE_VERSION)
-          $expectedVersionPattern = "^$escapedVersion(?:\.0)?(?:[+ -]|$)"
-          foreach ($entry in @{
-              FileVersion = $versionInfo.FileVersion
-              ProductVersion = $versionInfo.ProductVersion
-            }.GetEnumerator()) {
-            if ([string]::IsNullOrWhiteSpace($entry.Value) -or $entry.Value -notmatch $expectedVersionPattern) {
-              throw "Unexpected installer $($entry.Key): expected $env:RELEASE_VERSION, got $($entry.Value)."
-            }
-          }
+          & 'scripts/assert-pe-version.ps1' `
+            -Path $asset `
+            -Version $env:RELEASE_VERSION `
+            -Kind 'installer'
 
       - name: Upload unsigned AArch64 installer for SignPath
         id: upload
@@ -1284,7 +1176,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Revalidate release tag before AArch64 installer signing
         shell: bash
@@ -1292,33 +1184,10 @@ jobs:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          set -euo pipefail
-
-          git fetch --no-tags origin \
-            '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
-            exit 1
-          fi
-
-          remote_tag_commit="$(
-            git ls-remote origin \
-              "refs/tags/${RELEASE_TAG}" \
-              "refs/tags/${RELEASE_TAG}^{}" |
-              awk '
-                $2 ~ /\^\{\}$/ { peeled = $1 }
-                $2 !~ /\^\{\}$/ { direct = $1 }
-                END {
-                  if (peeled != "") print peeled
-                  else print direct
-                }
-              '
-          )"
-          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
-            echo "Release tag $RELEASE_TAG was deleted or moved before AArch64 installer signing." >&2
-            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
-            exit 1
-          fi
+          scripts/verify-release-tag.sh \
+            --commit "$RELEASE_COMMIT" \
+            --tag "$RELEASE_TAG" \
+            --context "AArch64 installer signing"
 
       - name: Submit AArch64 installer signing request
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
@@ -1349,39 +1218,6 @@ jobs:
           ARM64_RUNTIME_TEST: ${{ vars.MSIX_ARM64_RUNTIME_TEST }}
         run: |
           $ErrorActionPreference = 'Stop'
-
-          function Get-SignToolPath {
-            $command = Get-Command signtool.exe -ErrorAction SilentlyContinue
-            if ($command) {
-              return $command.Source
-            }
-
-            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
-            $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
-              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-            if (-not $candidate) {
-              throw 'signtool.exe was not found on the runner.'
-            }
-            return $candidate.FullName
-          }
-
-          function Assert-AuthenticodeSignature {
-            param([Parameter(Mandatory = $true)][string]$Path)
-
-            if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
-              throw "Signed file was not found: $Path"
-            }
-
-            & 'scripts/verify-authenticode.ps1' -Path $Path -RequireTimestamp
-
-            $signTool = Get-SignToolPath
-            & $signTool verify /pa /all /v $Path
-            if ($LASTEXITCODE -ne 0) {
-              throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
-            }
-          }
 
           function Test-PortableExecutable {
             param([Parameter(Mandatory = $true)][string]$Path)
@@ -1464,7 +1300,7 @@ jobs:
             $installDir = $installEntry.InstallLocation.Trim('"')
             $installedBinary = Join-Path $installDir 'floral-notepaper.exe'
             $uninstaller = Join-Path $installDir 'uninstall.exe'
-            Assert-AuthenticodeSignature -Path $installedBinary
+            & 'scripts/verify-authenticode.ps1' -Path $installedBinary -RequireTimestamp -SigntoolVerify
 
             $installedSha256 = (Get-FileHash -LiteralPath $installedBinary -Algorithm SHA256).Hash
             if ($installedSha256 -ne $ExpectedBinarySha256) {
@@ -1496,7 +1332,7 @@ jobs:
             $uninstallerSha256 = (Get-FileHash -LiteralPath $uninstaller -Algorithm SHA256).Hash
             $uninstallerSignature = Get-AuthenticodeSignature -LiteralPath $uninstaller
             if ($uninstallerSignature.Status -eq 'Valid') {
-              Assert-AuthenticodeSignature -Path $uninstaller
+              & 'scripts/verify-authenticode.ps1' -Path $uninstaller -RequireTimestamp -SigntoolVerify
             } elseif ($uninstallerSignature.Status -ne 'NotSigned') {
               throw "$Mode uninstaller has an unexpected Authenticode state: $($uninstallerSignature.Status): $($uninstallerSignature.StatusMessage)"
             }
@@ -1520,8 +1356,8 @@ jobs:
 
           $installer = "signed-windows-installer-arm64/floral-notepaper_$($env:RELEASE_VERSION)_aarch64-setup.exe"
           $portable = "signed-windows-binaries-arm64/floral-notepaper_$($env:RELEASE_VERSION)_aarch64.exe"
-          Assert-AuthenticodeSignature -Path $installer
-          Assert-AuthenticodeSignature -Path $portable
+          & 'scripts/verify-authenticode.ps1' -Path $installer -RequireTimestamp -SigntoolVerify
+          & 'scripts/verify-authenticode.ps1' -Path $portable -RequireTimestamp -SigntoolVerify
           $expectedBinarySha256 = (Get-FileHash -LiteralPath $portable -Algorithm SHA256).Hash
 
           "### Windows AArch64 signing verification" >> $env:GITHUB_STEP_SUMMARY
@@ -1584,7 +1420,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Download signed Windows binaries
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -1616,29 +1452,7 @@ jobs:
             throw "Signed executable was not found at $sourcePath."
           }
 
-          $expectedThumbprint = ($env:EXPECTED_CERTIFICATE_SHA1 -replace '\s', '').ToUpperInvariant()
-          if ($expectedThumbprint -notmatch '^[0-9A-F]{40}$') {
-            throw 'SIGNPATH_CERTIFICATE_SHA1 must contain a 40-character SHA-1 certificate thumbprint.'
-          }
-          $signature = Get-AuthenticodeSignature -LiteralPath $sourcePath
-          $certificate = $signature.SignerCertificate
-          if (-not $certificate) {
-            throw "The restored executable does not contain a signer certificate: $sourcePath"
-          }
-          $actualThumbprint = ($certificate.Thumbprint -replace '\s', '').ToUpperInvariant()
-          if (
-            $actualThumbprint -ne $expectedThumbprint -or
-            $certificate.Subject -ne $env:EXPECTED_CERTIFICATE_SUBJECT -or
-            $certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER
-          ) {
-            throw "The restored executable was signed by an unexpected certificate: $sourcePath"
-          }
-          if (-not $signature.TimeStamperCertificate) {
-            throw "The restored executable does not contain a trusted timestamp: $sourcePath"
-          }
-          if ($signature.Status -ne 'Valid') {
-            throw "The restored executable is not validly signed: $sourcePath: $($signature.Status): $($signature.StatusMessage)"
-          }
+          & 'scripts/verify-authenticode.ps1' -Path $sourcePath -RequireTimestamp
 
           $layoutDir = 'msix-layout'
           New-Item -ItemType Directory -Path $layoutDir -Force | Out-Null
@@ -1698,7 +1512,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Revalidate release tag before signing
         shell: bash
@@ -1706,33 +1520,10 @@ jobs:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          set -euo pipefail
-
-          git fetch --no-tags origin \
-            '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
-            exit 1
-          fi
-
-          remote_tag_commit="$(
-            git ls-remote origin \
-              "refs/tags/${RELEASE_TAG}" \
-              "refs/tags/${RELEASE_TAG}^{}" |
-              awk '
-                $2 ~ /\^\{\}$/ { peeled = $1 }
-                $2 !~ /\^\{\}$/ { direct = $1 }
-                END {
-                  if (peeled != "") print peeled
-                  else print direct
-                }
-              '
-          )"
-          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
-            echo "Release tag $RELEASE_TAG was deleted or moved before MSIX signing." >&2
-            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
-            exit 1
-          fi
+          scripts/verify-release-tag.sh \
+            --commit "$RELEASE_COMMIT" \
+            --tag "$RELEASE_TAG" \
+            --context "MSIX signing"
 
       - name: Submit MSIX signing request
         uses: signpath/github-action-submit-signing-request@b9d91eadd323de506c0c81cf0c7fe7438f3360fd # v2
@@ -1790,23 +1581,11 @@ jobs:
             throw "Signed MSIX package was not found at $msix."
           }
 
-          & 'scripts/verify-authenticode.ps1' -Path $msix -RequireTimestamp
-
-          $signTool = Get-Command signtool.exe -ErrorAction SilentlyContinue
-          if (-not $signTool) {
-            $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
-            $signTool = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
-              Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
-              Sort-Object FullName -Descending |
-              Select-Object -First 1
-          }
-          if (-not $signTool) {
-            throw 'signtool.exe was not found on the runner.'
-          }
-          & $signTool.FullName verify /pa /all /v $msix
-          if ($LASTEXITCODE -ne 0) {
-            throw "signtool verification failed for $msix with exit code $LASTEXITCODE."
-          }
+          & 'scripts/verify-msix-package.ps1' `
+            -MsixPath $msix `
+            -Arch $env:MATRIX_ARCH `
+            -Version $env:RELEASE_VERSION `
+            -SigntoolVerify
 
           $verifyDir = Join-Path $env:RUNNER_TEMP "msix-verify-$($env:MATRIX_ARCH)"
           if (Test-Path -LiteralPath $verifyDir) {
@@ -1817,23 +1596,6 @@ jobs:
           & $makeAppx unpack /p $msix /d $verifyDir /o
           if ($LASTEXITCODE -ne 0) {
             throw "makeappx unpack verification failed with exit code $LASTEXITCODE."
-          }
-
-          [xml]$packedManifest = Get-Content -LiteralPath (Join-Path $verifyDir 'AppxManifest.xml') -Raw -Encoding UTF8
-          $identity = $packedManifest.Package.Identity
-          if ($identity.Name -ne $env:MSIX_IDENTITY_NAME) {
-            throw "Unexpected identity Name in signed MSIX: $($identity.Name)"
-          }
-          if ($identity.Publisher -ne $env:MSIX_PUBLISHER_CN) {
-            throw "Unexpected identity Publisher in signed MSIX: $($identity.Publisher)"
-          }
-          if ($identity.Version -ne "$($env:RELEASE_VERSION).0") {
-            throw "Unexpected identity Version in signed MSIX: $($identity.Version)"
-          }
-          # File names use "aarch64"; AppxManifest ProcessorArchitecture stays "arm64"
-          $manifestArch = if ($env:MATRIX_ARCH -eq 'aarch64') { 'arm64' } else { $env:MATRIX_ARCH }
-          if ($identity.ProcessorArchitecture -ne $manifestArch) {
-            throw "Unexpected ProcessorArchitecture in signed MSIX: $($identity.ProcessorArchitecture)"
           }
 
           if ($env:MATRIX_ARCH -eq 'x64') {
@@ -1903,7 +1665,7 @@ jobs:
         run: |
           $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
           if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) { throw "Signed MSIX package was not found at $msix." }
-          & 'scripts/verify-msix-package.ps1' -MsixPath $msix -Arch $env:MATRIX_ARCH -Version $env:RELEASE_VERSION -RequireTimestamp
+          & 'scripts/verify-msix-package.ps1' -MsixPath $msix -Arch $env:MATRIX_ARCH -Version $env:RELEASE_VERSION
 
       - name: Install, launch and uninstall test
         if: matrix.arch == 'x64' || vars.MSIX_ARM64_RUNTIME_TEST != 'false'
@@ -2003,7 +1765,8 @@ jobs:
     needs: [validate-release, sign-windows-msix, verify-windows-msix-install]
     # Store 发布仅支持手动 workflow_dispatch；Tag push 永不发布。
     if: |
-      github.event_name == 'workflow_dispatch' &&
+      inputs.rebuild != true &&
+        github.event_name == 'workflow_dispatch' &&
         inputs['publish-to-store'] == 'true'
     runs-on: windows-latest
     permissions:
@@ -2014,7 +1777,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Revalidate release tag before publishing
         shell: bash
@@ -2022,33 +1785,10 @@ jobs:
           RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
           RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
         run: |
-          set -euo pipefail
-
-          git fetch --no-tags origin \
-            '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
-            exit 1
-          fi
-
-          remote_tag_commit="$(
-            git ls-remote origin \
-              "refs/tags/${RELEASE_TAG}" \
-              "refs/tags/${RELEASE_TAG}^{}" |
-              awk '
-                $2 ~ /\^\{\}$/ { peeled = $1 }
-                $2 !~ /\^\{\}$/ { direct = $1 }
-                END {
-                  if (peeled != "") print peeled
-                  else print direct
-                }
-              '
-          )"
-          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
-            echo "Release tag $RELEASE_TAG was deleted or moved before Store publishing." >&2
-            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
-            exit 1
-          fi
+          scripts/verify-release-tag.sh \
+            --commit "$RELEASE_COMMIT" \
+            --tag "$RELEASE_TAG" \
+            --context "Store publishing"
 
       - name: Download signed MSIX (x64)
         uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
@@ -2078,7 +1818,7 @@ jobs:
             if (-not (Test-Path -LiteralPath $msix -PathType Leaf)) {
               throw "Signed MSIX package was not found at $msix."
             }
-            & 'scripts/verify-msix-package.ps1' -MsixPath $msix -Arch $arch -Version $env:RELEASE_VERSION -RequireTimestamp
+            & 'scripts/verify-msix-package.ps1' -MsixPath $msix -Arch $arch -Version $env:RELEASE_VERSION
           }
 
       - name: Build MSIX upload container
@@ -2154,7 +1894,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -2166,6 +1906,12 @@ jobs:
         uses: dtolnay/rust-toolchain@4be7066ada62dd38de10e7b70166bc74ed198c30
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
 
       - name: Install system dependencies
         run: |
@@ -2240,7 +1986,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -2253,6 +1999,12 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: x86_64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
 
       - name: Install dependencies
         run: npm ci
@@ -2301,7 +2053,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
 
       - name: Setup Node.js
         uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
@@ -2314,6 +2066,12 @@ jobs:
         with:
           toolchain: ${{ env.RUST_TOOLCHAIN }}
           targets: aarch64-apple-darwin
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: "src-tauri -> target"
+          cache-workspace-crates: "false"
 
       - name: Install dependencies
         run: npm ci
@@ -2353,6 +2111,7 @@ jobs:
 
   publish-draft-release:
     name: Publish verified assets to draft release
+    if: inputs.rebuild != true
     needs:
       - validate-release
       - sign-windows-binary
@@ -2372,7 +2131,7 @@ jobs:
         uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
         with:
           persist-credentials: false
-          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref }}
+          ref: ${{ env.RELEASE_SOURCE_REF }}
           fetch-depth: 0
 
       - name: Download signed Windows portable executable
@@ -2476,31 +2235,10 @@ jobs:
         run: |
           set -euo pipefail
 
-          git fetch --no-tags origin \
-            '+refs/heads/main:refs/remotes/origin/main'
-          if ! git merge-base --is-ancestor "$RELEASE_COMMIT" refs/remotes/origin/main; then
-            echo "Release commit $RELEASE_COMMIT is no longer contained in main." >&2
-            exit 1
-          fi
-
-          remote_tag_commit="$(
-            git ls-remote origin \
-              "refs/tags/${RELEASE_TAG}" \
-              "refs/tags/${RELEASE_TAG}^{}" |
-              awk '
-                $2 ~ /\^\{\}$/ { peeled = $1 }
-                $2 !~ /\^\{\}$/ { direct = $1 }
-                END {
-                  if (peeled != "") print peeled
-                  else print direct
-                }
-              '
-          )"
-          if [[ -z "$remote_tag_commit" || "$remote_tag_commit" != "$RELEASE_COMMIT" ]]; then
-            echo "Release tag $RELEASE_TAG was deleted or moved before publishing." >&2
-            echo "Expected $RELEASE_COMMIT, got ${remote_tag_commit:-<missing>}." >&2
-            exit 1
-          fi
+          scripts/verify-release-tag.sh \
+            --commit "$RELEASE_COMMIT" \
+            --tag "$RELEASE_TAG" \
+            --context "publishing"
 
           release_note_file="Docs/release-note/${RELEASE_VERSION}.md"
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
@@ -2527,3 +2265,172 @@ jobs:
           gh release upload "$RELEASE_TAG" release-assets/* \
             --repo "$GITHUB_REPOSITORY" \
             --clobber
+
+  upload-to-existing-release:
+    name: Upload artifacts to existing release
+    if: inputs.rebuild == true
+    needs:
+      - validate-release
+      - sign-and-verify-windows-installer
+      - sign-and-verify-windows-installer-aarch64
+      - sign-windows-msix
+      - verify-windows-msix-install
+      - build-linux
+      - build-macos-x86_64
+      - build-macos-aarch64
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - name: Checkout release notes
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ env.RELEASE_SOURCE_REF }}
+
+      - name: Revalidate release tag
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          scripts/verify-release-tag.sh \
+            --commit "$RELEASE_COMMIT" \
+            --tag "$RELEASE_TAG" \
+            --context "uploading"
+
+      - name: Revalidate existing release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          if ! is_draft="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq '.isDraft' 2>/dev/null)"; then
+            echo "Release $RELEASE_TAG no longer exists; aborting." >&2
+            exit 1
+          fi
+          if [[ "$is_draft" != "false" ]]; then
+            echo "Release $RELEASE_TAG is no longer published; aborting." >&2
+            exit 1
+          fi
+
+      - name: Download signed Windows portable executable
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-portable
+          path: release-assets
+
+      - name: Download signed Windows installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-installer
+          path: release-assets
+
+      - name: Download signed Windows AArch64 installer
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-installer-arm64
+          path: release-assets
+
+      - name: Download signed MSIX (x64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-msix-x64
+          path: release-assets
+
+      - name: Download signed MSIX (AArch64)
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: signed-windows-msix-aarch64
+          path: release-assets
+
+      - name: Download Linux release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: linux-release-assets
+          path: release-assets
+
+      - name: Download macOS Intel release asset
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: macos-x64-release-asset
+          path: release-assets
+
+      - name: Download macOS Apple Silicon release asset
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: macos-aarch64-release-asset
+          path: release-assets
+
+      - name: Validate release assets and generate checksums
+        shell: bash
+        env:
+          RELEASE_COMMIT: ${{ needs.validate-release.outputs.commit }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+          RELEASE_VERSION: ${{ needs.validate-release.outputs.version }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          required_assets=(
+            "floral-notepaper_${RELEASE_VERSION}.exe"
+            "floral-notepaper_${RELEASE_VERSION}_x64-setup.exe"
+            "floral-notepaper_${RELEASE_VERSION}_aarch64-setup.exe"
+            "floral-notepaper_${RELEASE_VERSION}_x64.msix"
+            "floral-notepaper_${RELEASE_VERSION}_aarch64.msix"
+            "floral-notepaper_${RELEASE_VERSION}_amd64.deb"
+            "floral-notepaper-${RELEASE_VERSION}-1.x86_64.rpm"
+            "floral-notepaper_${RELEASE_VERSION}_amd64.AppImage"
+            "floral-notepaper_${RELEASE_VERSION}_x64.dmg"
+            "floral-notepaper_${RELEASE_VERSION}_aarch64.dmg"
+          )
+          for asset in "${required_assets[@]}"; do
+            if [[ ! -f "release-assets/$asset" ]]; then
+              echo "Required release asset is missing: $asset" >&2
+              exit 1
+            fi
+          done
+
+          {
+            echo "tag=$RELEASE_TAG"
+            echo "commit=$RELEASE_COMMIT"
+            echo "workflow_run_id=$WORKFLOW_RUN_ID"
+            echo "workflow_run_attempt=$WORKFLOW_RUN_ATTEMPT"
+            echo "source=rebuild"
+          } > release-assets/BUILD-INFO.txt
+
+          find release-assets -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 \
+            | sort -z \
+            | xargs -0 sha256sum \
+            | sed 's#  release-assets/#  #' \
+            > release-assets/SHA256SUMS.txt
+
+      - name: Upload artifacts to existing release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+
+          gh release upload "$RELEASE_TAG" release-assets/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
+
+      - name: Summarize uploaded assets
+        shell: bash
+        env:
+          RELEASE_TAG: ${{ needs.validate-release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Rebuild upload summary ($RELEASE_TAG)"
+            echo "- Uploaded $(find release-assets -maxdepth 1 -type f | wc -l | tr -d ' ') files with --clobber"
+            echo "- Same-name assets replaced; missing assets added; unrelated existing assets kept"
+            echo "- SHA256SUMS.txt and BUILD-INFO.txt refreshed (source=rebuild)"
+            echo "- Release title/body/notes untouched"
+          } >> "$GITHUB_STEP_SUMMARY"

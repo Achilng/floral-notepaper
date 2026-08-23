@@ -15,13 +15,21 @@
 
 .PARAMETER RequireTimestamp
   Also require the signature to carry a trusted timestamp and have status 'Valid'.
+
+.PARAMETER SigntoolVerify
+  Also run signtool.exe verify /pa /all /v against the file.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Path,
-  [switch]$RequireTimestamp
+  [switch]$RequireTimestamp,
+  [switch]$SigntoolVerify
 )
 
 $ErrorActionPreference = 'Stop'
+
+if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+  throw "Signed file was not found: $Path"
+}
 
 if ([string]::IsNullOrWhiteSpace($env:EXPECTED_CERTIFICATE_SUBJECT)) {
   throw 'SIGNPATH_CERTIFICATE_SUBJECT is not configured.'
@@ -55,6 +63,28 @@ if ($certificate.Issuer -ne $env:EXPECTED_CERTIFICATE_ISSUER) {
 if ($RequireTimestamp) {
   if (-not $signature.TimeStamperCertificate -or $signature.Status -ne 'Valid') {
     throw "The signature is not valid and timestamped: $($signature.Status): $($signature.StatusMessage)"
+  }
+}
+
+if ($SigntoolVerify) {
+  $signToolCommand = Get-Command signtool.exe -ErrorAction SilentlyContinue
+  if ($signToolCommand) {
+    $signToolPath = $signToolCommand.Source
+  } else {
+    $kitsRoot = Join-Path ${env:ProgramFiles(x86)} 'Windows Kits/10/bin'
+    $candidate = Get-ChildItem -Path $kitsRoot -Filter signtool.exe -File -Recurse |
+      Where-Object { $_.FullName -match '[\\/]x64[\\/]signtool\.exe$' } |
+      Sort-Object FullName -Descending |
+      Select-Object -First 1
+    if (-not $candidate) {
+      throw 'signtool.exe was not found on the runner.'
+    }
+    $signToolPath = $candidate.FullName
+  }
+
+  & $signToolPath verify /pa /all /v $Path
+  if ($LASTEXITCODE -ne 0) {
+    throw "signtool verification failed for $Path with exit code $LASTEXITCODE."
   }
 }
 
