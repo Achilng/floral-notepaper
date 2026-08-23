@@ -230,15 +230,6 @@ if ($languageAutoPackage.Count -ne 1) {
   throw "Expected one Language autoResourcePackage entry in $priConfig, found $($languageAutoPackage.Count)."
 }
 $null = $priConfigDocument.resources.packaging.RemoveChild($languageAutoPackage[0])
-
-$languageDefault = @(
-  $priConfigDocument.resources.index.default.qualifier |
-    Where-Object { $_.name -eq 'Language' }
-)
-if ($languageDefault.Count -ne 1) {
-  throw "Expected one default Language qualifier in $priConfig, found $($languageDefault.Count)."
-}
-$languageDefault[0].value = ($resLanguages.Language -join ',')
 $priConfigDocument.Save($priConfig)
 
 $layoutPri = Join-Path $layoutDir 'resources.pri'
