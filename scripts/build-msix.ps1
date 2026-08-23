@@ -217,6 +217,30 @@ if ($LASTEXITCODE -ne 0) {
   throw "makepri createconfig failed with exit code $LASTEXITCODE."
 }
 
+# MakePri enables language auto-splitting by default. That behavior is useful
+# for app bundles, but this workflow publishes each architecture as one MSIX.
+# Keep every supported language in the main resources.pri so a standalone MSIX
+# never depends on sidecar resources.language-*.pri packages.
+[xml]$priConfigDocument = Get-Content -LiteralPath $priConfig -Raw
+$languageAutoPackage = @(
+  $priConfigDocument.resources.packaging.autoResourcePackage |
+    Where-Object { $_.qualifier -eq 'Language' }
+)
+if ($languageAutoPackage.Count -ne 1) {
+  throw "Expected one Language autoResourcePackage entry in $priConfig, found $($languageAutoPackage.Count)."
+}
+$null = $priConfigDocument.resources.packaging.RemoveChild($languageAutoPackage[0])
+
+$languageDefault = @(
+  $priConfigDocument.resources.index.default.qualifier |
+    Where-Object { $_.name -eq 'Language' }
+)
+if ($languageDefault.Count -ne 1) {
+  throw "Expected one default Language qualifier in $priConfig, found $($languageDefault.Count)."
+}
+$languageDefault[0].value = ($resLanguages.Language -join ',')
+$priConfigDocument.Save($priConfig)
+
 $layoutPri = Join-Path $layoutDir 'resources.pri'
 & $makePri new /pr $resRoot /cf $priConfig /in $IdentityName /of $layoutPri /o
 if ($LASTEXITCODE -ne 0) {

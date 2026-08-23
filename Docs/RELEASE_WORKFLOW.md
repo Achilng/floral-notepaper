@@ -240,8 +240,7 @@ pwsh -File scripts/build-windows-local.ps1 -Architectures x64 -SkipNpmInstall
 | `sign-windows-binary-aarch64`               | 签名并验证 Windows AArch64 主程序（含 marker 保留校验）                                                                              |
 | `build-windows-installer-aarch64`           | 恢复已签名 AArch64 主程序，验证其哈希，构建未签名 AArch64 NSIS 安装器                                                                |
 | `sign-and-verify-windows-installer-aarch64` | 签名 AArch64 安装器，验证签名，在 `windows-11-arm` 上执行两种安装模式的安装与卸载测试（由 `MSIX_ARM64_RUNTIME_TEST` 门控）           |
-| `build-windows-msix`                        | 恢复各架构已签名主程序，用 `scripts/build-msix.ps1` 构建未签名 MSIX（x64 / AArch64）                                                 |
-| `sign-windows-msix`                         | 用固定自签名证书同时签名两个架构的 MSIX，验证签名、清单身份和嵌入主程序，并导出公开 `.cer`                                           |
+| `build-windows-msix`                        | 恢复各架构已签名主程序，构建 MSIX 后立即用固定自签名证书签名并验证（x64 / AArch64）；x64 Job 同时导出公开 `.cer`                     |
 | `verify-windows-msix-install`               | `Add-AppxPackage` 安装、启动、单实例、卸载测试（AArch64 使用 Windows AArch64 runner）                                                |
 | `publish-msix-store`                        | 合并双架构 MSIX 为 `.msixupload`，用 msstore CLI 提交（仅手动 Release/Rebuild 且 `publish-to-store=true` 时执行；Tag Push 永不发布） |
 | `build-linux`                               | 构建并强制收集恰好一个 DEB、RPM 和 AppImage                                                                                          |
@@ -338,14 +337,14 @@ MSIX 公开证书是固定自签名证书，不含私钥。直接安装 GitHub R
 Tauri bundler 不生成 MSIX。`build-windows-msix` 使用 `scripts/build-msix.ps1` 从已签名主程序构建 MSIX：
 
 - 从 `src-tauri/msix/AppxManifest.template.xml` 渲染清单（版本转四段 `X.Y.Z.0`；`ProcessorArchitecture` 为 `x64` 或 `AArch64`；`Identity Name` / `Publisher` 来自仓库级 Variables）；
-- 清单 `DisplayName` / `Description` 使用 `ms-resource:` 引用；构建脚本把 `src-tauri/msix/lang-*/resources.resw` 规范化为 MakePri 要求的 `Strings/<BCP-47>/Resources.resw`，并用 `MSIX_IDENTITY_NAME` 固定 PRI Resource Map Name，覆盖 zh-CN / en-US / zh-HK；生成后 dump PRI，确认包身份、两个资源键和三种语言全部存在，使安装后名称随系统语言显示；
+- 清单 `DisplayName` / `Description` 使用 `ms-resource:` 引用；构建脚本把 `src-tauri/msix/lang-*/resources.resw` 规范化为 MakePri 要求的 `Strings/<BCP-47>/Resources.resw`，移除 MakePri 默认的 `Language` 自动资源包拆分，把 zh-CN / en-US / zh-HK 全部写入单一 `resources.pri`，并用 `MSIX_IDENTITY_NAME` 固定 PRI Resource Map Name；生成后 dump PRI，确认包身份、两个资源键和三种语言全部存在，使独立 MSIX 安装后的名称随系统语言显示；
 - Markdown 与纯文本关联分别使用独立的 `uap:Extension Category="windows.fileTypeAssociation"`；每个 Extension 只能包含一个 `uap:FileTypeAssociation`；
 - 清单声明 `desktop6:RegistryWriteVirtualization` / `desktop6:FileSystemWriteVirtualization` 为 `disabled`，并声明 `rescap:Capability Name="unvirtualizedResources"`，使托盘自启动（HKCU Run 键）与 `%APPDATA%\floral-notepaper` 配置写入不被 MSIX 虚拟化；
 - 用 `MakeAppx.exe` 打包，随后 `makeappx unpack` 回验清单身份、版本、架构、`resources.pri` 与内嵌主程序哈希。
 
 ### 签名
 
-`sign-windows-msix` 从 GitHub Secrets 还原固定 PFX，一次导入后用同一张自签名证书签署 x64 与 AArch64 包。证书 Subject 精确等于 Partner Center Publisher，因此不会出现 Manifest Publisher 与证书 Subject 不一致；MSIX 不再提交 SignPath。签名后验证：
+`MakeAppx.exe pack` 本身不提供签名参数。`build-windows-msix` 的每个架构 Job 在打包成功后立即从 GitHub Secrets 还原同一份固定 PFX，调用 `scripts/sign-msix-self-signed.ps1`（内部使用 SignTool）签署该 MSIX，然后删除临时 PFX；不再通过未签名 Artifact 和独立签名 Job 中转。证书 Subject 精确等于 Partner Center Publisher，因此不会出现 Manifest Publisher 与证书 Subject 不一致；MSIX 不提交 SignPath。签名后验证：
 
 - 两个包使用同一张固定自签名证书，`Valid` 且包含 RFC 3161 时间戳；
 - 公钥证书与 PFX 的签名证书指纹一致，且 Subject 等于清单 Publisher；
@@ -471,8 +470,7 @@ AArch64 安装器测试还额外关注：
 
 ### MSIX 构建或签名失败
 
-- `build-windows-msix`：检查 `scripts/build-msix.ps1` 的 unpack 回验输出（清单身份/版本/架构、内嵌主程序哈希）；确认 `MSIX_IDENTITY_NAME`、`MSIX_PUBLISHER_CN` 等仓库变量已配置。
-- `sign-windows-msix`：确认 `MSIX_SIGNING_CERTIFICATE_BASE64` 与 `MSIX_SIGNING_CERTIFICATE_PASSWORD` 已配置且 PFX 可导入；证书必须有私钥、Code Signing EKU、自签名 Subject/Issuer，并与 `MSIX_PUBLISHER_CN` 及 `MSIX_SIGNING_CERTIFICATE_SHA256` 完全一致。不要在 Workflow 中临时生成新证书，否则会破坏跨版本固定身份。
+- `build-windows-msix`：检查 `scripts/build-msix.ps1` 的 PRI dump 与 unpack 回验输出（单一包内含三个语言候选、清单身份/版本/架构、内嵌主程序哈希）；确认 `MSIX_IDENTITY_NAME`、`MSIX_PUBLISHER_CN` 等仓库变量已配置；同时确认 `MSIX_SIGNING_CERTIFICATE_BASE64` 与 `MSIX_SIGNING_CERTIFICATE_PASSWORD` 已配置且 PFX 可导入。证书必须有私钥、Code Signing EKU、自签名 Subject/Issuer，并与 `MSIX_PUBLISHER_CN` 及 `MSIX_SIGNING_CERTIFICATE_SHA256` 完全一致。不要在 Workflow 中临时生成新证书，否则会破坏跨版本固定身份。
 - `verify-windows-msix-install`：确认公开 `.cer` 与包签名指纹一致并已导入 runner 的 `LocalMachine\TrustedPeople`；AArch64 需要 `windows-11-arm` runner 可用，无 runner 时按文档置 `MSIX_ARM64_RUNTIME_TEST=false` 降级。
 
 ### Store 发布失败
