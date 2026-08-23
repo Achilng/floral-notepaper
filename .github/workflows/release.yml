@@ -1821,9 +1821,6 @@ jobs:
           $msix = "signed-windows-msix/floral-notepaper_$($env:RELEASE_VERSION)_$($env:MATRIX_ARCH).msix"
 
           Add-AppxPackage -Path (Resolve-Path -LiteralPath $msix).Path -ForceApplicationShutdown
-          if ($LASTEXITCODE -ne 0) {
-            throw "Add-AppxPackage failed with exit code $LASTEXITCODE."
-          }
 
           $package = Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME
           if (-not $package) {
@@ -1893,9 +1890,6 @@ jobs:
           }
 
           Remove-AppxPackage -Package $package.PackageFullName
-          if ($LASTEXITCODE -ne 0) {
-            throw "Remove-AppxPackage failed with exit code $LASTEXITCODE."
-          }
           if (Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME) {
             throw 'The package is still registered after uninstall.'
           }
