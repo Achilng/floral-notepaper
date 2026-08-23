@@ -480,6 +480,82 @@ fn canonical_for_compare(path: &Path) -> PathBuf {
     path.to_path_buf()
 }
 
+// `trash` uses IFileOperation on Windows. Native ARM64 processes launched from
+// an MSIX package can fail that COM-backed path with 0x80070002 even though the
+// file exists. SHFileOperationW is exported directly by shell32.dll and keeps
+// the same Recycle Bin semantics when FOF_ALLOWUNDO is set, without activating
+// the failing COM class.
+#[cfg(target_os = "windows")]
+fn recycle_path(path: &Path) -> Result<(), AppError> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::UI::Shell::{
+        SHFileOperationW, FOF_ALLOWUNDO, FOF_NO_UI, FOF_WANTNUKEWARNING, FO_DELETE, SHFILEOPSTRUCTW,
+    };
+
+    // Relative paths are not thread-safe with SHFileOperationW. NoteStore
+    // normally supplies absolute paths, but keep the platform boundary safe
+    // for callers created by tests or environment overrides as well.
+    let full_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        env::current_dir()?.join(path)
+    };
+
+    // SHFileOperationW expects a list terminated by an extra NUL, even when it
+    // contains only one path.
+    let source = full_path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::repeat_n(0, 2))
+        .collect::<Vec<_>>();
+    let mut operation = SHFILEOPSTRUCTW {
+        hwnd: std::ptr::null_mut(),
+        wFunc: FO_DELETE,
+        pFrom: source.as_ptr(),
+        pTo: std::ptr::null(),
+        fFlags: (FOF_ALLOWUNDO | FOF_NO_UI | FOF_WANTNUKEWARNING) as u16,
+        fAnyOperationsAborted: 0,
+        hNameMappings: std::ptr::null_mut(),
+        lpszProgressTitle: std::ptr::null(),
+    };
+
+    // SAFETY: every pointer in `operation` is either null or points to storage
+    // that remains alive for the duration of this synchronous call. `source`
+    // has the required double-NUL terminator.
+    let result = unsafe { SHFileOperationW(&mut operation) };
+    if result != 0 {
+        return Err(AppError::new(
+            "trash",
+            format!("移入回收站失败: Windows Shell 错误 0x{result:08X}"),
+        )
+        .with_detail("path", full_path.display().to_string())
+        .with_detail("windowsCode", format!("0x{result:08X}")));
+    }
+    if operation.fAnyOperationsAborted != 0 {
+        return Err(AppError::new("trash", "移入回收站失败: 操作已取消")
+            .with_detail("path", full_path.display().to_string()));
+    }
+    Ok(())
+}
+
+#[cfg(not(target_os = "windows"))]
+fn recycle_path(path: &Path) -> Result<(), AppError> {
+    trash::delete(path).map_err(|error| {
+        AppError::new("trash", format!("移入回收站失败: {error}"))
+            .with_detail("path", path.display().to_string())
+    })
+}
+
+fn paths_refer_to_same_entry(first: &Path, second: &Path) -> bool {
+    if first == second {
+        return true;
+    }
+    match (fs::canonicalize(first), fs::canonicalize(second)) {
+        (Ok(first), Ok(second)) => first == second,
+        _ => false,
+    }
+}
+
 fn known_data_migration_candidates() -> Vec<PathBuf> {
     known_data_migration_candidates_for(env::var("HOME").ok(), env::var("USERPROFILE").ok())
 }
@@ -749,14 +825,9 @@ impl NoteStore {
             fs::create_dir_all(parent)?;
         }
         fs::write(&new_path, &request.content)?;
-
-        if old_file_name != new_file_name || old_category != new_category {
-            let old_path = self.note_path_in_category(&old_file_name, &old_category);
-            if old_path.exists() && old_path != new_path {
-                trash::delete(&old_path)
-                    .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
-            }
-        }
+        let old_path = self.note_path_in_category(&old_file_name, &old_category);
+        let replaced_path =
+            (old_file_name != new_file_name || old_category != new_category).then_some(old_path);
 
         note.title = request.title;
         note.file_name = new_file_name.clone();
@@ -777,6 +848,17 @@ impl NoteStore {
         };
 
         self.save_metadata(&metadata_file)?;
+
+        // A title/category change replaces the storage path; it is not a user
+        // deletion. The new file and metadata are already durable, so cleanup
+        // of the stale copy must not turn a successful save into "保存失败".
+        // Canonical comparison also prevents a case-only rename on Windows
+        // from deleting the newly written file through its old spelling.
+        if let Some(old_path) = replaced_path {
+            if old_path.exists() && !paths_refer_to_same_entry(&old_path, &new_path) {
+                let _ = recycle_path(&old_path);
+            }
+        }
         Ok(result)
     }
 
@@ -791,8 +873,7 @@ impl NoteStore {
         let metadata = metadata_file.notes.remove(index);
         let path = self.note_path_in_category(&metadata.file_name, &metadata.category);
         if path.exists() {
-            trash::delete(&path)
-                .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
+            recycle_path(&path)?;
         }
         self.save_metadata(&metadata_file)?;
         let _ = self.delete_note_images(id);
@@ -991,9 +1072,8 @@ impl NoteStore {
             }
             self.save_metadata(&metadata_file)?;
 
-            // Move to recycle bin instead of permanent deletion
-            trash::delete(&category_path)
-                .map_err(|e| AppError::new("trash", format!("移入回收站失败: {e}")))?;
+            // Move to recycle bin instead of permanent deletion.
+            recycle_path(&category_path)?;
         } else {
             // Directory already gone (manually deleted outside the app);
             // clean up any stale metadata references.
@@ -1088,8 +1168,17 @@ impl NoteStore {
         }
     }
 
+    #[cfg(not(test))]
     fn migrate_config_from_legacy(&self) -> Result<(), AppError> {
         self.migrate_config_from_candidates(&known_data_migration_candidates())
+    }
+
+    #[cfg(test)]
+    fn migrate_config_from_legacy(&self) -> Result<(), AppError> {
+        // Unit tests build stores under temporary directories. Never let an
+        // empty fixture fall through to production candidate discovery, which
+        // could move a developer's real notes into that temporary directory.
+        Ok(())
     }
 
     fn migrate_config_from_candidates(&self, candidates: &[PathBuf]) -> Result<(), AppError> {
@@ -1682,7 +1771,13 @@ mod tests {
 
     fn test_store(name: &str) -> NoteStore {
         let root = test_root(name);
-        NoteStore::new(root.clone(), root)
+        let store = NoteStore::new(root.clone(), root);
+        // Seed an isolated config before exercising storage. Without this,
+        // load_config performs the production legacy scan and can migrate a
+        // developer's real 花笺 data into the test directory on macOS.
+        write_json_atomic(&store.config_path(), &store.default_config())
+            .expect("seed isolated test config");
+        store
     }
 
     #[test]
