@@ -1,6 +1,7 @@
 use crate::{
     locales::{self, Locale},
     services::notes::{default_store, AppConfig, AppError},
+    windows_package::{self, WindowsInstallContext},
 };
 use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
@@ -424,6 +425,23 @@ const TRAY_QUICK_NOTE_ID: &str = "quick-note";
 const TRAY_TOGGLE_CLOSE_TO_TRAY_ID: &str = "toggle-close-to-tray";
 const TRAY_TOGGLE_AUTOSTART_ID: &str = "toggle-autostart";
 const TRAY_QUIT_ID: &str = "quit";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum AutostartBackend {
+    MsixStartupTask,
+    Plugin,
+}
+
+fn autostart_backend_for(context: WindowsInstallContext) -> AutostartBackend {
+    match context {
+        WindowsInstallContext::Msix => AutostartBackend::MsixStartupTask,
+        WindowsInstallContext::Unpackaged => AutostartBackend::Plugin,
+    }
+}
+
+fn autostart_backend() -> AutostartBackend {
+    autostart_backend_for(windows_package::windows_install_context())
+}
 
 #[cfg(target_os = "macos")]
 static FULLSCREEN_HIDING: AtomicBool = AtomicBool::new(false);
@@ -1071,7 +1089,7 @@ fn toggle_app_visibility(app: &AppHandle) {
 pub fn apply_runtime_config(
     app: &AppHandle,
     previous: &AppConfig,
-    next: &AppConfig,
+    next: &mut AppConfig,
 ) -> Result<(), Box<dyn Error>> {
     let changes = runtime_config_changes(previous, next);
 
@@ -1080,7 +1098,7 @@ pub fn apply_runtime_config(
     }
 
     if changes.autostart_changed {
-        apply_autostart(app, next.autostart)?;
+        next.autostart = apply_autostart(app, next.autostart)?;
     }
 
     Ok(())
@@ -1119,6 +1137,10 @@ pub fn extract_file_arg(args: &[String]) -> Option<String> {
         .cloned()
 }
 
+fn should_show_main_window_on_startup(args: &[String]) -> bool {
+    !args.iter().any(|argument| argument == "--silent")
+}
+
 /// Takes the startup file path stored during cold start, consuming it so
 /// subsequent calls return `None`. Called by the frontend after it finishes
 /// initializing to deterministically load the file without any timing risk.
@@ -1142,13 +1164,13 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     setup_tray(app)?;
     schedule_notepad_prewarm(app.handle());
 
-    if !std::env::args().any(|a| a == "--silent") {
+    let args: Vec<String> = std::env::args().collect();
+    if should_show_main_window_on_startup(&args) {
         if let Err(error) = show_main_window(app.handle()) {
             eprintln!("failed to show main window on startup: {error}");
         }
     }
 
-    let args: Vec<String> = std::env::args().collect();
     if let Some(file_path) = extract_file_arg(&args) {
         if let Ok(mut guard) = STARTUP_FILE.lock() {
             *guard = Some(file_path);
@@ -2336,9 +2358,26 @@ fn shortcut_key_to_code(key: ShortcutKey) -> Option<Code> {
 
 #[cfg(desktop)]
 fn sync_autostart_to_config(app: &AppHandle) {
-    let Ok(config) = load_config() else {
+    let Ok(store) = default_store() else {
         return;
     };
+    let Ok(mut config) = store.load_config() else {
+        return;
+    };
+
+    if autostart_backend() == AutostartBackend::MsixStartupTask {
+        match windows_package::msix_autostart_enabled() {
+            Ok(actual_enabled) if config.autostart != actual_enabled => {
+                config.autostart = actual_enabled;
+                if let Err(error) = store.save_config(config) {
+                    eprintln!("failed to persist MSIX StartupTask state: {error}");
+                }
+            }
+            Ok(_) => {}
+            Err(error) => eprintln!("failed to read MSIX StartupTask state: {error}"),
+        }
+        return;
+    }
 
     if let Err(error) = apply_autostart(app, config.autostart) {
         eprintln!("failed to sync autostart config: {error}");
@@ -2350,6 +2389,9 @@ fn sync_autostart_to_config(_app: &AppHandle) {}
 
 #[cfg(desktop)]
 fn autostart_enabled(app: &AppHandle, fallback: bool) -> bool {
+    if autostart_backend() == AutostartBackend::MsixStartupTask {
+        return windows_package::msix_autostart_enabled().unwrap_or(fallback);
+    }
     app.autolaunch().is_enabled().unwrap_or(fallback)
 }
 
@@ -2361,27 +2403,36 @@ fn autostart_enabled(_app: &AppHandle, fallback: bool) -> bool {
 fn toggle_autostart(app: &AppHandle) -> Result<AppConfig, Box<dyn Error>> {
     let store = default_store()?;
     let mut config = store.load_config()?;
-    let next_enabled = !config.autostart;
-    apply_autostart(app, next_enabled)?;
-    config.autostart = next_enabled;
+    let next_enabled = if autostart_backend() == AutostartBackend::MsixStartupTask {
+        !autostart_enabled(app, config.autostart)
+    } else {
+        // Preserve the unpackaged behavior: NSIS/Portable toggle from the
+        // persisted preference and continue to use tauri-plugin-autostart.
+        !config.autostart
+    };
+    config.autostart = apply_autostart(app, next_enabled)?;
     store.save_config(config.clone())?;
     Ok(config)
 }
 
 #[cfg(desktop)]
-fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), Box<dyn Error>> {
+fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<bool, Box<dyn Error>> {
+    if autostart_backend() == AutostartBackend::MsixStartupTask {
+        return Ok(windows_package::set_msix_autostart(enabled)?);
+    }
+
     let manager = app.autolaunch();
     if enabled {
         manager.enable()?;
     } else {
         manager.disable()?;
     }
-    Ok(())
+    Ok(enabled)
 }
 
 #[cfg(not(desktop))]
-fn apply_autostart(_app: &AppHandle, _enabled: bool) -> Result<(), Box<dyn Error>> {
-    Ok(())
+fn apply_autostart(_app: &AppHandle, enabled: bool) -> Result<bool, Box<dyn Error>> {
+    Ok(enabled)
 }
 
 #[cfg(desktop)]
@@ -2420,6 +2471,39 @@ pub fn stop_shortcut_recording(_app: &AppHandle) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn selects_startup_task_only_for_msix_package_identity() {
+        assert_eq!(
+            autostart_backend_for(WindowsInstallContext::Msix),
+            AutostartBackend::MsixStartupTask
+        );
+        assert_eq!(
+            autostart_backend_for(WindowsInstallContext::Unpackaged),
+            AutostartBackend::Plugin
+        );
+    }
+
+    #[test]
+    fn preserves_normal_silent_and_file_association_startup_behavior() {
+        let normal = vec!["floral-notepaper.exe".to_string()];
+        assert!(should_show_main_window_on_startup(&normal));
+        assert_eq!(extract_file_arg(&normal), None);
+
+        let silent = vec!["floral-notepaper.exe".into(), "--silent".into()];
+        assert!(!should_show_main_window_on_startup(&silent));
+        assert_eq!(extract_file_arg(&silent), None);
+
+        let file_association = vec![
+            "floral-notepaper.exe".into(),
+            r"C:\Users\Alice\Documents\花笺\note.md".into(),
+        ];
+        assert!(should_show_main_window_on_startup(&file_association));
+        assert_eq!(
+            extract_file_arg(&file_association).as_deref(),
+            Some(r"C:\Users\Alice\Documents\花笺\note.md")
+        );
+    }
 
     #[test]
     fn maps_tray_menu_ids_to_actions() {

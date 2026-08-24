@@ -41,6 +41,8 @@
     }
   },
   "errors": {
+    "autostartDisabledByUser": "開機自啟已被 Windows 使用者設定停用，請先在工作管理員或 Windows 設定中允許此應用程式",
+    "autostartManagedByPolicy": "開機自啟由 Windows 原則管理，無法在應用程式中變更",
     "categoryAlreadyExists": "分類「{{category}}」已存在",
     "categoryNameEmpty": "分類名稱不能為空",
     "categoryNameInvalidChars": "分類名稱不能包含特殊字元",
@@ -50,6 +52,8 @@
     "imagePasteFailed": "圖片貼上失敗",
     "imageTooLarge": "圖片檔案過大（上限 20 MB）",
     "noPool": "便箋視窗池尚未初始化",
+    "msixAutostartUnavailable": "無法讀取或更新 Windows 開機啟動狀態",
+    "msixLocalStateUnavailable": "無法存取 MSIX 本機設定目錄",
     "noteNotFound": "找不到該筆記",
     "unsupportedFile": "僅支援匯入 .md 檔案",
     "unsupportedImageFormat": "不支援的圖片格式",

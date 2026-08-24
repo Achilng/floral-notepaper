@@ -1,6 +1,6 @@
 PRIVACY POLICY FOR FLORAL NOTEPAPER (花笺)
 
-Effective date: 23 August 2026
+Effective date: 25 August 2026
 
 Developer: Floral Notepaper Contributors
 Contact: https://github.com/Achilng/floral-notepaper/issues
@@ -21,7 +21,9 @@ The App stores the following information on your device:
 4) Application settings, language, theme, keyboard shortcuts, window preferences, and startup preferences.
 5) Local update state, downloaded update packages, and diagnostic or installation logs.
 
-This information is stored in the application configuration directory and the data directory selected by you. The App does not upload your notes, images, backgrounds, or settings to the developer.
+For the Microsoft Store MSIX package, application settings and update state are stored in the package-owned LocalState directory. For the unpackaged NSIS and Portable versions on Windows, they remain stored under %APPDATA%\floral-notepaper. Notes and attachments remain in Documents\花笺 or another data directory selected by you in every Windows distribution.
+
+The App does not upload your notes, images, backgrounds, or settings to the developer.
 
 
 3. UPDATE SERVICES
@@ -39,9 +41,9 @@ The App does not automatically send telemetry, advertising identifiers, crash re
 
 4. FULL-TRUST AND LOCAL FILE ACCESS
 
-The Microsoft Store package uses the runFullTrust and unvirtualizedResources capabilities to provide desktop features such as tray operation, startup configuration, file associations, and access to the local data directory.
+The Microsoft Store package uses the runFullTrust capability to provide classic desktop features such as tray operation, global shortcuts, file associations, and access to the local data directory. It uses the Windows StartupTask API for startup configuration and package-owned LocalState for application settings.
 
-These capabilities are used for local application functionality. They do not give the developer remote access to your device and do not cause your files to be transmitted to the developer.
+The unpackaged NSIS and Portable versions continue to use the current-user Windows Run registry entry for startup when you enable that setting. These capabilities and APIs are used for local application functionality. They do not give the developer remote access to your device and do not cause your files to be transmitted to the developer.
 
 
 5. THIRD-PARTY SERVICES
@@ -53,7 +55,9 @@ The App does not sell, rent, or otherwise disclose your local note content to th
 
 6. DATA RETENTION AND DELETION
 
-Local application data remains on your device until you delete it or select another data directory. Uninstalling the App may not remove files stored in your user-selected data directory or unvirtualized application configuration directories. You can delete those files manually from Windows or from the data-location settings in the App.
+MSIX LocalState settings are removed when the MSIX package is uninstalled or reset. NSIS and Portable settings under %APPDATA%\floral-notepaper follow their existing retention behavior and may remain after uninstalling or moving the executable.
+
+Notes, images, backgrounds, and other files in Documents\花笺 or a user-selected data directory are not removed with an MSIX uninstall and remain on your device until you delete them or select another data directory. You can delete those files manually from Windows or from the data-location settings in the App.
 
 You can clear a stored MirrorChyan CDK from the App's update settings. Temporary update files and local update logs may be removed automatically during update maintenance.
 

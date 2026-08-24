@@ -3,6 +3,7 @@ pub mod json_io;
 pub mod locales;
 pub mod services;
 pub mod updater;
+pub(crate) mod windows_package;
 
 use locales::Locale;
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
@@ -246,18 +247,18 @@ fn copy_background_image(_app: AppHandle, source_path: String) -> Result<String,
 }
 
 #[tauri::command]
-fn config_save(app: AppHandle, config: AppConfig) -> Result<AppConfig, AppError> {
+fn config_save(app: AppHandle, mut config: AppConfig) -> Result<AppConfig, AppError> {
     let store = default_store()?;
     let previous = store.load_config()?;
-    desktop::apply_runtime_config(&app, &previous, &config).map_err(|error| {
-        match error.downcast::<AppError>() {
-            Ok(app_error) => *app_error,
-            Err(error) => AppError {
-                code: "desktopConfig".into(),
-                message: error.to_string(),
-                details: Default::default(),
-            },
-        }
+    desktop::apply_runtime_config(&app, &previous, &mut config).map_err(|error| match error
+        .downcast::<AppError>()
+    {
+        Ok(app_error) => *app_error,
+        Err(error) => AppError {
+            code: "desktopConfig".into(),
+            message: error.to_string(),
+            details: Default::default(),
+        },
     })?;
     let saved = store.save_config(config)?;
     if let Err(error) = desktop::refresh_shell_state(&app, &saved) {
@@ -453,14 +454,15 @@ pub fn run() {
                 let _ = scope.allow_directory(data.join("images"), true);
                 let _ = scope.allow_directory(data.join("backgrounds"), true);
             }
-            let updater_state = updater::UpdaterState::new(app.package_info().version.to_string());
+            let updater_state =
+                updater::UpdaterState::try_new(app.package_info().version.to_string())?;
             if let Err(error) = updater_state.initialize() {
                 eprintln!("failed to initialize updater infrastructure: {error}");
             }
             app.manage(updater_state);
             // MSIX installs are updated by the Microsoft Store; the scheduler
             // must never drive in-app updates against a read-only package.
-            if !updater::platform::has_package_identity() {
+            if !windows_package::has_package_identity() {
                 updater::start_auto_check_scheduler(app.handle().clone());
             }
             desktop::setup_desktop(app)?;

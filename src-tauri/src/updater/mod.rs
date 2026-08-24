@@ -194,14 +194,18 @@ pub struct UpdaterState {
 
 impl UpdaterState {
     pub fn new(current_version: impl Into<String>) -> Self {
-        Self {
-            paths: UpdatePaths::new(default_updates_dir()),
+        Self::try_new(current_version).expect("failed to resolve the updater storage directory")
+    }
+
+    pub(crate) fn try_new(current_version: impl Into<String>) -> Result<Self, AppError> {
+        Ok(Self {
+            paths: UpdatePaths::new(default_updates_dir()?),
             current_version: current_version.into(),
             cdk_store: cdk_store::CdkStore::default(),
             active_task: Arc::new(Mutex::new(None)),
             install_prepare: Arc::new(Mutex::new(None)),
             next_task_id: AtomicU64::new(1),
-        }
+        })
     }
 
     pub fn initialize(&self) -> Result<(), AppError> {
@@ -473,15 +477,39 @@ fn recover_mutex_guard<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     }
 }
 
-fn default_updates_dir() -> PathBuf {
-    if let Ok(config_dir) = default_config_dir() {
-        return config_dir.join("updates");
+fn default_updates_dir() -> Result<PathBuf, AppError> {
+    resolve_updates_dir(
+        default_config_dir(),
+        crate::windows_package::has_package_identity(),
+        env::current_dir,
+        env::temp_dir(),
+    )
+}
+
+fn resolve_updates_dir<CurrentDir>(
+    config_dir: Result<PathBuf, AppError>,
+    has_package_identity: bool,
+    current_dir: CurrentDir,
+    temp_dir: PathBuf,
+) -> Result<PathBuf, AppError>
+where
+    CurrentDir: FnOnce() -> std::io::Result<PathBuf>,
+{
+    match config_dir {
+        Ok(config_dir) => return Ok(config_dir.join("updates")),
+        Err(error) if has_package_identity => {
+            // A packaged process must fail closed when LocalState cannot be
+            // resolved. Falling back to the package install/current directory
+            // would be both incorrect and normally read-only.
+            return Err(error);
+        }
+        Err(_) => {}
     }
 
-    env::current_dir()
-        .unwrap_or_else(|_| env::temp_dir())
+    Ok(current_dir()
+        .unwrap_or(temp_dir)
         .join("floral-notepaper")
-        .join("updates")
+        .join("updates"))
 }
 
 fn cleanup_update_artifacts(
@@ -595,6 +623,48 @@ mod tests {
             fs::remove_dir_all(&root).expect("remove stale test dir");
         }
         UpdatePaths::new(root)
+    }
+
+    #[test]
+    fn updater_storage_stays_below_resolved_config_directory() {
+        let config_dir = PathBuf::from(r"C:\Packages\PFN\LocalState");
+        let resolved = resolve_updates_dir(
+            Ok(config_dir.clone()),
+            true,
+            || panic!("current_dir must not be used when config resolution succeeded"),
+            PathBuf::from("temp"),
+        )
+        .expect("resolve updater directory");
+
+        assert_eq!(resolved, config_dir.join("updates"));
+    }
+
+    #[test]
+    fn packaged_updater_does_not_fallback_after_local_state_failure() {
+        let expected = AppError::new("msixLocalStateUnavailable", "LocalState failed");
+        let error = resolve_updates_dir(
+            Err(expected.clone()),
+            true,
+            || panic!("current_dir must not be used for a packaged process"),
+            PathBuf::from("temp"),
+        )
+        .expect_err("packaged updater must fail closed");
+
+        assert_eq!(error, expected);
+    }
+
+    #[test]
+    fn unpackaged_updater_retains_existing_fallback() {
+        let fallback = PathBuf::from(r"D:\portable-working-directory");
+        let resolved = resolve_updates_dir(
+            Err(AppError::new("io", "config path failed")),
+            false,
+            || Ok(fallback.clone()),
+            PathBuf::from("temp"),
+        )
+        .expect("resolve unpackaged fallback");
+
+        assert_eq!(resolved, fallback.join("floral-notepaper").join("updates"));
     }
 
     #[test]

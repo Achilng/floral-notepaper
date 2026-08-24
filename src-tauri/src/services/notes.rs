@@ -1,4 +1,7 @@
-use crate::json_io::write_json_atomic;
+use crate::{
+    json_io::write_json_atomic,
+    windows_package::{self, WindowsInstallContext},
+};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -142,7 +145,7 @@ pub struct AppError {
 }
 
 impl AppError {
-    fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+    pub(crate) fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             code: code.into(),
             message: message.into(),
@@ -150,7 +153,7 @@ impl AppError {
         }
     }
 
-    fn with_detail(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+    pub(crate) fn with_detail(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
         self.details.insert(key.into(), value.into());
         self
     }
@@ -226,16 +229,48 @@ pub fn default_store() -> Result<NoteStore, AppError> {
 }
 
 pub(crate) fn default_config_dir() -> Result<PathBuf, AppError> {
-    if let Ok(path) = env::var("FLORAL_NOTEPAPER_CONFIG_DIR") {
-        let trimmed = path.trim();
-        if !trimmed.is_empty() {
-            return Ok(PathBuf::from(trimmed));
-        }
+    let override_dir = env::var("FLORAL_NOTEPAPER_CONFIG_DIR")
+        .ok()
+        .and_then(|path| {
+            let trimmed = path.trim();
+            (!trimmed.is_empty()).then(|| PathBuf::from(trimmed))
+        });
+
+    #[cfg(target_os = "windows")]
+    let windows_context = Some(windows_package::windows_install_context());
+    #[cfg(not(target_os = "windows"))]
+    let windows_context = None;
+
+    resolve_default_config_dir(
+        override_dir,
+        windows_context,
+        dirs::config_dir(),
+        windows_package::msix_local_state_dir,
+        env::current_dir,
+    )
+}
+
+fn resolve_default_config_dir<LocalState, CurrentDir>(
+    override_dir: Option<PathBuf>,
+    windows_context: Option<WindowsInstallContext>,
+    standard_config_dir: Option<PathBuf>,
+    local_state_dir: LocalState,
+    current_dir: CurrentDir,
+) -> Result<PathBuf, AppError>
+where
+    LocalState: FnOnce() -> Result<PathBuf, AppError>,
+    CurrentDir: FnOnce() -> io::Result<PathBuf>,
+{
+    if let Some(path) = override_dir {
+        return Ok(path);
     }
-    if let Some(dir) = dirs::config_dir() {
+    if windows_context == Some(WindowsInstallContext::Msix) {
+        return local_state_dir();
+    }
+    if let Some(dir) = standard_config_dir {
         return Ok(dir.join("floral-notepaper"));
     }
-    Ok(env::current_dir()?.join("floral-notepaper"))
+    Ok(current_dir()?.join("floral-notepaper"))
 }
 
 fn default_data_dir() -> Result<PathBuf, AppError> {
@@ -1755,7 +1790,7 @@ fn default_locale() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::{fs, path::PathBuf};
+    use std::{cell::Cell, fs, path::PathBuf};
 
     fn test_root(name: &str) -> PathBuf {
         let base = std::env::var_os("FLORAL_NOTEPAPER_TEST_TEMP_DIR")
@@ -1778,6 +1813,71 @@ mod tests {
         write_json_atomic(&store.config_path(), &store.default_config())
             .expect("seed isolated test config");
         store
+    }
+
+    #[test]
+    fn explicit_config_override_has_highest_priority() {
+        let override_dir = PathBuf::from("override-config");
+        let resolved = resolve_default_config_dir(
+            Some(override_dir.clone()),
+            Some(WindowsInstallContext::Msix),
+            Some(PathBuf::from("standard-config")),
+            || panic!("LocalState must not be resolved when an override is present"),
+            || panic!("current_dir must not be resolved when an override is present"),
+        )
+        .expect("resolve override");
+
+        assert_eq!(resolved, override_dir);
+    }
+
+    #[test]
+    fn msix_config_uses_local_state() {
+        let local_state = PathBuf::from(r"C:\Users\Alice\AppData\Local\Packages\PFN\LocalState");
+        let resolved = resolve_default_config_dir(
+            None,
+            Some(WindowsInstallContext::Msix),
+            Some(PathBuf::from(r"C:\Users\Alice\AppData\Roaming")),
+            || Ok(local_state.clone()),
+            || panic!("current_dir must not be used for MSIX"),
+        )
+        .expect("resolve LocalState");
+
+        assert_eq!(resolved, local_state);
+    }
+
+    #[test]
+    fn msix_local_state_failure_does_not_fall_back_to_appdata() {
+        let expected = AppError::new("msixLocalStateUnavailable", "LocalState failed");
+        let error = resolve_default_config_dir(
+            None,
+            Some(WindowsInstallContext::Msix),
+            Some(PathBuf::from(r"C:\Users\Alice\AppData\Roaming")),
+            || Err(expected.clone()),
+            || panic!("current_dir must not be used after a LocalState error"),
+        )
+        .expect_err("MSIX LocalState failure must fail closed");
+
+        assert_eq!(error, expected);
+    }
+
+    #[test]
+    fn unpackaged_config_keeps_existing_appdata_path_without_calling_winrt() {
+        let local_state_calls = Cell::new(0);
+        let standard = PathBuf::from(r"C:\Users\Alice\AppData\Roaming");
+        let resolved = resolve_default_config_dir(
+            None,
+            Some(WindowsInstallContext::Unpackaged),
+            Some(standard.clone()),
+            || {
+                local_state_calls.set(local_state_calls.get() + 1);
+                Ok(PathBuf::from("unexpected-local-state"))
+            },
+            || panic!("current_dir must not be used when APPDATA is available"),
+        )
+        .expect("resolve unpackaged config");
+
+        assert_eq!(resolved, standard.join("floral-notepaper"));
+        assert_eq!(local_state_calls.get(), 0);
     }
 
     #[test]

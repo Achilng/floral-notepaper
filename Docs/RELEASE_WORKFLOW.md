@@ -339,8 +339,10 @@ Tauri bundler 不生成 MSIX。`build-windows-msix` 使用 `scripts/build-msix.p
 - 从 `src-tauri/msix/AppxManifest.template.xml` 渲染清单（版本转四段 `X.Y.Z.0`；`ProcessorArchitecture` 为 `x64` 或 `AArch64`；`Identity Name` / `Publisher` 来自仓库级 Variables）；
 - 清单 `DisplayName` / `Description` 使用 `ms-resource:` 引用；构建脚本把 `src-tauri/msix/lang-*/resources.resw` 规范化为 MakePri 要求的 `Strings/<BCP-47>/Resources.resw`，移除 MakePri 默认的 `Language` 自动资源包拆分，把 zh-CN / en-US / zh-HK 全部写入单一 `resources.pri`，并用 `MSIX_IDENTITY_NAME` 固定 PRI Resource Map Name；生成后 dump PRI，确认包身份、两个资源键和三种语言全部存在，使独立 MSIX 安装后的名称随系统语言显示；
 - Markdown 与纯文本关联分别使用独立的 `uap:Extension Category="windows.fileTypeAssociation"`；每个 Extension 只能包含一个 `uap:FileTypeAssociation`；
-- 清单声明 `desktop6:RegistryWriteVirtualization` / `desktop6:FileSystemWriteVirtualization` 为 `disabled`，并声明 `rescap:Capability Name="unvirtualizedResources"`，使托盘自启动（HKCU Run 键）与 `%APPDATA%\floral-notepaper` 配置写入不被 MSIX 虚拟化；
-- 用 `MakeAppx.exe` 打包，随后 `makeappx unpack` 回验清单身份、版本、架构、`resources.pri` 与内嵌主程序哈希。
+- MSIX 最低版本为 Windows 10 2004（`10.0.19041.0`）；保留 `runFullTrust` 与 `windows.fullTrustProcess`，不声明 `unvirtualizedResources` 或 desktop6 写虚拟化属性；
+- 清单声明默认禁用的原生 `windows.startupTask`（`FloralNotepaperStartup`），启动参数固定为 `--silent`。MSIX 运行时使用 `ApplicationData.LocalFolder`（`%LOCALAPPDATA%\Packages\<PFN>\LocalState`）保存配置并使用 `StartupTask` 管理开机启动；
+- 同一个 EXE 在无包身份时仍走 Win32 路径：NSIS/Portable 配置继续使用 `%APPDATA%\floral-notepaper`，开机启动继续使用 HKCU Run，应用内更新与卸载逻辑均不改变；
+- 用 `MakeAppx.exe` 打包，随后 `makeappx unpack` 回验清单身份、版本、架构、`resources.pri`、权限/StartupTask 约束与内嵌主程序哈希。
 
 ### 签名
 
@@ -350,6 +352,7 @@ Tauri bundler 不生成 MSIX。`build-windows-msix` 使用 `scripts/build-msix.p
 - 公钥证书与 PFX 的签名证书指纹一致，且 Subject 等于清单 Publisher；
 - `signtool verify /pa /all` 通过；
 - 清单身份、Publisher、四段版本、处理器架构与发布版本一致；
+- 清单不含 `unvirtualizedResources` 和两个 desktop6 写虚拟化属性，保留 `runFullTrust`，并确认 StartupTask 的 TaskId、EXE、`--silent`、默认状态及 `10.0.19041.0` 最低版本；
 - 内嵌主程序哈希与签名前严格一致（自签名只修改 MSIX 外层签名，不修改内嵌 EXE）。
 
 ### 安装测试
@@ -359,9 +362,10 @@ Tauri bundler 不生成 MSIX。`build-windows-msix` 使用 `scripts/build-msix.p
 - 将 Workflow 导出的公开 `.cer` 临时导入 runner 的 `LocalMachine\TrustedPeople`，复验指纹与 Subject；
 - `Add-AppxPackage` 安装（失败不静默放宽）；
 - `Get-AppxPackage` 断言版本与 `SignatureKind`；
-- 从安装目录启动主程序：进程存活或至少创建非虚拟化的 `%APPDATA%\floral-notepaper` 配置目录（CI 无桌面会话，WebView 渲染列入人工核验）；
+- 从安装目录启动主程序：进程存活或至少在包的 `LocalState` 创建 `config.json`（CI 无桌面会话，WebView 渲染列入人工核验）；
+- 断言 MSIX 未创建 `%APPDATA%\floral-notepaper` 或“花笺”HKCU Run 项；StartupTask 在清单中初始禁用，启用/禁用和 `--silent` 启动另在带桌面会话的 x64/ARM64 设备上验收；
 - 第一实例存活时启动第二实例，断言单实例转发（第二实例自行退出）；
-- `Remove-AppxPackage` 卸载并断言注册清除。
+- `Remove-AppxPackage` 卸载并断言注册与 LocalState 清除，同时确认 `Documents\花笺` 中的测试笔记保留。
 
 AArch64 包无法在 x64 主机安装，安装测试使用 GitHub Windows AArch64 runner（`windows-11-arm`）。若组织暂时无法使用该 runner，可将仓库变量 `MSIX_ARM64_RUNTIME_TEST` 置为 `false` 跳过 AArch64 运行时步骤（签名与结构验证仍执行），运行时行为交由 Store 认证与人工 ARM 设备核验。该变量同时门控 AArch64 NSIS 安装器的运行时安装测试（见上文「安装测试」节）。
 

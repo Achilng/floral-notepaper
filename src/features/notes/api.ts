@@ -11,12 +11,16 @@ interface SerializedAppError {
 type ErrorDetails = Record<string, string>;
 
 const LOCALIZED_ERROR_CODES = new Set([
+  "autostartDisabledByUser",
+  "autostartManagedByPolicy",
   "categoryAlreadyExists",
   "categoryNameEmpty",
   "categoryNameInvalidChars",
   "categoryNotFound",
   "desktopConfig",
   "duplicateShortcut",
+  "msixAutostartUnavailable",
+  "msixLocalStateUnavailable",
   "noPool",
   "noteNotFound",
   "unsupportedFile",
@@ -131,6 +135,15 @@ function getLocalizedAppErrorMessage(
   }
 
   switch (appError.code) {
+    case "autostartDisabledByUser":
+      return translate("errors.autostartDisabledByUser", {
+        defaultValue:
+          "开机自启已被 Windows 用户设置禁用，请先在任务管理器或 Windows 设置中允许此应用",
+      });
+    case "autostartManagedByPolicy":
+      return translate("errors.autostartManagedByPolicy", {
+        defaultValue: "开机自启由 Windows 策略管理，无法在应用中更改",
+      });
     case "unsupportedFile":
       return translate("errors.unsupportedFile", { defaultValue: "只支持导入 .md 文件" });
     case "categoryNameEmpty":
@@ -175,6 +188,14 @@ function getLocalizedAppErrorMessage(
     }
     case "desktopConfig":
       return translate("errors.desktopConfig", { defaultValue: "桌面配置更新失败" });
+    case "msixAutostartUnavailable":
+      return translate("errors.msixAutostartUnavailable", {
+        defaultValue: "无法读取或更新 Windows 开机启动状态",
+      });
+    case "msixLocalStateUnavailable":
+      return translate("errors.msixLocalStateUnavailable", {
+        defaultValue: "无法访问 MSIX 本地配置目录",
+      });
     case "noPool":
       return translate("errors.noPool", { defaultValue: "便签窗口池尚未初始化" });
     default:

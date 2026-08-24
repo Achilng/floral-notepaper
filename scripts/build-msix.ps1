@@ -108,6 +108,80 @@ function Assert-ManifestPlaceholdersFilled {
   }
 }
 
+function Assert-MsixRuntimeManifest {
+  param(
+    [Parameter(Mandatory = $true)][xml]$Document,
+    [Parameter(Mandatory = $true)][string]$RawContent
+  )
+
+  foreach ($forbidden in @(
+    'unvirtualizedResources',
+    'RegistryWriteVirtualization',
+    'FileSystemWriteVirtualization',
+    'xmlns:desktop6='
+  )) {
+    if ($RawContent.Contains($forbidden, [System.StringComparison]::OrdinalIgnoreCase)) {
+      throw "MSIX manifest contains forbidden virtualization declaration: $forbidden"
+    }
+  }
+
+  $namespaces = New-Object System.Xml.XmlNamespaceManager($Document.NameTable)
+  $namespaces.AddNamespace('f', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+  $namespaces.AddNamespace('desktop', 'http://schemas.microsoft.com/appx/manifest/desktop/windows10')
+  $namespaces.AddNamespace('rescap', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities')
+
+  $targetFamily = $Document.SelectSingleNode(
+    '/f:Package/f:Dependencies/f:TargetDeviceFamily[@Name="Windows.Desktop"]',
+    $namespaces
+  )
+  if (-not $targetFamily -or $targetFamily.MinVersion -ne '10.0.19041.0') {
+    throw "MSIX Windows.Desktop MinVersion must be 10.0.19041.0, got: $($targetFamily.MinVersion)"
+  }
+
+  $runFullTrust = $Document.SelectSingleNode(
+    '/f:Package/f:Capabilities/rescap:Capability[@Name="runFullTrust"]',
+    $namespaces
+  )
+  if (-not $runFullTrust) {
+    throw 'MSIX manifest must retain the runFullTrust capability.'
+  }
+
+  $fullTrustProcess = $Document.SelectSingleNode(
+    '/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension[@Category="windows.fullTrustProcess"]',
+    $namespaces
+  )
+  if (-not $fullTrustProcess -or $fullTrustProcess.Executable -ne 'floral-notepaper.exe') {
+    throw 'MSIX manifest must retain the floral-notepaper.exe fullTrustProcess extension.'
+  }
+
+  $startupExtension = $Document.SelectSingleNode(
+    '/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension[@Category="windows.startupTask"]',
+    $namespaces
+  )
+  if (-not $startupExtension) {
+    throw 'MSIX manifest is missing the windows.startupTask extension.'
+  }
+  if ($startupExtension.Executable -ne 'floral-notepaper.exe' -or
+      $startupExtension.EntryPoint -ne 'Windows.FullTrustApplication') {
+    throw 'MSIX StartupTask executable or EntryPoint is incorrect.'
+  }
+  $parameters = $startupExtension.GetAttribute(
+    'Parameters',
+    'http://schemas.microsoft.com/appx/manifest/uap/windows10/10'
+  )
+  if ($parameters -ne '--silent') {
+    throw "MSIX StartupTask parameters must be --silent, got: $parameters"
+  }
+
+  $startupTask = $startupExtension.SelectSingleNode('desktop:StartupTask', $namespaces)
+  if (-not $startupTask -or
+      $startupTask.TaskId -ne 'FloralNotepaperStartup' -or
+      $startupTask.Enabled -ne 'false' -or
+      $startupTask.DisplayName -ne 'ms-resource:AppName') {
+    throw 'MSIX StartupTask TaskId, default state, or DisplayName is incorrect.'
+  }
+}
+
 # --- Validate inputs -------------------------------------------------------
 
 if ($Version -notmatch '^\d+\.\d+\.\d+$') {
@@ -144,6 +218,8 @@ $manifest = $manifest.Replace('__PUBLISHER_DISPLAY_NAME__', $PublisherDisplayNam
 $manifestArch = if ($Arch -eq 'aarch64') { 'arm64' } else { $Arch }
 $manifest = $manifest.Replace('__ARCH__', $manifestArch)
 Assert-ManifestPlaceholdersFilled -Content $manifest
+[xml]$renderedManifest = $manifest
+Assert-MsixRuntimeManifest -Document $renderedManifest -RawContent $manifest
 
 # --- Assemble the layout ----------------------------------------------------
 
@@ -303,7 +379,9 @@ if (-not (Test-Path -LiteralPath $packedPriPath -PathType Leaf)) {
   throw 'resources.pri was not found in the packed package.'
 }
 
-[xml]$packedManifest = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8
+$packedManifestContent = Get-Content -LiteralPath $manifestPath -Raw -Encoding UTF8
+[xml]$packedManifest = $packedManifestContent
+Assert-MsixRuntimeManifest -Document $packedManifest -RawContent $packedManifestContent
 $identity = $packedManifest.Package.Identity
 if ($identity.Name -ne $IdentityName) {
   throw "Unexpected identity Name in packed manifest: $($identity.Name)"

@@ -39,6 +39,75 @@ param(
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
+function Assert-MsixRuntimeManifest {
+  param(
+    [Parameter(Mandatory = $true)][xml]$Document,
+    [Parameter(Mandatory = $true)][string]$RawContent
+  )
+
+  foreach ($forbidden in @(
+    'unvirtualizedResources',
+    'RegistryWriteVirtualization',
+    'FileSystemWriteVirtualization',
+    'xmlns:desktop6='
+  )) {
+    if ($RawContent.Contains($forbidden, [System.StringComparison]::OrdinalIgnoreCase)) {
+      throw "MSIX manifest contains forbidden virtualization declaration: $forbidden"
+    }
+  }
+
+  $namespaces = New-Object System.Xml.XmlNamespaceManager($Document.NameTable)
+  $namespaces.AddNamespace('f', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10')
+  $namespaces.AddNamespace('desktop', 'http://schemas.microsoft.com/appx/manifest/desktop/windows10')
+  $namespaces.AddNamespace('rescap', 'http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities')
+
+  $targetFamily = $Document.SelectSingleNode(
+    '/f:Package/f:Dependencies/f:TargetDeviceFamily[@Name="Windows.Desktop"]',
+    $namespaces
+  )
+  if (-not $targetFamily -or $targetFamily.MinVersion -ne '10.0.19041.0') {
+    throw "MSIX Windows.Desktop MinVersion must be 10.0.19041.0, got: $($targetFamily.MinVersion)"
+  }
+  if (-not $Document.SelectSingleNode(
+      '/f:Package/f:Capabilities/rescap:Capability[@Name="runFullTrust"]',
+      $namespaces
+    )) {
+    throw 'MSIX manifest must retain the runFullTrust capability.'
+  }
+
+  $fullTrustProcess = $Document.SelectSingleNode(
+    '/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension[@Category="windows.fullTrustProcess"]',
+    $namespaces
+  )
+  if (-not $fullTrustProcess -or $fullTrustProcess.Executable -ne 'floral-notepaper.exe') {
+    throw 'MSIX manifest must retain the floral-notepaper.exe fullTrustProcess extension.'
+  }
+
+  $startupExtension = $Document.SelectSingleNode(
+    '/f:Package/f:Applications/f:Application/f:Extensions/desktop:Extension[@Category="windows.startupTask"]',
+    $namespaces
+  )
+  if (-not $startupExtension -or
+      $startupExtension.Executable -ne 'floral-notepaper.exe' -or
+      $startupExtension.EntryPoint -ne 'Windows.FullTrustApplication') {
+    throw 'MSIX manifest StartupTask extension is missing or invalid.'
+  }
+  $parameters = $startupExtension.GetAttribute(
+    'Parameters',
+    'http://schemas.microsoft.com/appx/manifest/uap/windows10/10'
+  )
+  if ($parameters -ne '--silent') {
+    throw "MSIX StartupTask parameters must be --silent, got: $parameters"
+  }
+  $startupTask = $startupExtension.SelectSingleNode('desktop:StartupTask', $namespaces)
+  if (-not $startupTask -or
+      $startupTask.TaskId -ne 'FloralNotepaperStartup' -or
+      $startupTask.Enabled -ne 'false' -or
+      $startupTask.DisplayName -ne 'ms-resource:AppName') {
+    throw 'MSIX StartupTask TaskId, default state, or DisplayName is incorrect.'
+  }
+}
+
 if (-not (Test-Path -LiteralPath $MsixPath -PathType Leaf)) {
   throw "Signed MSIX package was not found at $MsixPath."
 }
@@ -68,13 +137,16 @@ try {
   }
   $reader = New-Object System.IO.StreamReader($manifestEntry.Open())
   try {
-    [xml]$manifest = $reader.ReadToEnd()
+    $manifestContent = $reader.ReadToEnd()
+    [xml]$manifest = $manifestContent
   } finally {
     $reader.Dispose()
   }
 } finally {
   $zip.Dispose()
 }
+
+Assert-MsixRuntimeManifest -Document $manifest -RawContent $manifestContent
 
 $identity = $manifest.Package.Identity
 if ($identity.Name -ne $env:MSIX_IDENTITY_NAME) {
@@ -103,3 +175,4 @@ if ($identity.ProcessorArchitecture -ne $manifestArch) {
 "- Certificate thumbprint: $($signingCertificate.Thumbprint)" >> $env:GITHUB_STEP_SUMMARY
 "- Certificate SHA-256: $actualCertificateSha256" >> $env:GITHUB_STEP_SUMMARY
 "- Identity: $($identity.Name) / $($identity.Publisher) / $($identity.Version) / $($identity.ProcessorArchitecture)" >> $env:GITHUB_STEP_SUMMARY
+"- Runtime manifest: no unvirtualizedResources; LocalState/StartupTask contract verified" >> $env:GITHUB_STEP_SUMMARY

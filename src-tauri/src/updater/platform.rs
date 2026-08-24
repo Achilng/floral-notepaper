@@ -3,7 +3,10 @@ use super::{
     types::{InstallKind, UpdateStateDto},
     version, APP_ID,
 };
-use crate::services::notes::AppError;
+use crate::{
+    services::notes::AppError,
+    windows_package::{self, WindowsInstallContext},
+};
 use serde::{Deserialize, Serialize};
 use std::{
     env,
@@ -146,13 +149,13 @@ fn current_arch() -> Arch {
 }
 
 fn detect_install_kind(os: Os, current_exe: Option<&Path>) -> InstallKind {
-    detect_install_kind_with_package(os, current_exe, has_package_identity())
+    detect_install_kind_with_context(os, current_exe, windows_package::windows_install_context())
 }
 
-fn detect_install_kind_with_package(
+fn detect_install_kind_with_context(
     os: Os,
     current_exe: Option<&Path>,
-    has_package_identity: bool,
+    windows_context: WindowsInstallContext,
 ) -> InstallKind {
     match os {
         Os::Macos => {
@@ -163,7 +166,7 @@ fn detect_install_kind_with_package(
             }
         }
         Os::Windows => {
-            if has_package_identity {
+            if windows_context == WindowsInstallContext::Msix {
                 // MSIX packages are managed (and updated) by the Microsoft
                 // Store; in-app updates must never run against the read-only
                 // WindowsApps layout.
@@ -187,34 +190,6 @@ fn detect_install_kind_with_package(
         }
         Os::Unsupported => InstallKind::Unknown,
     }
-}
-
-/// Whether the current process was launched with an MSIX package identity.
-///
-/// Unpackaged processes receive `APPMODEL_ERROR_NO_PACKAGE`; any other
-/// outcome (success or an insufficient buffer) means a package identity is
-/// present.
-#[cfg(target_os = "windows")]
-pub fn has_package_identity() -> bool {
-    use windows_sys::Win32::Storage::Packaging::Appx::GetCurrentPackageFullName;
-
-    const ERROR_SUCCESS: u32 = 0;
-    const APPMODEL_ERROR_NO_PACKAGE: u32 = 15700;
-
-    let mut length: u32 = 0;
-    let status = unsafe { GetCurrentPackageFullName(&mut length, std::ptr::null_mut()) };
-    match status {
-        ERROR_SUCCESS => true,
-        APPMODEL_ERROR_NO_PACKAGE => false,
-        // ERROR_INSUFFICIENT_BUFFER (and anything else) means a package
-        // identity exists but the caller's buffer was too small.
-        _ => true,
-    }
-}
-
-#[cfg(not(target_os = "windows"))]
-pub fn has_package_identity() -> bool {
-    false
 }
 
 #[cfg(target_os = "windows")]
@@ -358,11 +333,12 @@ mod tests {
 
     #[test]
     fn detects_windows_nsis_installation() {
-        let install_kind = detect_install_kind(
+        let install_kind = detect_install_kind_with_context(
             Os::Windows,
             Some(Path::new(
                 r"C:\Program Files\Floral Notepaper\floral-notepaper.exe",
             )),
+            WindowsInstallContext::Unpackaged,
         );
 
         assert_eq!(install_kind, InstallKind::WindowsNsis);
@@ -370,9 +346,10 @@ mod tests {
 
     #[test]
     fn detects_windows_portable_installation() {
-        let install_kind = detect_install_kind(
+        let install_kind = detect_install_kind_with_context(
             Os::Windows,
             Some(Path::new(r"D:\Apps\Floral\floral-notepaper.exe")),
+            WindowsInstallContext::Unpackaged,
         );
 
         assert_eq!(install_kind, InstallKind::WindowsPortable);
@@ -500,12 +477,12 @@ mod tests {
 
     #[test]
     fn detects_windows_msix_installation() {
-        let install_kind = detect_install_kind_with_package(
+        let install_kind = detect_install_kind_with_context(
             Os::Windows,
             Some(Path::new(
                 r"C:\Program Files\WindowsApps\FloralNotepaper_1.1.0.0_x64__abcdefgh\floral-notepaper.exe",
             )),
-            true,
+            WindowsInstallContext::Msix,
         );
 
         assert_eq!(install_kind, InstallKind::WindowsMsix);
@@ -515,12 +492,12 @@ mod tests {
     fn treats_windowsapps_path_without_package_identity_as_nsis() {
         // Without a package identity the path-based fallback must stay intact
         // so that unpackaged binaries keep their current classification.
-        let install_kind = detect_install_kind_with_package(
+        let install_kind = detect_install_kind_with_context(
             Os::Windows,
             Some(Path::new(
                 r"C:\Program Files\WindowsApps\floral-notepaper.exe",
             )),
-            false,
+            WindowsInstallContext::Unpackaged,
         );
 
         assert_eq!(install_kind, InstallKind::WindowsNsis);

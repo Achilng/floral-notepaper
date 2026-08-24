@@ -41,6 +41,8 @@
     }
   },
   "errors": {
+    "autostartDisabledByUser": "Launch on startup was disabled in Windows. Allow this app in Task Manager or Windows Settings first.",
+    "autostartManagedByPolicy": "Launch on startup is managed by Windows policy and cannot be changed in the app.",
     "categoryAlreadyExists": "Category \"{{category}}\" already exists",
     "categoryNameEmpty": "Category name cannot be empty",
     "categoryNameInvalidChars": "Category name cannot contain special characters",
@@ -50,6 +52,8 @@
     "imagePasteFailed": "Image paste failed",
     "imageTooLarge": "Image file too large (max 20 MB)",
     "noPool": "Notepad window pool not yet initialized",
+    "msixAutostartUnavailable": "Unable to read or update the Windows startup state",
+    "msixLocalStateUnavailable": "Unable to access the MSIX local settings directory",
     "noteNotFound": "Note not found",
     "unsupportedFile": "Only .md files are supported",
     "unsupportedImageFormat": "Unsupported image format",

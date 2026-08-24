@@ -1845,14 +1845,25 @@ jobs:
             throw "Installed executable was not found at $exe."
           }
 
+          $localStateDir = Join-Path $env:LOCALAPPDATA "Packages\$($package.PackageFamilyName)\LocalState"
+          $configPath = Join-Path $localStateDir 'config.json'
+          $unpackagedConfigDir = Join-Path $env:APPDATA 'floral-notepaper'
+          if (Test-Path -LiteralPath $unpackagedConfigDir) {
+            throw "MSIX install test requires a clean unpackaged config path, but it already exists: $unpackagedConfigDir"
+          }
+          $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+          $runValue = Get-ItemPropertyValue -LiteralPath $runKey -Name '花笺' -ErrorAction SilentlyContinue
+          if ($null -ne $runValue) {
+            throw "MSIX install test requires no pre-existing 花笺 HKCU Run value, got: $runValue"
+          }
+
           # The runner session is headless: the process must stay alive or the
-          # app must at least reach the Rust setup stage (creating the
-          # unvirtualized config dir). WebView rendering is reviewed manually.
+          # app must at least reach the Rust setup stage and create config.json
+          # in its package-owned LocalState. WebView rendering is reviewed manually.
           $process = Start-Process -FilePath $exe -PassThru
-          $configDir = Join-Path $env:APPDATA 'floral-notepaper'
           $deadline = (Get-Date).AddSeconds(20)
           while ((Get-Date) -lt $deadline) {
-            if (Test-Path -LiteralPath $configDir) {
+            if (Test-Path -LiteralPath $configPath -PathType Leaf) {
               break
             }
             if ($process.HasExited) {
@@ -1862,13 +1873,21 @@ jobs:
             $process.Refresh()
           }
 
-          if (-not (Test-Path -LiteralPath $configDir)) {
+          if (-not (Test-Path -LiteralPath $configPath -PathType Leaf)) {
             if ($process.HasExited) {
-              throw "The app exited before creating the config dir (exit code $($process.ExitCode))."
+              throw "The app exited before creating LocalState config.json (exit code $($process.ExitCode))."
             }
-            throw 'The config dir was not created by the running app.'
+            throw "LocalState config.json was not created by the running app: $configPath"
           }
-          "- Config dir created: $configDir" >> $env:GITHUB_STEP_SUMMARY
+          if (Test-Path -LiteralPath $unpackagedConfigDir) {
+            throw "MSIX unexpectedly created the unpackaged config directory: $unpackagedConfigDir"
+          }
+          $runValue = Get-ItemPropertyValue -LiteralPath $runKey -Name '花笺' -ErrorAction SilentlyContinue
+          if ($null -ne $runValue) {
+            throw "MSIX unexpectedly created an HKCU Run value: $runValue"
+          }
+          "- LocalState config created: $configPath" >> $env:GITHUB_STEP_SUMMARY
+          "- Unpackaged APPDATA and HKCU Run backends remained untouched" >> $env:GITHUB_STEP_SUMMARY
           if ($process.HasExited) {
             "- The app exited during the headless session (exit code $($process.ExitCode)); WebView rendering must be reviewed manually" >> $env:GITHUB_STEP_SUMMARY
           } else {
@@ -1890,10 +1909,27 @@ jobs:
             Wait-Process -Id $process.Id -ErrorAction SilentlyContinue
           }
 
+          $notesDir = Join-Path ([Environment]::GetFolderPath('MyDocuments')) '花笺'
+          New-Item -ItemType Directory -Path $notesDir -Force | Out-Null
+          $noteSentinel = Join-Path $notesDir 'msix-uninstall-retention-test.md'
+          [System.IO.File]::WriteAllText($noteSentinel, '# MSIX uninstall retention test')
+
           Remove-AppxPackage -Package $package.PackageFullName
           if (Get-AppxPackage -Name $env:MSIX_IDENTITY_NAME) {
             throw 'The package is still registered after uninstall.'
           }
+          $cleanupDeadline = (Get-Date).AddSeconds(20)
+          while ((Test-Path -LiteralPath $localStateDir) -and (Get-Date) -lt $cleanupDeadline) {
+            Start-Sleep -Milliseconds 500
+          }
+          if (Test-Path -LiteralPath $localStateDir) {
+            throw "MSIX LocalState was not removed with the package: $localStateDir"
+          }
+          if (-not (Test-Path -LiteralPath $noteSentinel -PathType Leaf)) {
+            throw 'The user note sentinel was removed during MSIX uninstall.'
+          }
+          Remove-Item -LiteralPath $noteSentinel -Force
+          "- LocalState removed on uninstall; Documents\花笺 data retained" >> $env:GITHUB_STEP_SUMMARY
           "- Uninstall verified" >> $env:GITHUB_STEP_SUMMARY
 
   publish-msix-store:

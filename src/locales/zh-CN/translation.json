@@ -41,6 +41,8 @@
     }
   },
   "errors": {
+    "autostartDisabledByUser": "开机自启已被 Windows 用户设置禁用，请先在任务管理器或 Windows 设置中允许此应用",
+    "autostartManagedByPolicy": "开机自启由 Windows 策略管理，无法在应用中更改",
     "categoryAlreadyExists": "分类「{{category}}」已存在",
     "categoryNameEmpty": "分类名不能为空",
     "categoryNameInvalidChars": "分类名不能包含特殊字符",
@@ -50,6 +52,8 @@
     "imagePasteFailed": "图片粘贴失败",
     "imageTooLarge": "图片文件过大（上限 20 MB）",
     "noPool": "便签窗口池尚未初始化",
+    "msixAutostartUnavailable": "无法读取或更新 Windows 开机启动状态",
+    "msixLocalStateUnavailable": "无法访问 MSIX 本地配置目录",
     "noteNotFound": "找不到该笔记",
     "unsupportedFile": "只支持导入 .md 文件",
     "unsupportedImageFormat": "不支持的图片格式",

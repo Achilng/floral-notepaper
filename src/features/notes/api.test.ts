@@ -23,6 +23,29 @@ describe("notes api error localization", () => {
     ).toBe("快捷记录快捷键 配置无效");
   });
 
+  test("localizes MSIX StartupTask states with actionable messages", () => {
+    const translate = i18n.getFixedT("en-US");
+
+    expect(
+      getErrorMessage(
+        {
+          code: "autostartDisabledByUser",
+          message: "Startup was disabled by the user in Windows settings",
+        },
+        translate,
+      ),
+    ).toContain("Task Manager");
+    expect(
+      getErrorMessage(
+        {
+          code: "autostartManagedByPolicy",
+          message: "Startup is managed by Windows policy",
+        },
+        translate,
+      ),
+    ).toContain("Windows policy");
+  });
+
   test("parses serialized backend error strings when a structured payload is unavailable", () => {
     expect(getErrorMessage("noteNotFound: Note note-1 was not found")).toBe("找不到该笔记");
   });

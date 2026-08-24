@@ -11,10 +11,9 @@
     __ARCH__                   ProcessorArchitecture (x64 | arm64)
 
   Notes:
-  - Registry and AppData writes are unvirtualized (desktop6 properties plus the
-    unvirtualizedResources restricted capability) so the tray autostart
-    registry key and %APPDATA%\floral-notepaper keep behaving like the NSIS
-    install instead of being redirected per-package and removed on uninstall.
+  - Packaged settings use ApplicationData.LocalFolder (LocalState), and startup
+    uses the native StartupTask declared below. Unpackaged NSIS/Portable builds
+    continue to use their existing AppData and HKCU Run backends at runtime.
   - The app is a full-trust desktop application: runFullTrust + the
     windows.fullTrustProcess extension.
   - Each file type association is declared in its own uap extension; activation
@@ -28,10 +27,10 @@
 <Package
   xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
   xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10"
+  xmlns:uap10="http://schemas.microsoft.com/appx/manifest/uap/windows10/10"
   xmlns:desktop="http://schemas.microsoft.com/appx/manifest/desktop/windows10"
-  xmlns:desktop6="http://schemas.microsoft.com/appx/manifest/desktop/windows10/6"
   xmlns:rescap="http://schemas.microsoft.com/appx/manifest/foundation/windows10/restrictedcapabilities"
-  IgnorableNamespaces="uap desktop desktop6 rescap">
+  IgnorableNamespaces="uap uap10 desktop rescap">
   <Identity
     Name="__IDENTITY_NAME__"
     Publisher="__PUBLISHER_CN__"
@@ -41,13 +40,11 @@
     <DisplayName>ms-resource:AppName</DisplayName>
     <PublisherDisplayName>__PUBLISHER_DISPLAY_NAME__</PublisherDisplayName>
     <Logo>StoreLogo.png</Logo>
-    <desktop6:RegistryWriteVirtualization>disabled</desktop6:RegistryWriteVirtualization>
-    <desktop6:FileSystemWriteVirtualization>disabled</desktop6:FileSystemWriteVirtualization>
   </Properties>
   <Dependencies>
     <TargetDeviceFamily
       Name="Windows.Desktop"
-      MinVersion="10.0.17763.0"
+      MinVersion="10.0.19041.0"
       MaxVersionTested="10.0.26100.0" />
   </Dependencies>
   <Resources>
@@ -73,6 +70,16 @@
         <desktop:Extension
           Category="windows.fullTrustProcess"
           Executable="floral-notepaper.exe" />
+        <desktop:Extension
+          Category="windows.startupTask"
+          Executable="floral-notepaper.exe"
+          EntryPoint="Windows.FullTrustApplication"
+          uap10:Parameters="--silent">
+          <desktop:StartupTask
+            TaskId="FloralNotepaperStartup"
+            Enabled="false"
+            DisplayName="ms-resource:AppName" />
+        </desktop:Extension>
         <uap:Extension Category="windows.fileTypeAssociation">
           <uap:FileTypeAssociation Name="markdown">
             <uap:DisplayName>Markdown Document</uap:DisplayName>
@@ -95,6 +102,5 @@
   </Applications>
   <Capabilities>
     <rescap:Capability Name="runFullTrust" />
-    <rescap:Capability Name="unvirtualizedResources" />
   </Capabilities>
 </Package>
