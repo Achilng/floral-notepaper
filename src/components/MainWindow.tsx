@@ -17,9 +17,12 @@ import { exportMarkdownNote, importMarkdownNote } from "../features/importExport
 import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
 import { showToast } from "./Toast";
 import {
-  blockIndexAtOffset,
+  createScrollSyncMap,
+  interpolateScrollOffset,
   measureBlockOffsets,
+  measurePreviewBlockOffsets,
   tagPreviewBlocks,
+  type ScrollSyncMap,
 } from "../features/markdown/scrollSync";
 import {
   chooseDataDirectory,
@@ -406,9 +409,13 @@ export function MainWindow({
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const windowLabelRef = useRef("main");
   const previewScrollRef = useRef<HTMLDivElement>(null);
-  const blockOffsets = useRef<number[]>([]);
+  const scrollMaps = useRef<{
+    editorToPreview: ScrollSyncMap;
+    previewToEditor: ScrollSyncMap;
+  } | null>(null);
   const scrollSource = useRef<"editor" | "preview" | null>(null);
-  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollSyncRafRef = useRef<number>(0);
+  const scrollReleaseRafRef = useRef<number>(0);
   const measureDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureRafRef = useRef<number>(0);
   const measureControllerRef = useRef<AbortController | null>(null);
@@ -1735,6 +1742,14 @@ export function MainWindow({
     measureControllerRef.current?.abort();
   }, []);
 
+  const cancelScheduledScrollSync = useCallback(() => {
+    cancelAnimationFrame(scrollSyncRafRef.current);
+    cancelAnimationFrame(scrollReleaseRafRef.current);
+    scrollSyncRafRef.current = 0;
+    scrollReleaseRafRef.current = 0;
+    scrollSource.current = null;
+  }, []);
+
   const scrollSyncEnabled = settingsConfig?.splitScrollSync ?? true;
 
   const scheduleScrollMeasurement = useCallback(
@@ -1743,20 +1758,38 @@ export function MainWindow({
       if (!contentRef.current || !previewScrollRef.current) return;
 
       // 布局和测量稳定前先清空旧偏移量
-      blockOffsets.current = [];
+      scrollMaps.current = null;
       cancelScrollMeasurement();
 
       const controller = new AbortController();
       measureControllerRef.current = controller;
 
       const measure = async () => {
-        if (!contentRef.current || !previewScrollRef.current) return;
-        const offsets = await measureBlockOffsets(content, contentRef.current, controller.signal);
+        const textarea = contentRef.current;
+        const preview = previewScrollRef.current;
+        if (!textarea || !preview) return;
+
+        const editorOffsets = await measureBlockOffsets(content, textarea, controller.signal);
         if (controller.signal.aborted) return;
-        blockOffsets.current = offsets;
-        if (!controller.signal.aborted && previewScrollRef.current) {
-          tagPreviewBlocks(previewScrollRef.current);
-        }
+
+        tagPreviewBlocks(preview);
+        const previewOffsets = measurePreviewBlockOffsets(preview);
+        const editorMaxScroll = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+        const previewMaxScroll = Math.max(0, preview.scrollHeight - preview.clientHeight);
+        scrollMaps.current = {
+          editorToPreview: createScrollSyncMap(
+            editorOffsets,
+            previewOffsets,
+            editorMaxScroll,
+            previewMaxScroll,
+          ),
+          previewToEditor: createScrollSyncMap(
+            previewOffsets,
+            editorOffsets,
+            previewMaxScroll,
+            editorMaxScroll,
+          ),
+        };
       };
 
       const runAfterLayout = () => {
@@ -1777,8 +1810,9 @@ export function MainWindow({
   // 切换笔记时通过 rAF 测量（不阻塞首帧渲染），编辑时 debounce 避免频繁重排
   useEffect(() => {
     if (viewMode !== "split" || !scrollSyncEnabled) {
-      blockOffsets.current = [];
+      scrollMaps.current = null;
       cancelScrollMeasurement();
+      cancelScheduledScrollSync();
       return;
     }
 
@@ -1791,6 +1825,7 @@ export function MainWindow({
     };
   }, [
     cancelScrollMeasurement,
+    cancelScheduledScrollSync,
     content,
     scrollSyncEnabled,
     scheduleScrollMeasurement,
@@ -1808,6 +1843,8 @@ export function MainWindow({
     if (splitContainerRef.current) observedElements.push(splitContainerRef.current);
     if (contentRef.current) observedElements.push(contentRef.current);
     if (previewScrollRef.current) observedElements.push(previewScrollRef.current);
+    const previewContent = previewScrollRef.current?.querySelector<HTMLElement>(".font-body");
+    if (previewContent) observedElements.push(previewContent);
 
     if (typeof ResizeObserver === "undefined") {
       const handleResize = () => scheduleScrollMeasurement(120);
@@ -1832,62 +1869,58 @@ export function MainWindow({
     }
   }, [selectedId]);
 
+  const releaseScrollSourceAfterPaint = useCallback((source: "editor" | "preview") => {
+    cancelAnimationFrame(scrollReleaseRafRef.current);
+    scrollReleaseRafRef.current = requestAnimationFrame(() => {
+      scrollReleaseRafRef.current = requestAnimationFrame(() => {
+        if (scrollSource.current === source) scrollSource.current = null;
+        scrollReleaseRafRef.current = 0;
+      });
+    });
+  }, []);
+
+  const scheduleSyncedScroll = useCallback(
+    (source: "editor" | "preview") => {
+      if (scrollSyncRafRef.current) return;
+      scrollSyncRafRef.current = requestAnimationFrame(() => {
+        scrollSyncRafRef.current = 0;
+        const textarea = contentRef.current;
+        const preview = previewScrollRef.current;
+        const maps = scrollMaps.current;
+        if (!textarea || !preview || !maps || scrollSource.current !== source) return;
+
+        if (source === "editor") {
+          preview.scrollTop = interpolateScrollOffset(maps.editorToPreview, textarea.scrollTop);
+        } else {
+          textarea.scrollTop = interpolateScrollOffset(maps.previewToEditor, preview.scrollTop);
+        }
+        releaseScrollSourceAfterPaint(source);
+      });
+    },
+    [releaseScrollSourceAfterPaint],
+  );
+
   const handleEditorScroll = useCallback(() => {
-    if (viewMode !== "split") return;
+    if (viewMode !== "split" || !scrollSyncEnabled || !scrollMaps.current) return;
     if (scrollSource.current === "preview") return;
 
-    const textarea = contentRef.current;
-    const preview = previewScrollRef.current;
-    if (!textarea || !preview) return;
-
     scrollSource.current = "editor";
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(() => {
-      scrollSource.current = null;
-    }, 150);
-
-    const offsets = blockOffsets.current;
-    if (offsets.length === 0) return;
-
-    const blockIdx = blockIndexAtOffset(offsets, textarea.scrollTop);
-    const el = preview.querySelector<HTMLElement>(`[data-block-index="${blockIdx}"]`);
-    if (!el) return;
-
-    el.scrollIntoView({ block: "start", behavior: "instant" });
-  }, [viewMode]);
+    cancelAnimationFrame(scrollReleaseRafRef.current);
+    scrollReleaseRafRef.current = 0;
+    scheduleSyncedScroll("editor");
+  }, [scheduleSyncedScroll, scrollSyncEnabled, viewMode]);
 
   const handlePreviewScroll = useCallback(() => {
-    if (viewMode !== "split") return;
+    if (viewMode !== "split" || !scrollSyncEnabled || !scrollMaps.current) return;
     if (scrollSource.current === "editor") return;
 
-    const textarea = contentRef.current;
-    const preview = previewScrollRef.current;
-    if (!textarea || !preview) return;
-
     scrollSource.current = "preview";
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(() => {
-      scrollSource.current = null;
-    }, 150);
+    cancelAnimationFrame(scrollReleaseRafRef.current);
+    scrollReleaseRafRef.current = 0;
+    scheduleSyncedScroll("preview");
+  }, [scheduleSyncedScroll, scrollSyncEnabled, viewMode]);
 
-    const elements = preview.querySelectorAll<HTMLElement>("[data-block-index]");
-    if (elements.length === 0) return;
-
-    const containerRect = preview.getBoundingClientRect();
-    let topDomIndex = 0;
-    for (const el of elements) {
-      const rect = el.getBoundingClientRect();
-      if (rect.bottom > containerRect.top + 1) {
-        topDomIndex = parseInt(el.getAttribute("data-block-index")!, 10);
-        break;
-      }
-    }
-
-    const offsets = blockOffsets.current;
-    if (topDomIndex >= offsets.length) return;
-
-    textarea.scrollTop = offsets[topDomIndex];
-  }, [viewMode]);
+  useEffect(() => cancelScheduledScrollSync, [cancelScheduledScrollSync]);
 
   const handlePinEntry = async () => {
     if (!selectedId) return;
