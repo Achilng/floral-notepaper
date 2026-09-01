@@ -11,6 +11,7 @@ export interface AppConfig {
   globalShortcut: string;
   closeToTray: boolean;
   autostart: boolean;
+  showNotepadOnStartup: boolean;
   defaultViewMode: string;
   noteAutoSave: boolean;
   noteSurfaceAutoSave: boolean;
