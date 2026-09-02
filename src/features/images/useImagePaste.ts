@@ -21,6 +21,7 @@ interface UseImagePasteOptions {
   onEnsureNoteSaved: () => Promise<string | null>;
   disabled?: boolean;
   onError?: (message: string) => void;
+  onInserted?: (relativePaths: string[], cursorOffset: number) => void;
   t?: TFunction;
 }
 
@@ -44,13 +45,19 @@ export function insertTextAtCursor(
   setContent: (value: string) => void,
   text: string,
 ) {
-  const before = textarea.value.slice(0, textarea.selectionStart);
+  const selectionStart = textarea.selectionStart;
+  const selectionEnd = textarea.selectionEnd;
+  const before = textarea.value.slice(0, selectionStart);
+  const after = textarea.value.slice(selectionEnd);
   const needsLeadingNewline = before.length > 0 && !before.endsWith("\n");
   const insertion = (needsLeadingNewline ? "\n" : "") + text + "\n";
+  const nextValue = before + insertion + after;
+  const nextCursor = before.length + insertion.length;
 
+  textarea.value = nextValue;
+  setContent(nextValue);
   textarea.focus();
-  document.execCommand("insertText", false, insertion);
-  setContent(textarea.value);
+  textarea.setSelectionRange(nextCursor, nextCursor);
 }
 
 function getImageFiles(dataTransfer: DataTransfer): File[] {
@@ -73,6 +80,7 @@ export function useImagePaste({
   onEnsureNoteSaved,
   disabled,
   onError,
+  onInserted,
   t,
 }: UseImagePasteOptions) {
   const processingRef = useRef(false);
@@ -103,6 +111,10 @@ export function useImagePaste({
         if (markdownLines.length > 0) {
           insertTextAtCursor(textarea, setContent, markdownLines.join("\n"));
           markDirty();
+          onInserted?.(
+            markdownLines.map((line) => line.slice(4, -1)),
+            textarea.selectionStart,
+          );
         }
       } catch (error) {
         const message =
@@ -114,7 +126,7 @@ export function useImagePaste({
         processingRef.current = false;
       }
     },
-    [noteId, textareaRef, setContent, markDirty, onEnsureNoteSaved, onError, t],
+    [noteId, textareaRef, setContent, markDirty, onEnsureNoteSaved, onError, onInserted, t],
   );
 
   const handlePaste = useCallback(
