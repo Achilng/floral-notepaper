@@ -1447,6 +1447,38 @@ export function MainWindow({
     }
   };
 
+  // ↑/↓ 键盘选择笔记
+  const handleNoteKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>, noteId: string) => {
+      const el = e.currentTarget;
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          {
+            const next = el.nextElementSibling;
+            if (next?.hasAttribute("data-note-item")) {
+              (next as HTMLElement).focus();
+            }
+          }
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          {
+            const prev = el.previousElementSibling;
+            if (prev?.hasAttribute("data-note-item")) {
+              (prev as HTMLElement).focus();
+            }
+          }
+          break;
+        case "Enter":
+          e.preventDefault();
+          void handleSelectNote(noteId);
+          break;
+      }
+    },
+    [handleSelectNote],
+  );
+
   const handleRemoveExternalFile = async (id: string) => {
     if (selectedId === id && saveState === "dirty") {
       const shouldSave = window.confirm(
@@ -2426,12 +2458,15 @@ export function MainWindow({
                             return (
                               <div
                                 key={note.id}
+                                tabIndex={0}
+                                data-note-item="true"
                                 draggable
                                 onDragStart={(e) => {
                                   e.dataTransfer.setData("text/plain", note.id);
                                   e.dataTransfer.effectAllowed = "move";
                                 }}
                                 onClick={() => void handleSelectNote(note.id)}
+                                onKeyDown={(e) => handleNoteKeyDown(e, note.id)}
                                 onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
                                 onMouseEnter={() => setHoveredId(note.id)}
                                 onMouseLeave={() => setHoveredId(null)}
@@ -2603,12 +2638,15 @@ export function MainWindow({
                                 return (
                                   <div
                                     key={note.id}
+                                    tabIndex={0}
+                                    data-note-item="true"
                                     draggable
                                     onDragStart={(e) => {
                                       e.dataTransfer.setData("text/plain", note.id);
                                       e.dataTransfer.effectAllowed = "move";
                                     }}
                                     onClick={() => void handleSelectNote(note.id)}
+                                    onKeyDown={(e) => handleNoteKeyDown(e, note.id)}
                                     onContextMenu={(event) => handleOpenNoteMenu(event, note.id)}
                                     onMouseEnter={() => setHoveredId(note.id)}
                                     onMouseLeave={() => setHoveredId(null)}
@@ -2980,6 +3018,11 @@ export function MainWindow({
                           onDrop={imageDropHandler}
                           onDragOver={imageDragOverHandler}
                           onScroll={handleEditorScroll}
+                          onKeyDown={(e) => {
+                            if (e.key === "Escape") {
+                              e.currentTarget.blur();
+                            }
+                          }}
                           className="w-full h-full leading-[1.9] text-ink-soft font-body placeholder:text-ink-ghost/40"
                           style={{
                             fontSize: `${settingsConfig?.fontSize ?? 14}px`,
