@@ -1,0 +1,265 @@
+{
+  "common": {
+    "back": "戻る",
+    "blankNote": "空のノート",
+    "cancel": "キャンセル",
+    "default": "デフォルト",
+    "delete": "削除",
+    "externalFileCount": "{{count}} 個の外部ファイル",
+    "noteCount": "{{count}} 件のノート",
+    "operationFailed": "操作に失敗しました",
+    "save": "保存",
+    "untitledNote": "無題のノート",
+    "untitledFile": "無題のファイル",
+    "wordCount": "{{count}} 文字",
+    "wordCountUnit": "文字"
+  },
+  "contextMenu": {
+    "edit": {
+      "copy": "コピー",
+      "cut": "切り取り",
+      "paste": "貼り付け",
+      "selectAll": "すべて選択"
+    },
+    "tile": {
+      "close": "ピン留めを解除",
+      "copy": "コピー",
+      "save": "保存",
+      "switchToPad": "ウィンドウ表示に切り替え"
+    }
+  },
+  "errors": {
+    "categoryAlreadyExists": "カテゴリ「{{category}}」は既に存在します",
+    "categoryNameEmpty": "カテゴリ名を入力してください",
+    "categoryNameInvalidChars": "カテゴリ名に特殊文字を含めることはできません",
+    "categoryNotFound": "カテゴリ「{{category}}」が見つかりません",
+    "desktopConfig": "デスクトップ設定の更新に失敗しました",
+    "duplicateShortcut": "メイン画面の表示/非表示ショートカットは、クイックウィンドウ起動ショートカットと重複できません",
+    "imagePasteFailed": "画像の貼り付けに失敗しました",
+    "imageTooLarge": "画像ファイルが大きすぎます（最大 20 MB）",
+    "noPool": "付箋ウィンドウプールが初期化されていません",
+    "noteNotFound": "ノートが見つかりません",
+    "unsupportedFile": ".md ファイルのみインポート可能です",
+    "unsupportedImageFormat": "サポートされていない画像形式です",
+    "unsupportedShortcut": "{{field}} の設定が無効です",
+    "unsupportedShortcutGeneric": "ショートカットの設定が無効です"
+  },
+  "markdown": {
+    "copied": "コピーしました",
+    "copy": "コピー",
+    "emptyHint": "プレビューエリアに現在のノート内容が表示されます"
+  },
+  "main": {
+    "category": {
+      "confirmDelete": "「{{category}}」を削除してもよろしいですか？",
+      "confirmDeleteAction": "削除を確定",
+      "delete": "カテゴリを削除",
+      "emptyFolder": "空のフォルダ",
+      "new": "新しいカテゴリ",
+      "placeholder": "カテゴリ名を入力...",
+      "rename": "名前を変更",
+      "uncategorized": "未分類"
+    },
+    "confirm": {
+      "unsavedExternalFile": "「{{title}}」に変更が加えられています。元のファイルに保存しますか？"
+    },
+    "editor": {
+      "confirmDelete": "本当に削除しますか？",
+      "contentPlaceholder": "ここに入力...",
+      "emptyHint": "ノートを選択するか、新しく作成してください",
+      "pinToTile": "デスクトップにピン留め",
+      "previewLabel": "プレビュー",
+      "undo": "元に戻す（Ctrl+Z）",
+      "undoLabel": "元に戻す",
+      "redo": "やり直す（Ctrl+Y）",
+      "redoLabel": "やり直す"
+    },
+    "externalFile": {
+      "label": "外部ファイル · {{path}}"
+    },
+    "externalFiles": {
+      "remove": "リストから削除",
+      "title": "外部ファイル"
+    },
+    "formatSample": {
+      "boldText": "太字",
+      "codeText": "コード",
+      "headingText": "見出し",
+      "italicText": "斜体",
+      "listItem": "リスト項目",
+      "quoteText": "引用"
+    },
+    "search": {
+      "empty": "ノートがありません",
+      "noResults": "一致するノートが見つかりません"
+    },
+    "sidebar": {
+      "clearSearch": "検索をクリア",
+      "importMarkdown": "Markdownをインポート",
+      "newNote": "新規ノート",
+      "searchPlaceholder": "ノートを検索..."
+    },
+    "images": {
+      "cleanUnused": "未使用の画像をクリーンアップ",
+      "cleaned": "{{count}} 枚の画像をクリーンアップしました",
+      "cleanedNone": "クリーンアップが必要な画像はありません"
+    },
+    "statusBar": {
+      "byteSize": "{{size}} KB",
+      "encoding": "UTF-8",
+      "format": "Markdown + LaTeX",
+      "lineNumber": "{{count}} 行目",
+      "saveState": {
+        "dirty": "未保存",
+        "error": "保存失敗",
+        "idle": "未選択",
+        "saved": "保存済み",
+        "saving": "保存中"
+      }
+    },
+    "toolbar": {
+      "blockMath": "ブロック数式",
+      "bold": "太字",
+      "code": "コード",
+      "heading": "見出し",
+      "hr": "区切り線",
+      "inlineMath": "インライン数式",
+      "italic": "斜体",
+      "ol": "番号付きリスト",
+      "quote": "引用",
+      "ul": "箇条書きリスト"
+    },
+    "window": {
+      "close": "閉じる",
+      "collapseSidebar": "サイドバーを折りたたむ",
+      "expandSidebar": "サイドバーを展開",
+      "maximize": "最大化",
+      "minimize": "最小化",
+      "quickNotepad": "クイックウィンドウ",
+      "restore": "元のサイズに戻す",
+      "settings": "設定"
+    }
+  },
+  "noteMenu": {
+    "delete": "ノートを削除",
+    "export": "Markdownとしてエクスポート",
+    "moveToCategory": "カテゴリへ移動..."
+  },
+  "notepad": {
+    "button": {
+      "clear": "クリア"
+    },
+    "emptyState": "開けるノートがありません",
+    "error": {
+      "copyUnsupported": "現在の環境ではコピーがサポートされていません"
+    },
+    "placeholder": {
+      "content": "メモを入力...",
+      "title": "タイトル（任意）"
+    },
+    "status": {
+      "copied": "コピーしました",
+      "empty": "空",
+      "opened": "展開中",
+      "saveFailed": "保存に失敗しました",
+      "saved": "保存済み",
+      "unsaved": "未保存"
+    },
+    "tab": {
+      "edit": "編集",
+      "new": "新規作成",
+      "open": "開く"
+    },
+    "tooltip": {
+      "close": "閉じる",
+      "openInEditor": "エディタで開く",
+      "pinToTile": "デスクトップにピン留め"
+    }
+  },
+  "settings": {
+    "autoSave": {
+      "externalFile": "外部ファイルの自動保存",
+      "note": "ノートの自動保存",
+      "surface": "クイックウィンドウの自動保存"
+    },
+    "autostart": "システム起動時に実行",
+    "closeTitle": "設定を閉じる",
+    "closeToTray": "閉じるときにタスクトレイに格納",
+    "defaultView": {
+      "edit": "編集",
+      "label": "デフォルトの表示モード",
+      "preview": "プレビュー",
+      "split": "分割画面"
+    },
+    "fontSize": {
+      "editor": "エディタのフォントサイズ",
+      "surface": "クイックウィンドウ/ピン留めのフォントサイズ"
+    },
+    "locale": {
+      "enUS": "English",
+      "label": "言語 (Language)",
+      "zhCN": "简体中文",
+      "zhHK": "繁體中文"
+    },
+    "notesDir": "ノートの保存先ディレクトリ",
+    "openAtCursor": "ショートカット起動時にマウス位置に表示",
+    "quickNoteShortcut": "クイックメモ起動ショートカット",
+    "rememberSurfaceSize": "ウィンドウサイズを記憶する",
+    "tabIndentSize": "Tab キーのインデント幅",
+    "selectFolder": "フォルダを選択",
+    "shortcut": {
+      "cancelHint": "Esc でキャンセル",
+      "checkFailed": "ショートカットキーの検証に失敗しました",
+      "checking": "ショートカットキーを検証中...",
+      "cleared": "ショートカットキーをクリアしました",
+      "clickToRecord": "クリックして割り当て",
+      "conflict": {
+        "current": "ショートカットキー {{shortcut}} は現在使用中です",
+        "invalid": "ショートカットキー {{shortcut}} はサポートされていません",
+        "none": "ショートカットキー {{shortcut}} に競合は見つかりませんでした",
+        "registered": "ショートカットキー {{shortcut}} はシステムまたは他のアプリに占有されている可能性があります",
+        "system": "ショートカットキー {{shortcut}} がシステムショートカットと競合しています",
+        "unknown": "検証は完了しましたが、一時的なショートカットの解放に失敗しました"
+      },
+      "forQuickNote": "クイックメモウィンドウを開くためのキー",
+      "needsModifier": "ショートカットには Ctrl、Alt、または Win/Cmd キーを含める必要があります",
+      "notSet": "未設定",
+      "pressHint": "キーを押して割り当てます。Delete でクリア。"
+    },
+    "theme": {
+      "dark": "ダーク",
+      "label": "テーマ",
+      "light": "ライト",
+      "system": "システムに追従"
+    },
+    "tileColor": {
+      "custom": "カスタム",
+      "followTheme": "テーマに追従",
+      "label": "ピン留め付箋の色"
+    },
+    "tileCtrlClose": "Ctrl + 右クリックでピン留め付箋を素早く閉じる",
+    "tileRenderMarkdown": "ピン留め付箋でMarkdownを表示",
+    "renderHtmlMarkdown": "HTMLタグのレンダリングを許可",
+    "title": "アプリケーション設定",
+    "visibilityShortcut": "メイン画面の表示／非表示ショートカット",
+    "background": {
+      "label": "背景画像",
+      "default": "デフォルトの背景",
+      "choose": "選択",
+      "clear": "背景画像を削除",
+      "dim": "オーバーレイ（不透明度）",
+      "scale": "拡大縮小",
+      "positionX": "横位置",
+      "positionY": "縦位置",
+      "blur": "ぼかし",
+      "fit": {
+        "cover": "カバー（引き延ばし）",
+        "contain": "全体表示",
+        "repeat": "リピート"
+      }
+    }
+  },
+  "tile": {
+    "empty": "空"
+  }
+}
