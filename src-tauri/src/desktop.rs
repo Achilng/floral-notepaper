@@ -1453,7 +1453,7 @@ fn open_notepad_window_now(
             title: locales::notepad_window_title(locale).to_string(),
             specs,
             decorations: false,
-            always_on_top: true,
+            always_on_top: notepad_always_on_top_enabled(),
             shadow: false,
             skip_taskbar: true,
             bounds,
@@ -1504,6 +1504,8 @@ fn activate_pooled_notepad(app: &AppHandle, bounds: Option<WindowBounds>) -> Opt
     let specs = saved_surface_specs(app);
     let _ = window.set_title(locales::notepad_window_title(locale));
     let _ = window.set_size(tauri::LogicalSize::new(specs.width, specs.height));
+    // 预热窗口按当时的配置创建，激活前重新应用置顶设置以防配置已变
+    let _ = window.set_always_on_top(notepad_always_on_top_enabled());
     let _ = apply_window_bounds(&window, bounds);
     let _ = window.show();
     let _ = window.set_focus();
@@ -1616,7 +1618,7 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     .resizable(true)
     .decorations(false)
     .transparent(visual_options.transparent)
-    .always_on_top(true)
+    .always_on_top(notepad_always_on_top_enabled())
     .shadow(false)
     .skip_taskbar(true)
     .visible(false)
@@ -1916,6 +1918,12 @@ fn load_config() -> Result<AppConfig, AppError> {
 fn close_to_tray_enabled() -> bool {
     load_config()
         .map(|config| config.close_to_tray)
+        .unwrap_or(true)
+}
+
+fn notepad_always_on_top_enabled() -> bool {
+    load_config()
+        .map(|config| config.notepad_always_on_top)
         .unwrap_or(true)
 }
 
@@ -2589,6 +2597,7 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            notepad_always_on_top: true,
             tile_ctrl_close: true,
             tile_double_click_to_edit: false,
             tile_save_returns_to_pin: false,
@@ -2674,6 +2683,7 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            notepad_always_on_top: true,
             tile_ctrl_close: true,
             tile_double_click_to_edit: false,
             tile_save_returns_to_pin: false,
@@ -2711,6 +2721,7 @@ mod tests {
             background_position_x: 50.0,
             background_position_y: 50.0,
             remember_surface_size: true,
+            notepad_always_on_top: true,
             tile_ctrl_close: true,
             tile_double_click_to_edit: true,
             tile_save_returns_to_pin: true,

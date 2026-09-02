@@ -140,6 +140,8 @@ export function NotePad({
   const [tileRenderMarkdown, setTileRenderMarkdown] = useState(false);
   const [tileDoubleClickToEdit, setTileDoubleClickToEdit] = useState(false);
   const [tileSaveReturnsToPin, setTileSaveReturnsToPin] = useState(false);
+  // null = 配置未加载，此时保持窗口创建时（后端已按配置设置）的置顶状态
+  const [notepadAlwaysOnTop, setNotepadAlwaysOnTop] = useState<boolean | null>(null);
   const [tileColor, setTileColor] = useState(() =>
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
@@ -214,6 +216,7 @@ export function NotePad({
           setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
           setTileDoubleClickToEdit(loadedConfig.tileDoubleClickToEdit ?? false);
           setTileSaveReturnsToPin(loadedConfig.tileSaveReturnsToPin ?? false);
+          setNotepadAlwaysOnTop(loadedConfig.notepadAlwaysOnTop ?? true);
           setTileColorRaw(normalizeTileColor(loadedConfig.tileColor));
           setTileColorMode(loadedConfig.tileColorMode ?? "system");
           setTileColor(
@@ -270,6 +273,7 @@ export function NotePad({
       tileRenderMarkdown?: boolean;
       tileDoubleClickToEdit?: boolean;
       tileSaveReturnsToPin?: boolean;
+      notepadAlwaysOnTop?: boolean;
     }>("config-changed", (event) => {
       const mode = event.payload.tileColorMode ?? tileColorModeRef.current;
       const raw = event.payload.tileColor ?? tileColorRawRef.current;
@@ -283,6 +287,8 @@ export function NotePad({
         setTileDoubleClickToEdit(event.payload.tileDoubleClickToEdit);
       if (event.payload.tileSaveReturnsToPin != null)
         setTileSaveReturnsToPin(event.payload.tileSaveReturnsToPin);
+      if (event.payload.notepadAlwaysOnTop != null)
+        setNotepadAlwaysOnTop(event.payload.notepadAlwaysOnTop);
     });
     return () => {
       void unlisten.then((fn) => fn());
@@ -468,9 +474,11 @@ export function NotePad({
   }, [switchSurfaceMode]);
 
   useEffect(() => {
-    if (surfaceMode !== "tile") return;
-    void setCurrentWindowAlwaysOnTop(true).catch(() => undefined);
-  }, [surfaceMode]);
+    // 磁贴模式始终置顶；小窗模式按用户设置决定
+    const pinned = surfaceMode === "tile" ? true : notepadAlwaysOnTop;
+    if (pinned == null) return;
+    void setCurrentWindowAlwaysOnTop(pinned).catch(() => undefined);
+  }, [surfaceMode, notepadAlwaysOnTop]);
 
   const handleSave = useCallback(
     async ({ isAutoSave = false }: { isAutoSave?: boolean } = {}) => {
