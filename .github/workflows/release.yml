@@ -516,6 +516,7 @@ jobs:
           artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_BINARY_ARTIFACT_CONFIGURATION_SLUG }}
           github-artifact-id: ${{ needs.build-windows-binary.outputs.unsigned_artifact_id }}
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed-windows-binary
           skip-decompress: false
           parameters: |
@@ -757,6 +758,7 @@ jobs:
           artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_INSTALLER_ARTIFACT_CONFIGURATION_SLUG }}
           github-artifact-id: ${{ needs.build-windows-installer.outputs.unsigned_artifact_id }}
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed-windows-installer
           skip-decompress: true
 
@@ -1127,6 +1129,7 @@ jobs:
           artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_BINARY_ARM64_ARTIFACT_CONFIGURATION_SLUG }}
           github-artifact-id: ${{ needs.build-windows-binary-aarch64.outputs.unsigned_artifact_id }}
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed-windows-binary-arm64
           skip-decompress: true
           parameters: |
@@ -1365,6 +1368,7 @@ jobs:
           artifact-configuration-slug: ${{ vars.SIGNPATH_WINDOWS_INSTALLER_ARM64_ARTIFACT_CONFIGURATION_SLUG }}
           github-artifact-id: ${{ needs.build-windows-installer-aarch64.outputs.unsigned_artifact_id }}
           wait-for-completion: true
+          wait-for-completion-timeout-in-seconds: 3600
           output-artifact-directory: signed-windows-installer-arm64
           skip-decompress: true
 
