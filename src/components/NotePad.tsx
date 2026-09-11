@@ -5,6 +5,11 @@ import { useTranslation } from "react-i18next";
 import { createNote, getErrorMessage, getNote, listNotes, updateNote } from "../features/notes/api";
 import { useImagePaste } from "../features/images/useImagePaste";
 import { useImageBaseDir } from "../features/images/useImageBaseDir";
+import { NoteInlineImageEditor } from "../features/images/NoteInlineImageEditor";
+import {
+  extractNoteImageReferences,
+  visibleNoteText,
+} from "../features/images/noteImageReferences";
 import { reportInstallPreparation } from "../features/update/api";
 import type { UpdateInstallPrepareRequest } from "../features/update/types";
 import { showToast } from "./Toast";
@@ -30,7 +35,7 @@ import {
   normalizeTileColor,
   resolveTileColor,
 } from "../features/settings/tileColor";
-import type { TileColorMode } from "../features/settings/types";
+import type { AppConfig, TileColorMode } from "../features/settings/types";
 import {
   shouldEnterPadFromTileOnDoubleClick,
   shouldReturnToTileAfterManualSave,
@@ -52,6 +57,7 @@ import {
 } from "../features/windows/tileWindowEvents";
 import { NotepadOpenPanel } from "./NotepadOpenPanel";
 import { Tile } from "./Tile";
+import { BackgroundLayer } from "./BackgroundLayer";
 
 type OpenMode = "new" | "open";
 type NotePadStatus = "empty" | "opened" | "saved" | "dirty" | "saveFailed" | "copied";
@@ -112,7 +118,7 @@ function SurfaceResizeHandles() {
             event.stopPropagation();
             void startCurrentWindowResize(handle.direction).catch(() => undefined);
           }}
-          className={`absolute ${handle.size} opacity-0 ${handle.className}`}
+          className={`absolute z-20 ${handle.size} opacity-0 ${handle.className}`}
         />
       ))}
     </>
@@ -133,6 +139,7 @@ export function NotePad({
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [status, setStatus] = useState<NotePadStatus>("empty");
+  const [settingsConfig, setSettingsConfig] = useState<AppConfig | null>(null);
   const [noteSurfaceAutoSave, setNoteSurfaceAutoSave] = useState(initialAutoSave);
   const [tileColorRaw, setTileColorRaw] = useState(normalizeTileColor(initialTileColor));
   const [tileColorMode, setTileColorMode] = useState<TileColorMode>("system");
@@ -144,6 +151,7 @@ export function NotePad({
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
   const [isExiting, setIsExiting] = useState(false);
+  const [inlineEditorFocusOffset, setInlineEditorFocusOffset] = useState<number | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const tileDragIntentRef = useRef<{ x: number; y: number } | null>(null);
@@ -198,6 +206,7 @@ export function NotePad({
     setEditingNoteId(note.id);
     setTitle(note.title);
     setContent(note.content);
+    setInlineEditorFocusOffset(null);
     setMode("new");
     setStatus("opened");
   }, []);
@@ -209,6 +218,7 @@ export function NotePad({
       try {
         const [loadedConfig] = await Promise.all([getConfig(), refreshNotes()]);
         if (!cancelled) {
+          setSettingsConfig(loadedConfig);
           setNoteSurfaceAutoSave(loadedConfig.noteSurfaceAutoSave);
           setSurfaceFontSize(loadedConfig.surfaceFontSize ?? 14);
           setTileRenderMarkdown(loadedConfig.tileRenderMarkdown ?? false);
@@ -263,14 +273,8 @@ export function NotePad({
   }, []);
 
   useEffect(() => {
-    const unlisten = listen<{
-      tileColor?: string;
-      tileColorMode?: TileColorMode;
-      surfaceFontSize?: number;
-      tileRenderMarkdown?: boolean;
-      tileDoubleClickToEdit?: boolean;
-      tileSaveReturnsToPin?: boolean;
-    }>("config-changed", (event) => {
+    const unlisten = listen<AppConfig>("config-changed", (event) => {
+      setSettingsConfig(event.payload);
       const mode = event.payload.tileColorMode ?? tileColorModeRef.current;
       const raw = event.payload.tileColor ?? tileColorRawRef.current;
       setTileColorMode(mode);
@@ -319,6 +323,7 @@ export function NotePad({
       setEditingNoteId(null);
       setTitle("");
       setContent("");
+      setInlineEditorFocusOffset(null);
       setMode("new");
       setStatus("empty");
       setIsExiting(false);
@@ -403,6 +408,11 @@ export function NotePad({
   );
 
   const imageBaseDir = useImageBaseDir();
+  const hasNoteImages = useMemo(() => extractNoteImageReferences(content).length > 0, [content]);
+
+  const handleImagesInserted = useCallback((_relativePaths: string[], cursorOffset: number) => {
+    setInlineEditorFocusOffset(cursorOffset);
+  }, []);
 
   const ensureNoteSaved = useCallback(async (): Promise<string | null> => {
     if (editingNoteId) return editingNoteId;
@@ -425,6 +435,7 @@ export function NotePad({
     markDirty: () => setStatus("dirty"),
     onEnsureNoteSaved: ensureNoteSaved,
     onError: showToast,
+    onInserted: handleImagesInserted,
     t,
   });
 
@@ -610,6 +621,7 @@ export function NotePad({
         setEditingNoteId(null);
         setTitle("");
         setContent("");
+        setInlineEditorFocusOffset(null);
         setNotes([]);
         setMode("new");
         setStatus("empty");
@@ -705,6 +717,7 @@ export function NotePad({
     setEditingNoteId(null);
     setTitle("");
     setContent("");
+    setInlineEditorFocusOffset(null);
     setMode("new");
     setStatus("empty");
   };
@@ -758,7 +771,8 @@ export function NotePad({
         </Tile>
       ) : (
         <div className={padSurfaceClassName} data-surface-mode={surfaceMode}>
-          <>
+          <BackgroundLayer config={settingsConfig} />
+          <div className="relative z-10 flex flex-col flex-1 min-h-0">
             <div
               className="flex items-center justify-between px-4 pt-3 pb-0 cursor-default"
               onMouseDown={handleDrag}
@@ -859,37 +873,60 @@ export function NotePad({
                   style={{ fontSize: `${surfaceFontSize}px` }}
                 />
 
-                <textarea
-                  ref={contentRef}
-                  data-tab-indent="true"
-                  value={content}
-                  onChange={(event) => {
-                    setContent(event.target.value);
-                    setStatus("dirty");
-                  }}
-                  onPaste={imagePasteHandler}
-                  onDrop={imageDropHandler}
-                  onDragOver={imageDragOverHandler}
-                  onKeyDown={(event) => {
-                    if (event.key === "ArrowUp") {
-                      const ta = contentRef.current;
-                      if (ta && ta.selectionStart === ta.selectionEnd) {
-                        const textBeforeCursor = content.slice(0, ta.selectionStart);
-                        if (!textBeforeCursor.includes("\n")) {
-                          event.preventDefault();
-                          titleRef.current?.focus();
+                {hasNoteImages && imageBaseDir ? (
+                  <NoteInlineImageEditor
+                    content={content}
+                    imageBaseDir={imageBaseDir}
+                    fontSize={surfaceFontSize}
+                    noteId={editingNoteId}
+                    focusOffset={inlineEditorFocusOffset}
+                    primaryTextareaRef={contentRef}
+                    setContent={setContent}
+                    markDirty={() => setStatus("dirty")}
+                    onEnsureNoteSaved={ensureNoteSaved}
+                    onImagesInserted={handleImagesInserted}
+                    onError={showToast}
+                    onArrowUpFromStart={() => titleRef.current?.focus()}
+                    onFocusRestored={() => setInlineEditorFocusOffset(null)}
+                  />
+                ) : (
+                  <textarea
+                    ref={contentRef}
+                    data-tab-indent="true"
+                    value={content}
+                    onChange={(event) => {
+                      setContent(event.target.value);
+                      setStatus("dirty");
+                    }}
+                    onPaste={imagePasteHandler}
+                    onDrop={imageDropHandler}
+                    onDragOver={imageDragOverHandler}
+                    onKeyDown={(event) => {
+                      if (event.key === "ArrowUp") {
+                        const ta = contentRef.current;
+                        if (ta && ta.selectionStart === ta.selectionEnd) {
+                          const textBeforeCursor = content.slice(0, ta.selectionStart);
+                          if (!textBeforeCursor.includes("\n")) {
+                            event.preventDefault();
+                            titleRef.current?.focus();
+                          }
                         }
                       }
-                    }
-                  }}
-                  placeholder={t("notepad.placeholder.content", { defaultValue: "写点什么……" })}
-                  className="w-full flex-1 min-h-0 pb-2 leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
-                  style={{ fontSize: `${surfaceFontSize}px`, tabSize: `var(--tab-indent-size, 2)` }}
-                />
+                    }}
+                    placeholder={t("notepad.placeholder.content", {
+                      defaultValue: "写点什么……",
+                    })}
+                    className="w-full flex-1 min-h-0 pb-2 leading-relaxed text-ink-soft font-body placeholder:text-ink-ghost/50"
+                    style={{
+                      fontSize: `${surfaceFontSize}px`,
+                      tabSize: `var(--tab-indent-size, 2)`,
+                    }}
+                  />
+                )}
 
                 <div className="flex items-center justify-between mt-auto pt-2 border-t border-paper-deep/30 shrink-0">
                   <span className="text-[11px] text-ink-ghost font-mono tabular-nums truncate max-w-[170px]">
-                    {`${countNoteChars(content)} ${t("common.wordCountUnit", { defaultValue: "字" })} · ${statusLabel[status]}`}
+                    {`${countNoteChars(visibleNoteText(content))} ${t("common.wordCountUnit", { defaultValue: "字" })} · ${statusLabel[status]}`}
                   </span>
                   <div className="flex items-center gap-2">
                     <button
@@ -913,7 +950,7 @@ export function NotePad({
                 onOpenNote={(noteId) => void handleOpenNote(noteId)}
               />
             )}
-          </>
+          </div>
           <SurfaceResizeHandles />
         </div>
       )}
