@@ -10,7 +10,7 @@ import type { UpdateInstallPrepareRequest } from "../features/update/types";
 import { showToast } from "./Toast";
 import type { Note, NoteMetadata } from "../features/notes/types";
 import { countNoteChars, metadataFromNote } from "../features/notes/noteUtils";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   animateCurrentWindowBounds,
@@ -24,7 +24,7 @@ import {
   startCurrentWindowResize,
 } from "../features/windows/controls";
 import type { ResizeDirection } from "../features/windows/controls";
-import { getConfig } from "../features/settings/api";
+import { getConfig, saveConfig } from "../features/settings/api";
 import {
   DEFAULT_TILE_COLOR,
   normalizeTileColor,
@@ -569,6 +569,37 @@ export function NotePad({
 
     document.addEventListener("keydown", handleKeyDown);
     return () => document.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  // 备注：Ctrl+= / Ctrl+- 缩放便签字号
+  useEffect(() => {
+    const MIN_FONT_SIZE = 8;
+    const MAX_FONT_SIZE = 32;
+
+    async function handleFontSizeShortcut(event: KeyboardEvent) {
+      if (!event.ctrlKey && !event.metaKey) return;
+
+      const isPlus = event.key === "=" || event.key === "+";
+      const isMinus = event.key === "-";
+      if (!isPlus && !isMinus) return;
+
+      event.preventDefault();
+
+      const currentConfig = await getConfig();
+      const currentSize = currentConfig.surfaceFontSize ?? 14;
+      const nextSize = isPlus
+        ? Math.min(currentSize + 1, MAX_FONT_SIZE)
+        : Math.max(currentSize - 1, MIN_FONT_SIZE);
+      if (nextSize === currentSize) return;
+
+      setSurfaceFontSize(nextSize);
+      const nextConfig = { ...currentConfig, surfaceFontSize: nextSize };
+      void emit("config-changed", nextConfig);
+      await saveConfig(nextConfig);
+    }
+
+    document.addEventListener("keydown", handleFontSizeShortcut);
+    return () => document.removeEventListener("keydown", handleFontSizeShortcut);
   }, []);
 
   const handleOpenNote = async (noteId: string) => {

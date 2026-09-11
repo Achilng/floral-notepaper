@@ -1364,6 +1364,39 @@ export function MainWindow({
     [persistSettings],
   );
 
+  // 备注：Ctrl+= / Ctrl+- 缩放编辑器字号，和浏览器缩放行为保持一致。
+  useEffect(() => {
+    const MIN_FONT_SIZE = 8;
+    const MAX_FONT_SIZE = 32;
+
+    function handleFontSizeShortcut(event: KeyboardEvent) {
+      if (!event.ctrlKey && !event.metaKey) return;
+
+      const isPlus = event.key === "=" || event.key === "+";
+      const isMinus = event.key === "-";
+      if (!isPlus && !isMinus) return;
+
+      event.preventDefault();
+
+      setSettingsConfig((prev) => {
+        if (!prev) return prev;
+        const currentSize = prev.fontSize ?? 14;
+        const nextSize = isPlus
+          ? Math.min(currentSize + 1, MAX_FONT_SIZE)
+          : Math.max(currentSize - 1, MIN_FONT_SIZE);
+        if (nextSize === currentSize) return prev;
+
+        const nextConfig = { ...prev, fontSize: nextSize };
+        void emit("config-changed", nextConfig);
+        persistSettings(nextConfig);
+        return nextConfig;
+      });
+    }
+
+    document.addEventListener("keydown", handleFontSizeShortcut);
+    return () => document.removeEventListener("keydown", handleFontSizeShortcut);
+  }, [persistSettings]);
+
   const handleCloseSettings = useCallback(() => {
     setSettingsOpen(false);
   }, []);
