@@ -1141,6 +1141,7 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     setup_app_menu(app)?;
     setup_tray(app)?;
     schedule_notepad_prewarm(app.handle());
+    maybe_show_notepad_on_startup(app.handle());
 
     if !std::env::args().any(|a| a == "--silent") {
         if let Err(error) = show_main_window(app.handle()) {
@@ -1519,6 +1520,10 @@ pub fn recycle_notepad_window(app: &AppHandle, label: &str) -> Result<(), AppErr
         return Ok(());
     };
 
+    // 入池前把“钉在桌面层”的窗口还原为普通置顶窗口，
+    // 保证下次从池中唤出时状态一致（浮于所有页面之上）
+    restore_if_desktop_pinned(&window);
+
     save_surface_size(&window);
 
     window.hide()?;
@@ -1535,6 +1540,198 @@ pub fn recycle_notepad_window(app: &AppHandle, label: &str) -> Result<(), AppErr
     }
 
     Ok(())
+}
+
+// ================= 桌面层固定（钉到桌面，仅 Windows 真正生效）=================
+//
+// “钉到桌面”不是简单地取消置顶，而是把窗口 SetParent 到桌面图标所在的
+// WorkerW / Progman 之下：窗口从此位于所有普通窗口之下，只出现在桌面上，
+// Win+D“显示桌面”也不会把它最小化；还原时脱离桌面层并恢复置顶。
+
+#[cfg(target_os = "windows")]
+mod desktop_pin {
+    use std::ptr;
+    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::*;
+
+    fn wide(text: &str) -> Vec<u16> {
+        text.encode_utf16().chain(std::iter::once(0)).collect()
+    }
+
+    unsafe fn class_name_is(hwnd: HWND, expected: &str) -> bool {
+        let mut buf = [0u16; 64];
+        let len = unsafe { GetClassNameW(hwnd, buf.as_mut_ptr(), buf.len() as i32) };
+        if len <= 0 {
+            return false;
+        }
+        let name = String::from_utf16_lossy(&buf[..len as usize]);
+        name == expected
+    }
+
+    /// 找到承载桌面图标的 WorkerW；找不到时退化为 Progman。
+    unsafe fn find_desktop_parent() -> HWND {
+        unsafe {
+            let progman = FindWindowW(wide("Progman").as_ptr(), ptr::null());
+            if progman.is_null() {
+                return ptr::null_mut();
+            }
+            // 让 Progman 分裂出真正持有桌面图标的 WorkerW
+            let mut msg_result: usize = 0;
+            SendMessageTimeoutW(progman, 0x052C, 0, 0, SMTO_NORMAL, 1000, &mut msg_result);
+
+            unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
+                unsafe {
+                    if class_name_is(hwnd, "WorkerW") {
+                        let defview = FindWindowExW(
+                            hwnd,
+                            ptr::null_mut(),
+                            wide("SHELLDLL_DefView").as_ptr(),
+                            ptr::null(),
+                        );
+                        if !defview.is_null() {
+                            *(lparam as *mut HWND) = hwnd;
+                            return 0; // 找到即停止枚举
+                        }
+                    }
+                    1
+                }
+            }
+
+            let mut found: HWND = ptr::null_mut();
+            EnumWindows(Some(enum_proc), &mut found as *mut HWND as LPARAM);
+            if !found.is_null() {
+                return found;
+            }
+
+            // 部分系统上 SHELLDLL_DefView 直接挂在 Progman 下
+            let defview = FindWindowExW(
+                progman,
+                ptr::null_mut(),
+                wide("SHELLDLL_DefView").as_ptr(),
+                ptr::null(),
+            );
+            if !defview.is_null() {
+                return progman;
+            }
+            ptr::null_mut()
+        }
+    }
+
+    fn window_hwnd(window: &tauri::WebviewWindow) -> Result<HWND, String> {
+        // tauri 返回 windows-core 的 HWND 新类型，取其内部原始指针
+        window
+            .hwnd()
+            .map(|hwnd| hwnd.0 as HWND)
+            .map_err(|error| error.to_string())
+    }
+
+    pub fn is_pinned(window: &tauri::WebviewWindow) -> bool {
+        let Ok(hwnd) = window_hwnd(window) else {
+            return false;
+        };
+        unsafe { (GetWindowLongW(hwnd, GWL_STYLE) as u32) & WS_CHILD != 0 }
+    }
+
+    pub fn pin(window: &tauri::WebviewWindow) -> Result<(), String> {
+        unsafe {
+            let hwnd = window_hwnd(window)?;
+            let parent = find_desktop_parent();
+            if parent.is_null() {
+                return Err("找不到桌面图标层（WorkerW）".to_string());
+            }
+
+            let mut rect = std::mem::zeroed();
+            let _ = GetWindowRect(hwnd, &mut rect);
+            let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+            SetWindowLongW(hwnd, GWL_STYLE, ((style & !WS_POPUP) | WS_CHILD) as i32);
+            if SetParent(hwnd, parent).is_null() {
+                // 失败时还原窗口样式，避免半悬挂状态
+                SetWindowLongW(hwnd, GWL_STYLE, style as i32);
+                return Err("钉到桌面失败（SetParent 被拒绝）".to_string());
+            }
+            // 子窗口坐标变为相对父窗口；WorkerW 覆盖整个虚拟屏幕，原屏幕坐标可直接沿用
+            SetWindowPos(
+                hwnd,
+                ptr::null_mut(),
+                rect.left,
+                rect.top,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+            );
+            Ok(())
+        }
+    }
+
+    pub fn unpin(window: &tauri::WebviewWindow) -> Result<(), String> {
+        unsafe {
+            let hwnd = window_hwnd(window)?;
+            let mut rect = std::mem::zeroed();
+            let _ = GetWindowRect(hwnd, &mut rect);
+            let style = GetWindowLongW(hwnd, GWL_STYLE) as u32;
+            SetWindowLongW(hwnd, GWL_STYLE, ((style & !WS_CHILD) | WS_POPUP) as i32);
+            SetParent(hwnd, ptr::null_mut());
+            SetWindowPos(
+                hwnd,
+                ptr::null_mut(),
+                rect.left,
+                rect.top,
+                0,
+                0,
+                SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW,
+            );
+            Ok(())
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+mod desktop_pin {
+    pub fn is_pinned(_window: &tauri::WebviewWindow) -> bool {
+        false
+    }
+
+    pub fn pin(_window: &tauri::WebviewWindow) -> Result<(), String> {
+        Ok(())
+    }
+
+    pub fn unpin(_window: &tauri::WebviewWindow) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+/// 钉到桌面层 / 脱离桌面层。非 Windows 平台退化为取消/恢复置顶。
+pub fn set_window_desktop_pinned(
+    window: &tauri::WebviewWindow,
+    pinned: bool,
+) -> Result<(), AppError> {
+    let result = if pinned {
+        desktop_pin::pin(window)
+    } else {
+        desktop_pin::unpin(window)
+    };
+    result.map_err(|message| AppError {
+        code: "desktopPin".into(),
+        message,
+        details: Default::default(),
+    })?;
+
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = window.set_always_on_top(!pinned);
+    }
+    Ok(())
+}
+
+/// 若窗口当前钉在桌面层，则还原为普通置顶窗口（窗口池回收前调用）。
+fn restore_if_desktop_pinned(window: &tauri::WebviewWindow) {
+    if !desktop_pin::is_pinned(window) {
+        return;
+    }
+    if let Err(error) = desktop_pin::unpin(window) {
+        eprintln!("failed to unpin notepad from desktop layer: {error}");
+    }
+    let _ = window.set_always_on_top(true);
 }
 
 fn save_surface_size(window: &tauri::WebviewWindow) {
@@ -1574,6 +1771,35 @@ fn schedule_notepad_prewarm(app: &AppHandle) {
         let delay = 800 + i as u64 * 400;
         schedule_notepad_replenish(app, delay);
     }
+}
+
+/// 开机自启（--silent 静默启动）后自动唤出快捷便签窗口。
+/// 仅在静默启动时触发，手动双击打开主窗口的场景不受影响；
+/// 等待窗口池预热完成后再取出，保证“开机即见”。
+fn maybe_show_notepad_on_startup(app: &AppHandle) {
+    if !std::env::args().any(|a| a == "--silent") {
+        return;
+    }
+    let Ok(store) = default_store() else {
+        return;
+    };
+    let Ok(config) = store.load_config() else {
+        return;
+    };
+    if !config.show_notepad_on_startup {
+        return;
+    }
+
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(1200));
+        let handle_inner = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            if let Err(error) = open_notepad_window_now(&handle_inner, None, None) {
+                eprintln!("failed to show notepad on startup: {error}");
+            }
+        });
+    });
 }
 
 fn schedule_notepad_replenish(app: &AppHandle, delay_ms: u64) {
