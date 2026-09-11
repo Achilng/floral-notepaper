@@ -1,6 +1,7 @@
 import enUS from "./en-US/translation.json";
 import zhCN from "./zh-CN/translation.json";
 import zhHK from "./zh-HK/translation.json";
+import jaJP from "./ja-JP/translation.json"; // 💡 1. 日本語ファイルをインポート
 
 export interface TranslationTree {
   [key: string]: string | TranslationTree;
@@ -31,16 +32,19 @@ export const translationOverrides = {
   "zh-CN": zhCN,
   "en-US": enUS,
   "zh-HK": zhHK,
+  "ja-JP": jaJP, // 💡 2. 追加
 } as const satisfies Record<string, TranslationTree>;
 
 export const resolvedTranslations = {
   "zh-CN": translationOverrides["zh-CN"],
   "en-US": mergeTranslations(translationOverrides["zh-CN"], translationOverrides["en-US"]),
   "zh-HK": mergeTranslations(translationOverrides["zh-CN"], translationOverrides["zh-HK"]),
+  "ja-JP": mergeTranslations(translationOverrides["zh-CN"], translationOverrides["ja-JP"]), // 💡 3. 追加
 } as const;
 
 export const resources = {
   "zh-CN": { translation: resolvedTranslations["zh-CN"] },
   "en-US": { translation: resolvedTranslations["en-US"] },
   "zh-HK": { translation: resolvedTranslations["zh-HK"] },
+  "ja-JP": { translation: resolvedTranslations["ja-JP"] }, // 💡 4. 追加
 } as const;

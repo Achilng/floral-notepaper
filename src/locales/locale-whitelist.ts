@@ -1,4 +1,4 @@
-export const SUPPORTED_LOCALES = ["zh-CN", "en-US", "zh-HK"] as const;
+export const SUPPORTED_LOCALES = ["zh-CN", "en-US", "zh-HK", "ja-JP"] as const;
 
 export type SupportedLocale = (typeof SUPPORTED_LOCALES)[number];
 
@@ -9,9 +9,18 @@ export interface LocaleOption {
 }
 
 export const LOCALE_OPTIONS = [
-  { value: "zh-CN", labelKey: "settings.locale.zhCN", defaultLabel: "简体中文" },
+  {
+    value: "zh-CN",
+    labelKey: "settings.locale.zhCN",
+    defaultLabel: "简体中文",
+  },
   { value: "en-US", labelKey: "settings.locale.enUS", defaultLabel: "English" },
-  { value: "zh-HK", labelKey: "settings.locale.zhHK", defaultLabel: "繁體中文" },
+  {
+    value: "zh-HK",
+    labelKey: "settings.locale.zhHK",
+    defaultLabel: "繁體中文",
+  },
+  { value: "ja-JP", labelKey: "settings.locale.jaJP", defaultLabel: "日本語" },
 ] as const satisfies readonly LocaleOption[];
 
 export const DEFAULT_LOCALE: SupportedLocale = "zh-CN";
