@@ -88,6 +88,21 @@ describe("UpdateSettingsSection", () => {
     expect(markup).not.toContain("待更新版本：1.0.5");
   });
 
+  test("renders update toggles without hidden checkbox focus targets", () => {
+    const markup = renderToStaticMarkup(
+      <UpdateSettingsSection
+        initialSettings={settings}
+        initialStatus={status}
+        mode="settingsOnly"
+      />,
+    );
+
+    expect(markup).toContain('role="switch"');
+    expect(markup).toContain("w-full");
+    expect(markup).not.toContain('type="checkbox"');
+    expect(markup).not.toContain("sr-only");
+  });
+
   test("preserves non-standard check interval values in the settings UI", () => {
     const markup = renderToStaticMarkup(
       <UpdateSettingsSection
