@@ -230,6 +230,7 @@
     "openAtCursor": "快捷键打开时跟随鼠标位置",
     "quickNoteShortcut": "快捷记录快捷键",
     "rememberSurfaceSize": "记住小窗尺寸",
+    "notepadAlwaysOnTop": "小窗置顶",
     "tabIndentSize": "Tab 缩进宽度",
     "selectFolder": "选择文件夹",
     "shortcut": {

@@ -194,6 +194,11 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             onChange={(checked) => setConfigValue("rememberSurfaceSize", checked)}
           />
           <ToggleRow
+            label={t("settings.notepadAlwaysOnTop", { defaultValue: "小窗置顶" })}
+            checked={config.notepadAlwaysOnTop ?? true}
+            onChange={(checked) => setConfigValue("notepadAlwaysOnTop", checked)}
+          />
+          <ToggleRow
             label={t("settings.tileRenderMarkdown", { defaultValue: "磁贴渲染 Markdown" })}
             checked={config.tileRenderMarkdown}
             onChange={(checked) => setConfigValue("tileRenderMarkdown", checked)}
