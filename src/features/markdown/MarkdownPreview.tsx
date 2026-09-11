@@ -12,6 +12,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
+import remarkContinuousOrderedList from "./remarkContinuousOrderedList";
 import { resolveMarkdownImageSrc } from "./imageSrc";
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
@@ -71,7 +72,7 @@ interface MarkdownPreviewProps {
   imageBaseDir?: string;
 }
 
-const remarkPlugins = [remarkGfm, remarkMath, remarkAlerts];
+const remarkPlugins = [remarkGfm, remarkMath, remarkAlerts, remarkContinuousOrderedList];
 const sanitizeSchema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), "mark", "center", "font", "u", "abbr"],
@@ -200,8 +201,11 @@ const staticComponents: Components = {
       {children}
     </ul>
   ),
-  ol: ({ children }) => (
-    <ol className="ml-4 text-ink-soft leading-[1.9] list-decimal list-outside marker:text-bamboo/50 marker:font-mono marker:text-[0.85em]">
+  ol: ({ children, start }) => (
+    <ol
+      start={start}
+      className="ml-4 text-ink-soft leading-[1.9] list-decimal list-outside marker:text-bamboo/50 marker:font-mono marker:text-[0.85em]"
+    >
       {children}
     </ol>
   ),
