@@ -2,6 +2,7 @@ import { useState, useCallback, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import remarkBreaks from "remark-breaks";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import rehypeRaw from "rehype-raw";
@@ -12,7 +13,9 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
+import remarkBlankLines from "./remarkBlankLines";
 import { resolveMarkdownImageSrc } from "./imageSrc";
+import { toggleTaskAtLine } from "./toggleTaskAtLine";
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
   const { t } = useTranslation();
@@ -69,9 +72,11 @@ interface MarkdownPreviewProps {
   fontSize?: number;
   renderHtml?: boolean;
   imageBaseDir?: string;
+  onToggleTask?: (updatedContent: string) => void;
 }
 
-const remarkPlugins = [remarkGfm, remarkMath, remarkAlerts];
+const remarkPlugins = [remarkGfm, remarkMath, remarkAlerts, remarkBreaks, remarkBlankLines];
+
 const sanitizeSchema = {
   ...defaultSchema,
   tagNames: [...(defaultSchema.tagNames ?? []), "mark", "center", "font", "u", "abbr"],
@@ -272,9 +277,6 @@ const staticComponents: Components = {
   td: ({ children }) => (
     <td className="px-3 py-1.5 border border-paper-deep/35 text-ink-soft">{children}</td>
   ),
-  input: ({ checked, ...props }) => (
-    <input {...props} checked={checked} disabled className="mr-1.5 accent-bamboo" />
-  ),
 };
 
 export function MarkdownPreview({
@@ -282,11 +284,57 @@ export function MarkdownPreview({
   fontSize = 14,
   renderHtml = false,
   imageBaseDir,
+  onToggleTask,
 }: MarkdownPreviewProps) {
   const { t } = useTranslation();
   const components = useMemo<Components>(
     () => ({
       ...staticComponents,
+      li: ({ children, node, className }) => {
+        const isTask = typeof className === "string" && className.includes("task-list-item");
+        const classes = ["text-ink-soft", "leading-[1.9]"];
+        if (isTask) classes.push("list-none");
+        const line = node?.position?.start?.line;
+        const toggle =
+          isTask && onToggleTask && typeof line === "number"
+            ? () => {
+                const updated = toggleTaskAtLine(content, line);
+                if (updated !== content) onToggleTask(updated);
+              }
+            : undefined;
+        return (
+          <li
+            className={classes.join(" ")}
+            onChange={
+              toggle
+                ? (event) => {
+                    if (
+                      event.target instanceof HTMLInputElement &&
+                      event.target.type === "checkbox"
+                    ) {
+                      toggle();
+                    }
+                  }
+                : undefined
+            }
+          >
+            {children}
+          </li>
+        );
+      },
+      input: ({ checked, disabled: _disabled, type, ...props }) => {
+        const interactive = type === "checkbox" && onToggleTask;
+        return (
+          <input
+            {...props}
+            type={type}
+            checked={checked}
+            disabled={!interactive}
+            onChange={() => {}}
+            className={interactive ? "mr-1.5 accent-bamboo cursor-pointer" : "mr-1.5 accent-bamboo"}
+          />
+        );
+      },
       img: ({ src, alt, ...props }) => {
         const resolvedSrc = resolveMarkdownImageSrc(src, imageBaseDir, convertFileSrc);
         return (
@@ -300,7 +348,7 @@ export function MarkdownPreview({
         );
       },
     }),
-    [imageBaseDir],
+    [content, onToggleTask, imageBaseDir],
   );
   return (
     <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>

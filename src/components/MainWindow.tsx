@@ -1598,11 +1598,19 @@ export function MainWindow({
     });
   };
 
-  const markDirty = () => {
+  const markDirty = useCallback(() => {
     if (!selectedId) return;
     saveStateRef.current = "dirty";
     setSaveState("dirty");
-  };
+  }, [selectedId]);
+
+  const handlePreviewTaskToggle = useCallback(
+    (updatedContent: string) => {
+      setContent(updatedContent);
+      markDirty();
+    },
+    [markDirty],
+  );
 
   const ensureNoteSaved = useCallback(async (): Promise<string | null> => {
     if (selectedId) return selectedId;
@@ -3033,6 +3041,7 @@ export function MainWindow({
                       >
                         <MarkdownPreview
                           content={deferredContent}
+                          onToggleTask={handlePreviewTaskToggle}
                           fontSize={settingsConfig?.fontSize ?? 14}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           imageBaseDir={imageBaseDir ?? undefined}
