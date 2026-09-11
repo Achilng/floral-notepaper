@@ -33,6 +33,7 @@
     "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "unified": "^11.0.0",
     "unist-util-visit": "^5.1.0"
   },
   "devDependencies": {
@@ -40,6 +41,7 @@
     "@tauri-apps/cli": "^2",
     "@types/chroma-js": "^3.1.2",
     "@types/katex": "^0.16.8",
+    "@types/mdast": "^4.0.4",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^6.0.2",

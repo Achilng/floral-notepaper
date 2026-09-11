@@ -70,6 +70,8 @@ pub struct AppConfig {
     pub remember_surface_size: bool,
     #[serde(default = "default_tile_ctrl_close")]
     pub tile_ctrl_close: bool,
+    #[serde(default = "default_notepad_esc_close")]
+    pub notepad_esc_close: bool,
     #[serde(default)]
     pub tile_double_click_to_edit: bool,
     #[serde(default)]
@@ -1154,6 +1156,7 @@ impl NoteStore {
             background_position_y: default_background_position(),
             remember_surface_size: default_remember_surface_size(),
             tile_ctrl_close: default_tile_ctrl_close(),
+            notepad_esc_close: default_notepad_esc_close(),
             tile_double_click_to_edit: false,
             tile_save_returns_to_pin: false,
             tile_render_markdown: false,
@@ -1736,6 +1739,10 @@ fn default_tile_ctrl_close() -> bool {
     true
 }
 
+fn default_notepad_esc_close() -> bool {
+    true
+}
+
 fn default_split_scroll_sync() -> bool {
     true
 }
@@ -1916,6 +1923,7 @@ mod tests {
             background_position_y: 50.0,
             remember_surface_size: true,
             tile_ctrl_close: true,
+            notepad_esc_close: true,
             tile_double_click_to_edit: true,
             tile_save_returns_to_pin: true,
             tile_render_markdown: false,
