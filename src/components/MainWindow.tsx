@@ -62,6 +62,7 @@ import {
   moveNoteCategory,
   readExternalFile,
   renameCategory,
+  resolveNotePath,
   saveExternalFile,
   updateNote,
 } from "../features/notes/api";
@@ -667,8 +668,17 @@ export function MainWindow({
 
   const loadExternalFile = useCallback(
     async (filePath: string) => {
-      const epoch = loadEpoch.bump();
       try {
+        // 若这个文件本身就是花笺管理的笔记（位于笔记目录内），直接打开对应笔记，
+        // 而不是把它当成“外部文件”重复登记，避免同一篇笔记同时出现“有地址的外部文件”
+        // 和“无地址的笔记”两条记录
+        const managed = await resolveNotePath(filePath);
+        if (managed) {
+          await loadNote(managed.id);
+          return;
+        }
+
+        const epoch = loadEpoch.bump();
         const [fileContent, mtime] = await Promise.all([
           readExternalFile(filePath),
           getFileModifiedTime(filePath),
@@ -705,7 +715,7 @@ export function MainWindow({
         showToast(getErrorMessage(error));
       }
     },
-    [loadEpoch],
+    [loadEpoch, loadNote],
   );
 
   useEffect(() => {

@@ -64,6 +64,11 @@ fn notes_export_markdown(id: String, path: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+fn notes_resolve_path(path: String) -> Result<Option<NoteMetadata>, AppError> {
+    default_store()?.resolve_note_by_path(&PathBuf::from(path))
+}
+
+#[tauri::command]
 fn read_external_file(path: String) -> Result<String, AppError> {
     let raw = std::fs::read_to_string(&path).map_err(|e| AppError {
         code: "io".into(),
@@ -484,6 +489,7 @@ pub fn run() {
             notes_import_markdown,
             notes_export_markdown,
             notes_move_category,
+            notes_resolve_path,
             read_external_file,
             save_external_file,
             get_file_modified_time,

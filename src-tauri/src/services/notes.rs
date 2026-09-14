@@ -741,13 +741,24 @@ impl NoteStore {
         if let Err(error) = self.migrate_legacy_file_names() {
             eprintln!("failed to migrate legacy note file names: {error}");
         }
-        let mut metadata = self.load_metadata()?.notes;
-        metadata.retain(|note| {
+        let mut metadata_file = self.load_metadata()?;
+        let before = metadata_file.notes.len();
+        metadata_file.notes.retain(|note| {
             self.note_path_in_category(&note.file_name, &note.category)
                 .exists()
         });
-        metadata.sort_by_key(|note| std::cmp::Reverse(note.updated_at));
-        Ok(metadata)
+        self.dedupe_duplicate_files(&mut metadata_file.notes);
+        // Persist the cleanup so a note deleted outside the app does not leave a
+        // ghost metadata entry behind, and so two entries can never keep pointing
+        // at the same file. A lingering entry would keep reserving its file name
+        // and could later be re-created, producing duplicate entries.
+        if metadata_file.notes.len() != before {
+            self.save_metadata(&metadata_file)?;
+        }
+        metadata_file
+            .notes
+            .sort_by_key(|note| std::cmp::Reverse(note.updated_at));
+        Ok(metadata_file.notes)
     }
 
     pub fn read_note(&self, id: &str) -> Result<Note, AppError> {
@@ -767,6 +778,23 @@ impl NoteStore {
             word_count: metadata.word_count,
             content,
         })
+    }
+
+    /// Resolve an on-disk path to the managed note whose `.md` file it points to.
+    /// Returns `None` when the path is not a note the app manages (e.g. a truly
+    /// external markdown file). Used by the frontend so opening a managed note's
+    /// file from Explorer opens the note instead of registering a duplicate
+    /// "external file" entry.
+    pub fn resolve_note_by_path(&self, path: &Path) -> Result<Option<NoteMetadata>, AppError> {
+        self.ensure_storage()?;
+        let metadata = self.load_metadata()?;
+        for note in metadata.notes {
+            let note_path = self.note_path_in_category(&note.file_name, &note.category);
+            if paths_refer_to_same_entry(&note_path, path) {
+                return Ok(Some(note));
+            }
+        }
+        Ok(None)
     }
 
     pub fn create_note(&self, request: SaveNoteRequest) -> Result<Note, AppError> {
@@ -1346,16 +1374,80 @@ impl NoteStore {
     /// `exclude` is the note's own current file name (during updates) so a
     /// title that did not change never forces a rename onto itself.
     fn unique_file_name(&self, category: &str, stem: &str, exclude: Option<&str>) -> String {
+        // A file name counts as taken when a file exists on disk OR another note
+        // in the same category still references it in metadata. The metadata check
+        // matters when a file was deleted outside the app: its entry may linger,
+        // and reusing the name would produce two entries pointing at one file.
+        let taken: Vec<String> = self
+            .load_metadata()
+            .map(|metadata| {
+                metadata
+                    .notes
+                    .iter()
+                    .filter(|note| note.category == category)
+                    .map(|note| note.file_name.clone())
+                    .collect()
+            })
+            .unwrap_or_default();
+
         let mut candidate = format!("{stem}.md");
         let mut suffix = 2;
         loop {
-            let exists = self.note_path_in_category(&candidate, category).exists();
             let is_self = Some(candidate.as_str()) == exclude;
-            if !exists || is_self {
+            let exists_on_disk = self.note_path_in_category(&candidate, category).exists();
+            let referenced = taken.iter().any(|name| name == &candidate);
+            if (!exists_on_disk && !referenced) || is_self {
                 return candidate;
             }
             candidate = format!("{stem} ({suffix}).md");
             suffix += 1;
+        }
+    }
+
+    /// Removes metadata entries that reference the same file, keeping the one
+    /// whose id matches the file's marker (falling back to the most recently
+    /// updated). This repairs the state left when a note was deleted outside the
+    /// app and then re-created under the same name before reconciliation ran.
+    fn dedupe_duplicate_files(&self, notes: &mut Vec<NoteMetadata>) {
+        let mut by_file: BTreeMap<(String, String), Vec<usize>> = BTreeMap::new();
+        for (index, note) in notes.iter().enumerate() {
+            by_file
+                .entry((note.category.clone(), note.file_name.clone()))
+                .or_default()
+                .push(index);
+        }
+
+        let mut remove: Vec<usize> = Vec::new();
+        for ((category, file_name), indices) in by_file {
+            if indices.len() <= 1 {
+                continue;
+            }
+            let path = self.note_path_in_category(&file_name, &category);
+            let marker_id = fs::read_to_string(&path)
+                .ok()
+                .and_then(|raw| split_note_id_marker(&raw).0);
+            let keep = match &marker_id {
+                Some(id) => indices
+                    .iter()
+                    .copied()
+                    .find(|&index| &notes[index].id == id),
+                None => None,
+            }
+            .or_else(|| {
+                indices
+                    .iter()
+                    .copied()
+                    .max_by_key(|&index| &notes[index].updated_at)
+            });
+            if let Some(keep) = keep {
+                remove.extend(indices.iter().copied().filter(|&index| index != keep));
+            }
+        }
+
+        remove.sort_unstable();
+        remove.dedup();
+        for index in remove.into_iter().rev() {
+            notes.remove(index);
         }
     }
 
@@ -2749,5 +2841,115 @@ mod tests {
         let b_content = store.read_note(&b.id).expect("read B").content;
         assert_eq!(a_content, "甲");
         assert_eq!(b_content, "乙");
+    }
+
+    #[test]
+    fn recreating_note_after_external_delete_does_not_duplicate() {
+        let store = test_store("external-delete-recreate");
+        let first = store
+            .create_note(SaveNoteRequest {
+                title: "test".into(),
+                content: "一".into(),
+                category: String::new(),
+            })
+            .expect("create first");
+        assert_eq!(first.file_name, "test.md");
+
+        // The file is deleted outside the app; the metadata entry lingers.
+        fs::remove_file(store.notes_dir().join("test.md")).expect("delete externally");
+
+        // Re-creating the same title must not reuse "test.md", otherwise two
+        // metadata entries would point at the same file and both would surface.
+        let second = store
+            .create_note(SaveNoteRequest {
+                title: "test".into(),
+                content: "二".into(),
+                category: String::new(),
+            })
+            .expect("create second");
+        assert_ne!(second.file_name, "test.md");
+        assert_ne!(first.id, second.id);
+
+        // Only the surviving note remains after reconciliation; the ghost is gone.
+        let listed = store.list_notes().expect("list notes");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, second.id);
+
+        // The freed name is now reusable, proving the ghost was actually cleared.
+        let third = store
+            .create_note(SaveNoteRequest {
+                title: "test".into(),
+                content: "三".into(),
+                category: String::new(),
+            })
+            .expect("create third");
+        assert_eq!(third.file_name, "test.md");
+    }
+
+    #[test]
+    fn reconciles_duplicate_entries_pointing_at_the_same_file() {
+        let store = test_store("dedupe-duplicate");
+        let notes_dir = store.notes_dir();
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+
+        let id_a = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+        let id_b = "11111111-2222-3333-4444-555555555555";
+        // The on-disk file carries B's marker, so B is the surviving entry even
+        // though A is more recently updated.
+        fs::write(
+            notes_dir.join("test.md"),
+            format!("<!-- floral-note-id:{id_b} -->\n正文"),
+        )
+        .expect("write file");
+
+        let now = Utc::now();
+        let make = |id: &str, updated_at: DateTime<Utc>| NoteMetadata {
+            id: id.to_string(),
+            title: "test".into(),
+            file_name: "test.md".into(),
+            category: String::new(),
+            created_at: now,
+            updated_at,
+            word_count: 2,
+            preview: "正文".into(),
+        };
+        let metadata = MetadataFile {
+            notes: vec![
+                make(id_a, now),
+                make(id_b, now - chrono::Duration::hours(1)),
+            ],
+        };
+        write_json_atomic(&store.metadata_path(), &metadata).expect("write metadata");
+
+        let listed = store.list_notes().expect("list notes");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, id_b);
+    }
+
+    #[test]
+    fn resolves_a_managed_notes_path_but_not_an_external_file() {
+        let store = test_store("resolve-by-path");
+        let created = store
+            .create_note(SaveNoteRequest {
+                title: "test".into(),
+                content: "正文".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        // A path that points at the managed note's own file resolves to it,
+        // including a path spelled differently in case (Windows is case-insensitive).
+        let note_path = store.notes_dir().join("test.md");
+        let resolved = store
+            .resolve_note_by_path(&note_path)
+            .expect("resolve note path");
+        assert_eq!(resolved.map(|note| note.id), Some(created.id));
+
+        // A file outside the notes directory is not a managed note.
+        let external = store.data_dir.join("elsewhere.md");
+        let resolved = store
+            .resolve_note_by_path(&external)
+            .expect("resolve external path");
+        assert_eq!(resolved, None);
     }
 }
