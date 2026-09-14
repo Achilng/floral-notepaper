@@ -47,6 +47,10 @@ export function moveNoteCategory(id: string, category: string): Promise<NoteMeta
   return invoke("notes_move_category", { id, category });
 }
 
+export function startNoteDrag(noteId: string): Promise<void> {
+  return invoke("start_note_drag", { noteId });
+}
+
 export function listCategories(): Promise<string[]> {
   return invoke("categories_list");
 }

@@ -64,6 +64,7 @@ import {
   renameCategory,
   resolveNotePath,
   saveExternalFile,
+  startNoteDrag,
   updateNote,
 } from "../features/notes/api";
 import { cleanUnusedImages, saveImageFromPath } from "../features/images/api";
@@ -2439,6 +2440,11 @@ export function MainWindow({
                                 key={note.id}
                                 draggable
                                 onDragStart={(e) => {
+                                  if (e.ctrlKey) {
+                                    e.preventDefault();
+                                    void startNoteDrag(note.id);
+                                    return;
+                                  }
                                   e.dataTransfer.setData("text/plain", note.id);
                                   e.dataTransfer.effectAllowed = "move";
                                 }}
@@ -2616,6 +2622,11 @@ export function MainWindow({
                                     key={note.id}
                                     draggable
                                     onDragStart={(e) => {
+                                      if (e.ctrlKey) {
+                                        e.preventDefault();
+                                        void startNoteDrag(note.id);
+                                        return;
+                                      }
                                       e.dataTransfer.setData("text/plain", note.id);
                                       e.dataTransfer.effectAllowed = "move";
                                     }}
