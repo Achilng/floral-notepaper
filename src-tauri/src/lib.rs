@@ -65,11 +65,12 @@ fn notes_export_markdown(id: String, path: String) -> Result<(), AppError> {
 
 #[tauri::command]
 fn read_external_file(path: String) -> Result<String, AppError> {
-    std::fs::read_to_string(&path).map_err(|e| AppError {
+    let raw = std::fs::read_to_string(&path).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
         details: Default::default(),
-    })
+    })?;
+    Ok(services::notes::strip_note_id_marker(&raw))
 }
 
 #[tauri::command]
@@ -99,6 +100,12 @@ fn save_external_file(path: String, content: String) -> Result<(), AppError> {
             details: Default::default(),
         })?;
     }
+    // Preserve the note id marker across external edits so a managed note keeps
+    // its identity (and its images) when saved from the external-file path.
+    let content = match std::fs::read_to_string(&path) {
+        Ok(existing) => services::notes::preserve_note_id_marker(&existing, &content),
+        Err(_) => content,
+    };
     std::fs::write(&path, content).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),

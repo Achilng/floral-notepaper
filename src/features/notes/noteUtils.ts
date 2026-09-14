@@ -99,6 +99,22 @@ export function filterNotes(notes: NoteMetadata[], query: string): NoteMetadata[
   });
 }
 
+const LEGACY_UUID_PREFIX_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}_/i;
+
+/**
+ * Recovers a readable title from a note file name. Handles the three shapes the
+ * app has produced over time:
+ *   - legacy `{uuid}_标题.md` (strip the uuid prefix)
+ *   - clean `标题.md` / `标题 (2).md` (strip the collision suffix)
+ *   - `_` used as a word separator by safe-file-stem
+ */
+export function titleFromFileName(fileName: string): string {
+  const stem = fileName.replace(/\.(md|txt)$/i, "");
+  const withoutUuid = stem.replace(LEGACY_UUID_PREFIX_RE, "");
+  const withoutSuffix = withoutUuid.replace(/\s+\(\d+\)$/, "");
+  return withoutSuffix.replace(/_/g, " ").trim();
+}
+
 export function formatShortDate(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "--";

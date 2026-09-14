@@ -77,6 +77,7 @@ import {
   getDisplayTitle,
   groupNotesByCategory,
   metadataFromNote,
+  titleFromFileName,
 } from "../features/notes/noteUtils";
 import type { CategoryGroup } from "../features/notes/noteUtils";
 import {
@@ -673,7 +674,7 @@ export function MainWindow({
           getFileModifiedTime(filePath),
         ]);
         const fileName = filePath.split(/[\\/]/).pop() ?? filePath;
-        const displayTitle = fileName.replace(/\.(md|txt)$/i, "");
+        const displayTitle = titleFromFileName(fileName);
 
         setExternalFiles((current) => {
           if (current.some((f) => f.id === filePath)) {

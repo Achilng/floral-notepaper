@@ -738,6 +738,9 @@ impl NoteStore {
 
     pub fn list_notes(&self) -> Result<Vec<NoteMetadata>, AppError> {
         self.ensure_storage()?;
+        if let Err(error) = self.migrate_legacy_file_names() {
+            eprintln!("failed to migrate legacy note file names: {error}");
+        }
         let mut metadata = self.load_metadata()?.notes;
         metadata.retain(|note| {
             self.note_path_in_category(&note.file_name, &note.category)
@@ -750,9 +753,10 @@ impl NoteStore {
     pub fn read_note(&self, id: &str) -> Result<Note, AppError> {
         self.ensure_storage()?;
         let metadata = self.find_metadata(id)?;
-        let content = fs::read_to_string(
+        let raw_content = fs::read_to_string(
             self.note_path_in_category(&metadata.file_name, &metadata.category),
         )?;
+        let (_, content) = split_note_id_marker(&raw_content);
         Ok(Note {
             id: metadata.id,
             title: metadata.title,
@@ -769,9 +773,9 @@ impl NoteStore {
         self.ensure_storage()?;
         let id = Uuid::new_v4().to_string();
         let now = Utc::now();
-        let file_name = self.file_name_for(&id, &request.title);
-        let word_count = count_words(&request.content);
         let category = request.category.clone();
+        let file_name = self.file_name_for(&request.title, &category, None);
+        let word_count = count_words(&request.content);
         let note_path = self.note_path_in_category(&file_name, &category);
         if let Some(parent) = note_path.parent() {
             fs::create_dir_all(parent)?;
@@ -787,7 +791,7 @@ impl NoteStore {
             preview: preview(&request.content),
         };
 
-        fs::write(&note_path, &request.content)?;
+        fs::write(&note_path, prepend_note_id_marker(&id, &request.content))?;
         let mut metadata_file = self.load_metadata()?;
         metadata_file.notes.push(metadata.clone());
         self.save_metadata(&metadata_file)?;
@@ -815,8 +819,13 @@ impl NoteStore {
 
         let old_file_name = note.file_name.clone();
         let old_category = note.category.clone();
-        let new_file_name = self.file_name_for(id, &request.title);
         let new_category = request.category.clone();
+        // The note's own file may only be excluded from collision detection while
+        // it stays in the same category. Across a category move the old file name
+        // no longer refers to this note's file, so a same-titled note already in
+        // the destination must still win the collision check.
+        let exclude = (new_category == old_category).then_some(old_file_name.as_str());
+        let new_file_name = self.file_name_for(&request.title, &new_category, exclude);
         let now = Utc::now();
         let word_count = count_words(&request.content);
 
@@ -824,7 +833,7 @@ impl NoteStore {
         if let Some(parent) = new_path.parent() {
             fs::create_dir_all(parent)?;
         }
-        fs::write(&new_path, &request.content)?;
+        fs::write(&new_path, prepend_note_id_marker(id, &request.content))?;
         let old_path = self.note_path_in_category(&old_file_name, &old_category);
         let replaced_path =
             (old_file_name != new_file_name || old_category != new_category).then_some(old_path);
@@ -959,7 +968,11 @@ impl NoteStore {
             return Err(AppError::unsupported_file());
         }
 
-        let content = fs::read_to_string(path)?;
+        let raw_content = fs::read_to_string(path)?;
+        // Re-importing a note file that already carries an id marker must not
+        // nest a second marker, and heading detection must look past the marker
+        // line to the real first line of prose.
+        let (_, content) = split_note_id_marker(&raw_content);
         let title = imported_markdown_title(path, &content);
         self.create_note(SaveNoteRequest {
             title,
@@ -1111,7 +1124,11 @@ impl NoteStore {
         }
 
         let old_path = self.note_path_in_category(&note.file_name, &old_category);
-        let new_path = self.note_path_in_category(&note.file_name, new_category);
+        // Clean file names can now legitimately collide across categories, so a
+        // bare rename would overwrite a same-titled note already in the target.
+        // Pick a fresh non-colliding name for the destination instead.
+        let new_file_name = self.unique_file_name(new_category, &title_stem(&note.title), None);
+        let new_path = self.note_path_in_category(&new_file_name, new_category);
         if let Some(parent) = new_path.parent() {
             fs::create_dir_all(parent)?;
         }
@@ -1119,6 +1136,7 @@ impl NoteStore {
             fs::rename(&old_path, &new_path)?;
         }
 
+        note.file_name = new_file_name;
         note.category = new_category.to_string();
         let result = note.clone();
         self.save_metadata(&metadata_file)?;
@@ -1319,13 +1337,60 @@ impl NoteStore {
             .ok_or_else(|| AppError::note_not_found(id))
     }
 
-    fn file_name_for(&self, id: &str, title: &str) -> String {
-        let safe_title = safe_file_stem(title);
-        if safe_title.is_empty() {
-            format!("{id}.md")
-        } else {
-            format!("{id}_{safe_title}.md")
+    fn file_name_for(&self, title: &str, category: &str, exclude: Option<&str>) -> String {
+        self.unique_file_name(category, &title_stem(title), exclude)
+    }
+
+    /// Returns a `.md` file name whose stem is `stem`, appending ` (2)`, ` (3)`,
+    /// … until it does not collide with an existing note in the same category.
+    /// `exclude` is the note's own current file name (during updates) so a
+    /// title that did not change never forces a rename onto itself.
+    fn unique_file_name(&self, category: &str, stem: &str, exclude: Option<&str>) -> String {
+        let mut candidate = format!("{stem}.md");
+        let mut suffix = 2;
+        loop {
+            let exists = self.note_path_in_category(&candidate, category).exists();
+            let is_self = Some(candidate.as_str()) == exclude;
+            if !exists || is_self {
+                return candidate;
+            }
+            candidate = format!("{stem} ({suffix}).md");
+            suffix += 1;
         }
+    }
+
+    /// Renames legacy `{uuid}_标题.md` files to clean `{标题}.md` names and
+    /// writes the id marker into the content, so the id survives even when the
+    /// file name no longer encodes it. Idempotent: clean files are left alone.
+    fn migrate_legacy_file_names(&self) -> Result<(), AppError> {
+        let mut metadata_file = self.load_metadata()?;
+        let mut changed = false;
+
+        for note in &mut metadata_file.notes {
+            if legacy_id_from_file_name(&note.file_name).is_none() {
+                continue;
+            }
+            let stem = title_stem(&note.title);
+            let new_file_name = self.unique_file_name(&note.category, &stem, Some(&note.file_name));
+            let old_path = self.note_path_in_category(&note.file_name, &note.category);
+            let new_path = self.note_path_in_category(&new_file_name, &note.category);
+            if old_path == new_path {
+                continue;
+            }
+            if old_path.exists() {
+                let raw = fs::read_to_string(&old_path).unwrap_or_default();
+                let (_, content) = split_note_id_marker(&raw);
+                fs::write(&new_path, prepend_note_id_marker(&note.id, &content))?;
+                let _ = fs::remove_file(&old_path);
+                note.file_name = new_file_name;
+                changed = true;
+            }
+        }
+
+        if changed {
+            self.save_metadata(&metadata_file)?;
+        }
+        Ok(())
     }
 
     fn load_metadata(&self) -> Result<MetadataFile, AppError> {
@@ -1416,10 +1481,11 @@ impl NoteStore {
             }
 
             let file_name = entry.file_name().to_string_lossy().to_string();
-            let Some(id) = id_from_file_name(&file_name) else {
-                continue;
-            };
-            let content = fs::read_to_string(&path).unwrap_or_default();
+            let raw_content = fs::read_to_string(&path).unwrap_or_default();
+            let (marker_id, content) = split_note_id_marker(&raw_content);
+            let id = marker_id
+                .or_else(|| legacy_id_from_file_name(&file_name))
+                .unwrap_or_else(|| Uuid::new_v4().to_string());
             let title = infer_title(&file_name, &content);
             let modified = entry
                 .metadata()
@@ -1607,6 +1673,15 @@ fn safe_file_stem(title: &str) -> String {
     stem.trim_matches('_').to_string()
 }
 
+pub(crate) fn title_stem(title: &str) -> String {
+    let stem = safe_file_stem(title);
+    if stem.is_empty() {
+        "untitled".to_string()
+    } else {
+        stem
+    }
+}
+
 fn count_words(content: &str) -> usize {
     content.chars().filter(|ch| !ch.is_whitespace()).count()
 }
@@ -1621,13 +1696,67 @@ fn preview(content: &str) -> String {
         .collect()
 }
 
-fn id_from_file_name(file_name: &str) -> Option<String> {
+const NOTE_ID_MARKER_PREFIX: &str = "<!-- floral-note-id:";
+
+fn prepend_note_id_marker(id: &str, content: &str) -> String {
+    format!("{NOTE_ID_MARKER_PREFIX}{id} -->\n{content}")
+}
+
+fn split_note_id_marker(content: &str) -> (Option<String>, String) {
+    let first_line = content.split('\n').next().unwrap_or("");
+    let trimmed = first_line.trim_end_matches('\r').trim();
+    if let Some(rest) = trimmed.strip_prefix(NOTE_ID_MARKER_PREFIX) {
+        if let Some(id) = rest.strip_suffix(" -->") {
+            let id = id.trim();
+            if !id.is_empty() {
+                let after = content[first_line.len()..].strip_prefix('\n').unwrap_or("");
+                return (Some(id.to_string()), after.to_string());
+            }
+        }
+    }
+    (None, content.to_string())
+}
+
+/// Strips the id marker (first line) from note content, returning only the
+/// visible body. Content without a marker is returned unchanged, so this is
+/// safe to apply to any external markdown file read by the app.
+pub(crate) fn strip_note_id_marker(content: &str) -> String {
+    split_note_id_marker(content).1
+}
+
+/// Re-attaches an existing id marker to new content so that saving an
+/// externally opened managed note preserves its id. Returns `new_content`
+/// unchanged when the file on disk has no marker.
+pub(crate) fn preserve_note_id_marker(existing_content: &str, new_content: &str) -> String {
+    match split_note_id_marker(existing_content) {
+        (Some(id), _) => prepend_note_id_marker(&id, new_content),
+        (None, _) => new_content.to_string(),
+    }
+}
+
+/// Recovers the id from a legacy `{uuid}_标题.md` file name, used only when a
+/// managed note lacks the id marker (pre-migration files).
+fn legacy_id_from_file_name(file_name: &str) -> Option<String> {
     let stem = file_name.strip_suffix(".md")?;
-    Some(
-        stem.split_once('_')
-            .map(|(id, _)| id.to_string())
-            .unwrap_or_else(|| stem.to_string()),
-    )
+    let (id, _) = stem.split_once('_')?;
+    Uuid::parse_str(id).ok().map(|_| id.to_string())
+}
+
+fn strip_collision_suffix(stem: &str) -> &str {
+    if let Some(open) = stem.rfind(" (") {
+        let close = stem.len() - 1;
+        if stem.as_bytes()[close] == b')' {
+            let inner = &stem[open + 2..close];
+            if !inner.is_empty() && inner.bytes().all(|b| b.is_ascii_digit()) {
+                return &stem[..open];
+            }
+        }
+    }
+    stem
+}
+
+fn title_from_file_stem(stem: &str) -> String {
+    strip_collision_suffix(stem).replace('_', " ")
 }
 
 fn infer_title(file_name: &str, content: &str) -> String {
@@ -1640,9 +1769,12 @@ fn infer_title(file_name: &str, content: &str) -> String {
     }
 
     let stem = file_name.strip_suffix(".md").unwrap_or(file_name);
-    stem.split_once('_')
-        .map(|(_, title)| title.replace('_', " "))
-        .unwrap_or_default()
+    if let Some((prefix, rest)) = stem.split_once('_') {
+        if Uuid::parse_str(prefix).is_ok() {
+            return rest.replace('_', " ");
+        }
+    }
+    title_from_file_stem(stem)
 }
 
 fn is_markdown_path(path: &Path) -> bool {
@@ -1664,12 +1796,19 @@ fn imported_markdown_title(path: &Path, content: &str) -> String {
         return title.to_string();
     }
 
-    path.file_stem()
+    let stem = path
+        .file_stem()
         .and_then(|file_stem| file_stem.to_str())
         .map(str::trim)
         .filter(|title| !title.is_empty())
-        .unwrap_or("导入笔记")
-        .to_string()
+        .unwrap_or("导入笔记");
+
+    if let Some((prefix, rest)) = stem.split_once('_') {
+        if Uuid::parse_str(prefix).is_ok() {
+            return rest.replace('_', " ");
+        }
+    }
+    title_from_file_stem(stem)
 }
 
 fn default_note_auto_save() -> bool {
@@ -2448,5 +2587,167 @@ mod tests {
             fs::read_to_string(export_path).expect("read exported markdown"),
             content
         );
+    }
+
+    #[test]
+    fn creates_clean_file_name_without_uuid_prefix() {
+        let store = test_store("clean-name");
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "我的笔记".into(),
+                content: "正文".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        assert_eq!(note.file_name, "我的笔记.md");
+    }
+
+    #[test]
+    fn read_note_strips_id_marker_from_content() {
+        let store = test_store("marker-strip");
+        let note = store
+            .create_note(SaveNoteRequest {
+                title: "标题".into(),
+                content: "# 标题\n正文".into(),
+                category: String::new(),
+            })
+            .expect("create note");
+
+        let disk =
+            fs::read_to_string(store.notes_dir().join(&note.file_name)).expect("read on-disk file");
+        assert!(disk.starts_with("<!-- floral-note-id:"));
+
+        let loaded = store.read_note(&note.id).expect("read note");
+        assert_eq!(loaded.content, "# 标题\n正文");
+        assert!(!loaded.content.contains("floral-note-id"));
+    }
+
+    #[test]
+    fn handles_title_collisions_with_numeric_suffix() {
+        let store = test_store("collision");
+        let first = store
+            .create_note(SaveNoteRequest {
+                title: "标题".into(),
+                content: "一".into(),
+                category: String::new(),
+            })
+            .expect("create first");
+        let second = store
+            .create_note(SaveNoteRequest {
+                title: "标题".into(),
+                content: "二".into(),
+                category: String::new(),
+            })
+            .expect("create second");
+
+        assert_eq!(first.file_name, "标题.md");
+        assert_eq!(second.file_name, "标题 (2).md");
+        assert_ne!(first.id, second.id);
+    }
+
+    #[test]
+    fn migrates_legacy_uuid_file_names_to_clean_names() {
+        let store = test_store("migrate-legacy-names");
+        let id = "11111111-2222-3333-4444-555555555555";
+        let legacy_name = format!("{id}_旧标题.md");
+        let notes_dir = store.notes_dir();
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(notes_dir.join(&legacy_name), "正文内容").expect("write legacy note");
+
+        let now = Utc::now();
+        let metadata = MetadataFile {
+            notes: vec![NoteMetadata {
+                id: id.to_string(),
+                title: "旧标题".into(),
+                file_name: legacy_name.clone(),
+                category: String::new(),
+                created_at: now,
+                updated_at: now,
+                word_count: 4,
+                preview: "正文内容".into(),
+            }],
+        };
+        write_json_atomic(&store.metadata_path(), &metadata).expect("write metadata");
+
+        let listed = store.list_notes().expect("list notes");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, id);
+        assert_eq!(listed[0].file_name, "旧标题.md");
+
+        assert!(
+            !notes_dir.join(&legacy_name).exists(),
+            "legacy file should be removed"
+        );
+        let migrated = fs::read_to_string(notes_dir.join("旧标题.md")).expect("read migrated note");
+        assert!(migrated.starts_with("<!-- floral-note-id:"));
+        assert!(migrated.contains(id));
+        assert!(migrated.ends_with("正文内容"));
+    }
+
+    #[test]
+    fn rebuild_recovers_id_from_marker_when_metadata_missing() {
+        let store = test_store("rebuild-from-marker");
+        let id = "22222222-3333-4444-5555-666666666666";
+        let notes_dir = store.notes_dir();
+        fs::create_dir_all(&notes_dir).expect("create notes dir");
+        fs::write(
+            notes_dir.join("标题.md"),
+            format!("<!-- floral-note-id:{id} -->\n# 标题\n正文"),
+        )
+        .expect("write note with marker");
+
+        let listed = store.list_notes().expect("list notes");
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].id, id);
+        assert_eq!(listed[0].file_name, "标题.md");
+        assert_eq!(listed[0].title, "标题");
+    }
+
+    #[test]
+    fn imports_markdown_stripping_legacy_uuid_from_file_name() {
+        let root = test_root("import-uuid-strip");
+        let uuid = "33333333-4444-5555-6666-777777777777";
+        let source_path = root.join(format!("{uuid}_会议记录.md"));
+        fs::write(&source_path, "正文内容").expect("write source markdown");
+        let store_path = root.join("store");
+        let store = NoteStore::new(store_path.clone(), store_path);
+
+        let imported = store
+            .import_markdown_file(&source_path, "")
+            .expect("import markdown");
+
+        assert_eq!(imported.title, "会议记录");
+    }
+
+    #[test]
+    fn moving_note_across_categories_does_not_overwrite_same_title() {
+        let store = test_store("move-collision");
+        let a = store
+            .create_note(SaveNoteRequest {
+                title: "标题".into(),
+                content: "甲".into(),
+                category: "分类A".into(),
+            })
+            .expect("create in A");
+        let b = store
+            .create_note(SaveNoteRequest {
+                title: "标题".into(),
+                content: "乙".into(),
+                category: "分类B".into(),
+            })
+            .expect("create in B");
+
+        let moved = store
+            .move_note_to_category(&a.id, "分类B")
+            .expect("move A note into B");
+
+        assert_eq!(moved.category, "分类B");
+        assert_ne!(moved.file_name, b.file_name);
+
+        let a_content = store.read_note(&a.id).expect("read A").content;
+        let b_content = store.read_note(&b.id).expect("read B").content;
+        assert_eq!(a_content, "甲");
+        assert_eq!(b_content, "乙");
     }
 }
