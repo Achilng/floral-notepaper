@@ -67,6 +67,10 @@ export function readExternalFile(path: string): Promise<string> {
   return invoke("read_external_file", { path });
 }
 
+export function resolveNotePath(path: string): Promise<NoteMetadata | null> {
+  return invoke("notes_resolve_path", { path });
+}
+
 export function saveExternalFile(path: string, content: string): Promise<void> {
   return invoke("save_external_file", { path, content });
 }
