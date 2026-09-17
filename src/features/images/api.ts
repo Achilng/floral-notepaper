@@ -16,6 +16,12 @@ export function getImagesBaseDir(): Promise<string> {
   return invoke("images_get_base_dir");
 }
 
+// 读取应用自身"图片目录"之外的本地图片（如外部 md 文档相对/绝对路径引用的图片），
+// 返回 data URL，避免依赖资源协议的目录放行机制
+export function readLocalImage(path: string): Promise<string> {
+  return invoke("read_local_image", { path });
+}
+
 export function cleanUnusedImages(noteId: string, content: string): Promise<string[]> {
   return invoke("images_clean_unused", { noteId, content });
 }

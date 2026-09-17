@@ -32,6 +32,7 @@ export interface AppConfig {
   surfaceHeight?: number;
   toggleVisibilityShortcut: string;
   openAtCursor: boolean;
+  collapseSidebarOnStartup: boolean;
   backgroundImagePath?: string;
   backgroundFit?: BackgroundFit;
   backgroundDim?: number;

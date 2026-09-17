@@ -88,6 +88,8 @@ pub struct AppConfig {
     pub toggle_visibility_shortcut: String,
     #[serde(default = "default_open_at_cursor")]
     pub open_at_cursor: bool,
+    #[serde(default)]
+    pub collapse_sidebar_on_startup: bool,
     // Legacy fields — read from old config, never written back
     #[serde(default, skip_serializing)]
     pub notes_dir: Option<String>,
@@ -1163,6 +1165,7 @@ impl NoteStore {
             surface_height: None,
             toggle_visibility_shortcut: default_toggle_visibility_shortcut(),
             open_at_cursor: default_open_at_cursor(),
+            collapse_sidebar_on_startup: false,
             notes_dir: None,
             last_known_base_dir: None,
         }
@@ -1927,6 +1930,7 @@ mod tests {
             notes_dir: None,
             last_known_base_dir: None,
             open_at_cursor: true,
+            collapse_sidebar_on_startup: true,
         };
 
         store.save_config(saved.clone()).expect("save config");

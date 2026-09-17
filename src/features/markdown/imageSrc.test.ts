@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { resolveMarkdownImageSrc } from "./imageSrc";
+import { resolveExternalLocalImagePath, resolveMarkdownImageSrc } from "./imageSrc";
 
 describe("resolveMarkdownImageSrc", () => {
   const convertFileSrc = vi.fn((path: string) => `asset://${path}`);
@@ -41,5 +41,25 @@ describe("resolveMarkdownImageSrc", () => {
 
   test("returns an empty string for missing sources", () => {
     expect(resolveMarkdownImageSrc(undefined, "/notes/note-1", convertFileSrc)).toBe("");
+  });
+});
+
+describe("resolveExternalLocalImagePath", () => {
+  test("resolves absolute Windows paths directly, regardless of context", () => {
+    expect(resolveExternalLocalImagePath("D:\\pics\\a.png", undefined)).toBe("D:/pics/a.png");
+  });
+
+  test("resolves relative paths against the external file's directory", () => {
+    expect(resolveExternalLocalImagePath("icons/a.png", "D:/docs/note")).toBe(
+      "D:/docs/note/icons/a.png",
+    );
+  });
+
+  test("returns undefined for remote URLs and unresolvable relative paths", () => {
+    expect(
+      resolveExternalLocalImagePath("https://example.com/a.png", "D:/docs/note"),
+    ).toBeUndefined();
+    expect(resolveExternalLocalImagePath("icons/a.png", undefined)).toBeUndefined();
+    expect(resolveExternalLocalImagePath(undefined, "D:/docs/note")).toBeUndefined();
   });
 });

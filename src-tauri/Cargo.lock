@@ -1222,6 +1222,7 @@ dependencies = [
 name = "floral-notepaper"
 version = "1.2.0"
 dependencies = [
+ "base64 0.22.1",
  "block2",
  "chrono",
  "dirs 6.0.0",

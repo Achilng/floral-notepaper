@@ -1142,10 +1142,12 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     setup_tray(app)?;
     schedule_notepad_prewarm(app.handle());
 
+    // 启动时不在这里立即显示主窗口：前端加载完配置、应用好初始状态
+    // （如侧边栏是否收起）之后会主动调用 app_ready 来显示，避免窗口先以
+    // 默认状态露出一瞬间、再跳变成配置里的状态。这里只挂一个兜底定时器，
+    // 防止前端异常未触发时窗口永远不可见。
     if !std::env::args().any(|a| a == "--silent") {
-        if let Err(error) = show_main_window(app.handle()) {
-            eprintln!("failed to show main window on startup: {error}");
-        }
+        schedule_main_window_show_fallback(app.handle());
     }
 
     let args: Vec<String> = std::env::args().collect();
@@ -1567,6 +1569,24 @@ fn save_surface_size(window: &tauri::WebviewWindow) {
 
 fn should_save_surface_size_before_close(label: &str) -> bool {
     label.starts_with("notepad-") || label.starts_with("tile-")
+}
+
+fn schedule_main_window_show_fallback(app: &AppHandle) {
+    let handle = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(2000));
+        let handle_inner = handle.clone();
+        let _ = handle.run_on_main_thread(move || {
+            if let Some(window) = handle_inner.get_webview_window(MAIN_WINDOW_LABEL) {
+                if window.is_visible().unwrap_or(true) {
+                    return;
+                }
+            }
+            if let Err(error) = show_main_window(&handle_inner) {
+                eprintln!("failed to show main window from startup fallback: {error}");
+            }
+        });
+    });
 }
 
 fn schedule_notepad_prewarm(app: &AppHandle) {
@@ -2596,6 +2616,7 @@ mod tests {
             render_html_markdown: false,
             split_scroll_sync: true,
             open_at_cursor: true,
+            collapse_sidebar_on_startup: false,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: toggle_visibility_shortcut.into(),
@@ -2681,6 +2702,7 @@ mod tests {
             render_html_markdown: false,
             split_scroll_sync: true,
             open_at_cursor: true,
+            collapse_sidebar_on_startup: false,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: String::new(),
@@ -2718,6 +2740,7 @@ mod tests {
             render_html_markdown: false,
             split_scroll_sync: true,
             open_at_cursor: true,
+            collapse_sidebar_on_startup: false,
             surface_width: None,
             surface_height: None,
             toggle_visibility_shortcut: "Ctrl+Shift+H".into(),

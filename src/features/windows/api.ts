@@ -29,3 +29,9 @@ export function openNoteInEditor(noteId: string): Promise<void> {
 export function takeStartupFile(): Promise<string | null> {
   return invoke("take_startup_file");
 }
+
+// 前端完成首屏初始状态渲染（含侧边栏收起等设置）后调用，避免主窗口
+// 带着默认状态先显示一瞬间、再跳变成配置里的状态
+export function appReady(): Promise<void> {
+  return invoke("app_ready");
+}
