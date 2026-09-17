@@ -210,6 +210,7 @@
     "autostart": "開機自啟",
     "closeTitle": "關閉設定",
     "closeToTray": "關閉至系統匣",
+    "collapseSidebarOnStartup": "啟動時自動收起側欄",
     "defaultView": {
       "edit": "編輯",
       "label": "預設檢視",

@@ -210,6 +210,7 @@
     "autostart": "开机自启",
     "closeTitle": "关闭设置",
     "closeToTray": "关闭到托盘",
+    "collapseSidebarOnStartup": "启动时自动收起侧栏",
     "defaultView": {
       "edit": "编辑",
       "label": "默认视图",

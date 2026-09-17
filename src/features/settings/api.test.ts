@@ -53,6 +53,7 @@ describe("settings api", () => {
       renderHtmlMarkdown: false,
       splitScrollSync: true,
       openAtCursor: true,
+      collapseSidebarOnStartup: false,
     };
     mockedInvoke.mockResolvedValue(config);
 
@@ -87,6 +88,7 @@ describe("settings api", () => {
       renderHtmlMarkdown: false,
       splitScrollSync: true,
       openAtCursor: true,
+      collapseSidebarOnStartup: false,
     };
     mockedInvoke.mockResolvedValue(config);
 

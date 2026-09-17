@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -12,7 +12,43 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
-import { resolveMarkdownImageSrc } from "./imageSrc";
+import { resolveExternalLocalImagePath, resolveMarkdownImageSrc } from "./imageSrc";
+import { readLocalImage } from "../images/api";
+
+// 同一路径的本地图片在一次会话内只读取一次
+const localImageDataUrlCache = new Map<string, string>();
+
+function LocalImage({
+  path,
+  alt,
+  ...props
+}: { path: string; alt: string } & React.ImgHTMLAttributes<HTMLImageElement>) {
+  const [dataUrl, setDataUrl] = useState<string | null>(
+    () => localImageDataUrlCache.get(path) ?? null,
+  );
+
+  useEffect(() => {
+    const cached = localImageDataUrlCache.get(path);
+    if (cached) {
+      setDataUrl(cached);
+      return;
+    }
+    let cancelled = false;
+    setDataUrl(null);
+    readLocalImage(path)
+      .then((url) => {
+        localImageDataUrlCache.set(path, url);
+        if (!cancelled) setDataUrl(url);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [path]);
+
+  if (!dataUrl) return null;
+  return <img src={dataUrl} alt={alt} loading="lazy" {...props} />;
+}
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
   const { t } = useTranslation();
@@ -69,6 +105,7 @@ interface MarkdownPreviewProps {
   fontSize?: number;
   renderHtml?: boolean;
   imageBaseDir?: string;
+  externalFileDir?: string;
 }
 
 const remarkPlugins = [remarkGfm, remarkMath, remarkAlerts];
@@ -282,25 +319,48 @@ export function MarkdownPreview({
   fontSize = 14,
   renderHtml = false,
   imageBaseDir,
+  externalFileDir,
 }: MarkdownPreviewProps) {
   const { t } = useTranslation();
   const components = useMemo<Components>(
     () => ({
       ...staticComponents,
-      img: ({ src, alt, ...props }) => {
+      img: ({ src, alt, width, height, ...props }) => {
+        // 带显式 width/height 的图片（多为文档里手写的 <img> 小图标）保持原尺寸内联显示；
+        // 没有指定尺寸的（普通 ![]() 贴图）沿用整块居中的默认样式
+        const hasExplicitSize = width != null || height != null;
+        const sizeClassName = hasExplicitSize
+          ? "inline-block align-middle"
+          : "w-[50%] rounded my-2 mx-auto block";
+
+        const localPath = resolveExternalLocalImagePath(src, externalFileDir);
+        if (localPath) {
+          return (
+            <LocalImage
+              path={localPath}
+              alt={alt ?? ""}
+              width={width}
+              height={height}
+              className={sizeClassName}
+              {...props}
+            />
+          );
+        }
         const resolvedSrc = resolveMarkdownImageSrc(src, imageBaseDir, convertFileSrc);
         return (
           <img
             src={resolvedSrc}
             alt={alt ?? ""}
+            width={width}
+            height={height}
             loading="lazy"
-            className="w-[50%] rounded my-2 mx-auto block"
+            className={sizeClassName}
             {...props}
           />
         );
       },
     }),
-    [imageBaseDir],
+    [imageBaseDir, externalFileDir],
   );
   return (
     <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>

@@ -72,6 +72,36 @@ fn read_external_file(path: String) -> Result<String, AppError> {
     })
 }
 
+// 外部 md 文档里用相对/绝对路径引用的本地图片不在应用自身的资源协议白名单目录下，
+// 直接读字节编码成 data URL 交给前端展示，绕开需要动态放行目录的资源协议机制
+#[tauri::command]
+fn read_local_image(path: String) -> Result<String, AppError> {
+    let data = std::fs::read(&path).map_err(|e| AppError {
+        code: "io".into(),
+        message: e.to_string(),
+        details: Default::default(),
+    })?;
+    let mime = PathBuf::from(&path)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| ext.to_ascii_lowercase())
+        .and_then(|ext| {
+            Some(match ext.as_str() {
+                "png" => "image/png",
+                "jpg" | "jpeg" => "image/jpeg",
+                "gif" => "image/gif",
+                "webp" => "image/webp",
+                "bmp" => "image/bmp",
+                "svg" => "image/svg+xml",
+                _ => return None,
+            })
+        })
+        .unwrap_or("application/octet-stream");
+    use base64::Engine;
+    let encoded = base64::engine::general_purpose::STANDARD.encode(&data);
+    Ok(format!("data:{mime};base64,{encoded}"))
+}
+
 #[tauri::command]
 fn get_file_modified_time(path: String) -> Result<f64, AppError> {
     let metadata = std::fs::metadata(&path).map_err(|e| AppError {
@@ -370,6 +400,14 @@ fn take_startup_file() -> Option<String> {
     desktop::take_startup_file()
 }
 
+#[tauri::command]
+fn app_ready(app: AppHandle) -> Result<(), AppError> {
+    if !std::env::args().any(|a| a == "--silent") {
+        desktop::show_main_window(&app)?;
+    }
+    Ok(())
+}
+
 fn cli_version_or_help_requested() -> bool {
     env::args().any(|arg| matches!(arg.as_str(), "--version" | "-V" | "--help" | "-h"))
 }
@@ -478,6 +516,7 @@ pub fn run() {
             notes_export_markdown,
             notes_move_category,
             read_external_file,
+            read_local_image,
             save_external_file,
             get_file_modified_time,
             categories_list,
@@ -512,7 +551,8 @@ pub fn run() {
             updater::commands::update_install,
             updater::commands::update_install_prepare_report,
             updater::commands::update_cancel,
-            take_startup_file
+            take_startup_file,
+            app_ready
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

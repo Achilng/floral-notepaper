@@ -83,7 +83,12 @@ import {
   getNoteContextMenuItems,
   type NoteContextMenuAction,
 } from "../features/notes/noteContextMenu";
-import { openNotepadWindow, takeStartupFile, toggleTileWindow } from "../features/windows/api";
+import {
+  appReady,
+  openNotepadWindow,
+  takeStartupFile,
+  toggleTileWindow,
+} from "../features/windows/api";
 import {
   closeCurrentWindow,
   minimizeCurrentWindow,
@@ -464,6 +469,14 @@ export function MainWindow({
   const isExternalRef = useRef(isExternal);
   isExternalRef.current = isExternal;
 
+  // 外部 md 文件里的相对路径图片，按该文件所在目录解析
+  const externalFileDir = useMemo(() => {
+    if (!selectedExternalFile) return undefined;
+    const normalized = selectedExternalFile.filePath.replace(/\\/g, "/");
+    const idx = normalized.lastIndexOf("/");
+    return idx >= 0 ? normalized.slice(0, idx) : undefined;
+  }, [selectedExternalFile]);
+
   const noteMenuTarget = useMemo(
     () => notes.find((note) => note.id === noteMenu?.noteId) ?? null,
     [noteMenu?.noteId, notes],
@@ -730,6 +743,9 @@ export function MainWindow({
         setSettingsConfig(loadedConfig);
         setSavedDataDir(loadedConfig.dataDir);
         setViewMode(normalizeViewMode(loadedConfig.defaultViewMode));
+        if (loadedConfig.collapseSidebarOnStartup) {
+          setSidebarCollapsed(true);
+        }
         setNotes(loadedNotes);
         setCategories(loadedCategories);
         setCollapsedCategories(new Set(loadedCategories));
@@ -749,7 +765,16 @@ export function MainWindow({
       } catch (error) {
         if (!cancelled) showToast(getErrorMessage(error));
       } finally {
-        if (!cancelled) setIsLoading(false);
+        if (!cancelled) {
+          setIsLoading(false);
+          // 等首屏（侧边栏收起状态等初始设置）真正绘制完成后再显示主窗口，
+          // 避免窗口先以默认状态露出一瞬间、再跳变成配置里的状态
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => {
+              if (!cancelled) void appReady().catch(() => undefined);
+            });
+          });
+        }
       }
     }
 
@@ -3036,6 +3061,7 @@ export function MainWindow({
                           fontSize={settingsConfig?.fontSize ?? 14}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           imageBaseDir={imageBaseDir ?? undefined}
+                          externalFileDir={externalFileDir}
                         />
                       </div>
                     </div>
