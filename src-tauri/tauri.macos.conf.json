@@ -1,0 +1,24 @@
+{
+  "identifier": "com.floral-notepaper.app",
+  "app": {
+    "macOSPrivateApi": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "花笺",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 620,
+        "decorations": true,
+        "transparent": false,
+        "titleBarStyle": "Overlay",
+        "trafficLightPosition": {
+          "x": 14.0,
+          "y": 20.0
+        },
+        "hiddenTitle": true
+      }
+    ]
+  }
+}

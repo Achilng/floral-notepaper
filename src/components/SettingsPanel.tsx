@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { checkGlobalShortcut, chooseBackgroundImage } from "../features/settings/api";
+import { UpdateSettingsSection } from "../features/update/UpdateSettingsSection";
 import type {
   AppConfig,
   BackgroundFit,
@@ -26,11 +27,11 @@ const HARMONY_FONT_LICENSE_URL = new URL("../assets/fonts/LICENSE_Fonts", import
 interface SettingsPanelProps {
   config: AppConfig;
   onChange: (config: AppConfig) => void;
-  onChooseNotesDir: () => void;
+  onMigrateDataDir: () => void;
   onClose: () => void;
 }
 
-export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: SettingsPanelProps) {
+export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: SettingsPanelProps) {
   const { t } = useTranslation();
   const setConfigValue = <Key extends keyof AppConfig>(key: Key, value: AppConfig[Key]) => {
     onChange({ ...config, [key]: value });
@@ -131,18 +132,18 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
 
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
-            {t("settings.notesDir", { defaultValue: "笔记目录" })}
+            {t("settings.dataDir", { defaultValue: "数据目录" })}
           </label>
           <div className="flex gap-2">
             <input
               type="text"
-              value={config.notesDir}
+              value={config.dataDir}
               readOnly
               className="min-w-0 flex-1 h-8 px-2.5 rounded-lg bg-paper-warm/70 border border-paper-deep/40 text-[11px] font-mono text-ink-faint truncate"
             />
             <button
               type="button"
-              onClick={onChooseNotesDir}
+              onClick={onMigrateDataDir}
               className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 transition-colors cursor-pointer"
             >
               {t("settings.selectFolder", { defaultValue: "选择文件夹" })}
@@ -198,9 +199,24 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
             onChange={(checked) => setConfigValue("tileRenderMarkdown", checked)}
           />
           <ToggleRow
+            label={t("settings.tileDoubleClickToEdit", { defaultValue: "双击磁贴进入编辑" })}
+            checked={config.tileDoubleClickToEdit ?? false}
+            onChange={(checked) => setConfigValue("tileDoubleClickToEdit", checked)}
+          />
+          <ToggleRow
+            label={t("settings.tileSaveReturnsToPin", { defaultValue: "保存后回到磁贴" })}
+            checked={config.tileSaveReturnsToPin ?? false}
+            onChange={(checked) => setConfigValue("tileSaveReturnsToPin", checked)}
+          />
+          <ToggleRow
             label={t("settings.renderHtmlMarkdown", { defaultValue: "允许 HTML 标签渲染" })}
             checked={config.renderHtmlMarkdown}
             onChange={(checked) => setConfigValue("renderHtmlMarkdown", checked)}
+          />
+          <ToggleRow
+            label={t("settings.splitScrollSync", { defaultValue: "分栏同步滚动" })}
+            checked={config.splitScrollSync ?? true}
+            onChange={(checked) => setConfigValue("splitScrollSync", checked)}
           />
         </section>
 
@@ -441,6 +457,8 @@ export function SettingsPanel({ config, onChange, onChooseNotesDir, onClose }: S
           />
         </section>
 
+        <UpdateSettingsSection mode="settingsOnly" />
+
         <section className="pt-2 border-t border-paper-deep/25">
           <p className="text-[10px] leading-relaxed text-ink-ghost/75">
             <span>
@@ -563,7 +581,19 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     shortcutCheckRequestId.current += 1;
   };
 
+  const markShortcutCleared = () => {
+    invalidateShortcutChecks();
+    setCheckState("idle");
+    setCheckMsg({ key: "settings.shortcut.cleared" });
+  };
+
   const runShortcutCheck = async (shortcut: string, saveWhenAvailable: boolean) => {
+    // 未设置是合法状态，不需要调用后端做冲突检测。
+    if (!shortcut) {
+      markShortcutCleared();
+      return;
+    }
+
     const requestId = shortcutCheckRequestId.current + 1;
     shortcutCheckRequestId.current = requestId;
     setCheckState("checking");
@@ -597,10 +627,8 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
   const recorder = useShortcutRecorder({
     onRecord: (shortcut) => {
       if (shortcut === "") {
-        invalidateShortcutChecks();
         onChange("");
-        setCheckState("idle");
-        setCheckMsg({ key: "settings.shortcut.cleared" });
+        markShortcutCleared();
       } else if (isValidGlobalShortcut(shortcut)) {
         const configString = hotkeyToConfigString(shortcut, platform);
         void runShortcutCheck(configString, true);
@@ -612,6 +640,13 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
     },
   });
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const clearShortcut = () => {
+    // 显式清除会保存为空值，后端据此注销旧的全局快捷键绑定。
+    recorder.cancelRecording();
+    onChange("");
+    markShortcutCleared();
+  };
 
   useEffect(() => {
     if (!recorder.isRecording) return;
@@ -677,7 +712,17 @@ function ShortcutRecorder({ value, onChange }: ShortcutRecorderProps) {
         </button>
         <button
           type="button"
-          disabled={isChecking || recorder.isRecording}
+          disabled={!value || recorder.isRecording}
+          onClick={clearShortcut}
+          aria-label={t("settings.shortcut.clear", { defaultValue: "清除" })}
+          title={t("settings.shortcut.clear", { defaultValue: "清除" })}
+          className="w-8 h-8 rounded-lg border border-paper-deep/45 text-[15px] leading-none text-ink-faint hover:text-red-400 hover:bg-paper-warm/70 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
+        >
+          ×
+        </button>
+        <button
+          type="button"
+          disabled={!value || isChecking || recorder.isRecording}
           onClick={() => void runShortcutCheck(value, false)}
           className="h-8 px-3 rounded-lg border border-paper-deep/45 text-[11px] text-ink-faint hover:text-bamboo hover:bg-bamboo-mist/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors cursor-pointer"
         >

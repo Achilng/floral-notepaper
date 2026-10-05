@@ -12,6 +12,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
+import { resolveMarkdownImageSrc } from "./imageSrc";
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
   const { t } = useTranslation();
@@ -26,11 +27,14 @@ function CodeBlock({ children, language }: { children: React.ReactNode; language
   }, [children]);
 
   return (
-    <pre
-      className={`my-3 px-4 rounded bg-paper-warm/80 overflow-x-auto relative group ${
-        language ? "pt-8 pb-3" : "py-3"
-      }`}
-    >
+    <div className="markdown-code-block my-3 relative group">
+      <pre
+        className={`markdown-code-scroll m-0 px-4 rounded bg-paper-warm/80 overflow-x-auto ${
+          language ? "pt-8 pb-3" : "py-3"
+        }`}
+      >
+        {children}
+      </pre>
       {language && (
         <span className="absolute top-2 left-3 text-[10px] font-mono text-ink-faint/70 uppercase tracking-wider select-none">
           {language}
@@ -45,8 +49,7 @@ function CodeBlock({ children, language }: { children: React.ReactNode; language
           ? t("markdown.copied", { defaultValue: "已复制" })
           : t("markdown.copy", { defaultValue: "复制" })}
       </button>
-      {children}
-    </pre>
+    </div>
   );
 }
 
@@ -285,10 +288,7 @@ export function MarkdownPreview({
     () => ({
       ...staticComponents,
       img: ({ src, alt, ...props }) => {
-        let resolvedSrc = src ?? "";
-        if (src?.startsWith("images/") && imageBaseDir) {
-          resolvedSrc = convertFileSrc(imageBaseDir + "/" + src);
-        }
+        const resolvedSrc = resolveMarkdownImageSrc(src, imageBaseDir, convertFileSrc);
         return (
           <img
             src={resolvedSrc}
@@ -303,7 +303,7 @@ export function MarkdownPreview({
     [imageBaseDir],
   );
   return (
-    <div className="font-body" style={{ fontSize: `${fontSize}px` }}>
+    <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>
       {content.trim() ? (
         <Markdown
           remarkPlugins={remarkPlugins}

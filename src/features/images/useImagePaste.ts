@@ -36,28 +36,21 @@ async function processImageFile(file: File, noteId: string, t?: TFunction): Prom
   if (!ext) return null;
 
   const buffer = await file.arrayBuffer();
-  const data = Array.from(new Uint8Array(buffer));
-  return saveImage(noteId, data, ext);
+  return saveImage(noteId, new Uint8Array(buffer), ext);
 }
 
-function insertTextAtCursor(
+export function insertTextAtCursor(
   textarea: HTMLTextAreaElement,
   setContent: (value: string) => void,
   text: string,
 ) {
-  const { selectionStart, selectionEnd, value } = textarea;
-  const before = value.slice(0, selectionStart);
-  const after = value.slice(selectionEnd);
+  const before = textarea.value.slice(0, textarea.selectionStart);
   const needsLeadingNewline = before.length > 0 && !before.endsWith("\n");
   const insertion = (needsLeadingNewline ? "\n" : "") + text + "\n";
-  const newContent = before + insertion + after;
-  setContent(newContent);
 
-  requestAnimationFrame(() => {
-    const newPos = before.length + insertion.length;
-    textarea.setSelectionRange(newPos, newPos);
-    textarea.focus();
-  });
+  textarea.focus();
+  document.execCommand("insertText", false, insertion);
+  setContent(textarea.value);
 }
 
 function getImageFiles(dataTransfer: DataTransfer): File[] {

@@ -7,7 +7,7 @@ export type BackgroundFit = "cover" | "contain" | "repeat";
 
 export interface AppConfig {
   locale: string;
-  notesDir: string;
+  dataDir: string;
   globalShortcut: string;
   closeToTray: boolean;
   autostart: boolean;
@@ -23,8 +23,11 @@ export interface AppConfig {
   externalFileAutoSave: boolean;
   rememberSurfaceSize: boolean;
   tileCtrlClose: boolean;
+  tileDoubleClickToEdit: boolean;
+  tileSaveReturnsToPin: boolean;
   tileRenderMarkdown: boolean;
   renderHtmlMarkdown: boolean;
+  splitScrollSync: boolean;
   surfaceWidth?: number;
   surfaceHeight?: number;
   toggleVisibilityShortcut: string;

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <data name="AppName">
+    <value>花箋</value>
+  </data>
+  <data name="AppDescription">
+    <value>花箋 - 輕量本地筆記應用</value>
+  </data>
+</root>

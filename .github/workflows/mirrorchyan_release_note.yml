@@ -1,0 +1,27 @@
+name: mirrorchyan_release_note
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        default: ""
+        required: false
+  release:
+    types: [published, edited]
+
+jobs:
+  mirrorchyan:
+    if: ${{ github.repository_owner == 'Achilng' }}
+    runs-on: macos-latest
+
+    steps:
+      - id: uploading
+        uses: MirrorChyan/release-note-action@v1
+        with:
+          mirrorchyan_rid: floral
+          version_name: ${{ inputs.tag }}
+
+          owner: Achilng
+          repo: floral-notepaper
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          upload_token: ${{ secrets.MirrorChyanUploadToken }}

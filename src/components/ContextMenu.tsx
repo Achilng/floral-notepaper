@@ -6,6 +6,7 @@ import { getConfig } from "../features/settings/api";
 import type { AppConfig } from "../features/settings/types";
 import { requestSurfaceAction } from "../features/windows/surfaceActions";
 import { getTileContextMenuItems } from "../features/windows/tileContextMenu";
+import { POPUP_VIEWPORT_MARGIN, useViewportPopupPosition } from "./popupPosition";
 
 interface MenuState {
   x: number;
@@ -21,7 +22,10 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
   const { t } = useTranslation();
   const [menu, setMenu] = useState<MenuState | null>(null);
   const [menuClosing, setMenuClosing] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const { popupRef: menuRef, popupPosition: menuPosition } = useViewportPopupPosition(
+    menu,
+    menu?.type,
+  );
   const editableTargetRef = useRef<HTMLInputElement | HTMLTextAreaElement | HTMLElement | null>(
     null,
   );
@@ -65,19 +69,12 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
         selection = target.value.slice(target.selectionStart ?? 0, target.selectionEnd ?? 0);
       }
 
-      let x = event.clientX;
-      let y = event.clientY;
-      const menuWidth = 160;
-      const menuHeight = tileTarget ? 150 : 170;
-      if (x + menuWidth > window.innerWidth) x = window.innerWidth - menuWidth - 4;
-      if (y + menuHeight > window.innerHeight) y = window.innerHeight - menuHeight - 4;
-
       if (tileTarget) {
         editableTargetRef.current = null;
         setMenuClosing(false);
         setMenu({
-          x,
-          y,
+          x: event.clientX,
+          y: event.clientY,
           hasSelection: false,
           type: "tile",
         });
@@ -86,7 +83,12 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
 
       editableTargetRef.current = target;
       setMenuClosing(false);
-      setMenu({ x, y, hasSelection: selection.length > 0, type: "edit" });
+      setMenu({
+        x: event.clientX,
+        y: event.clientY,
+        hasSelection: selection.length > 0,
+        type: "edit",
+      });
     }
 
     function handleClick() {
@@ -219,10 +221,12 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
       {menu && (
         <div
           ref={menuRef}
-          className={`fixed z-[9999] min-w-[152px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${menuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
+          className={`fixed z-[9999] min-w-[152px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-x-hidden overflow-y-auto select-none ${menuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
           style={{
-            left: menu.x,
-            top: menu.y,
+            left: menuPosition?.x ?? menu.x,
+            top: menuPosition?.y ?? menu.y,
+            maxWidth: `calc(100vw - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
+            maxHeight: `calc(100vh - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
           }}
           onMouseDown={(event) => event.stopPropagation()}
         >

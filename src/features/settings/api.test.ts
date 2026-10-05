@@ -3,7 +3,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import {
   checkGlobalShortcut,
-  chooseNotesDirectory,
+  chooseDataDirectory,
   getConfig,
   normalizeViewMode,
   saveConfig,
@@ -30,7 +30,7 @@ describe("settings api", () => {
   test("gets config through Rust", async () => {
     const config: AppConfig = {
       locale: "zh-CN",
-      notesDir: "D:\\notes",
+      dataDir: "D:\\notes",
       globalShortcut: "Ctrl+Space",
       closeToTray: true,
       autostart: false,
@@ -46,9 +46,12 @@ describe("settings api", () => {
       externalFileAutoSave: true,
       rememberSurfaceSize: true,
       tileCtrlClose: true,
+      tileDoubleClickToEdit: false,
+      tileSaveReturnsToPin: false,
       toggleVisibilityShortcut: "",
       tileRenderMarkdown: false,
       renderHtmlMarkdown: false,
+      splitScrollSync: true,
       openAtCursor: true,
     };
     mockedInvoke.mockResolvedValue(config);
@@ -61,7 +64,7 @@ describe("settings api", () => {
   test("saves config through Rust", async () => {
     const config: AppConfig = {
       locale: "zh-CN",
-      notesDir: "D:\\notes",
+      dataDir: "D:\\notes",
       globalShortcut: "Alt+Space",
       closeToTray: false,
       autostart: true,
@@ -77,9 +80,12 @@ describe("settings api", () => {
       externalFileAutoSave: true,
       rememberSurfaceSize: true,
       tileCtrlClose: true,
+      tileDoubleClickToEdit: true,
+      tileSaveReturnsToPin: true,
       toggleVisibilityShortcut: "",
       tileRenderMarkdown: false,
       renderHtmlMarkdown: false,
+      splitScrollSync: true,
       openAtCursor: true,
     };
     mockedInvoke.mockResolvedValue(config);
@@ -111,10 +117,10 @@ describe("settings api", () => {
     expect(normalizeViewMode("unknown")).toBe("split");
   });
 
-  test("chooses a notes directory through the folder picker", async () => {
+  test("chooses a data directory through the folder picker", async () => {
     mockedOpen.mockResolvedValue("D:\\notes");
 
-    await expect(chooseNotesDirectory()).resolves.toBe("D:\\notes");
+    await expect(chooseDataDirectory()).resolves.toBe("D:\\notes");
 
     expect(open).toHaveBeenCalledWith({
       directory: true,
@@ -122,9 +128,9 @@ describe("settings api", () => {
     });
   });
 
-  test("returns null when choosing a notes directory is cancelled", async () => {
+  test("returns null when choosing a data directory is cancelled", async () => {
     mockedOpen.mockResolvedValue(null);
 
-    await expect(chooseNotesDirectory()).resolves.toBeNull();
+    await expect(chooseDataDirectory()).resolves.toBeNull();
   });
 });

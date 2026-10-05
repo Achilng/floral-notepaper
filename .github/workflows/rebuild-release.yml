@@ -1,0 +1,38 @@
+name: Rebuild Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (vMAJOR.MINOR.PATCH)"
+        required: true
+        type: string
+      publish-to-store:
+        description: "是否发布到 Microsoft Store"
+        required: true
+        type: choice
+        options:
+          - "false"
+          - "true"
+        default: "false"
+
+permissions: {}
+
+jobs:
+  rebuild:
+    permissions:
+      actions: read
+      contents: write
+    uses: ./.github/workflows/release.yml
+    with:
+      tag: ${{ inputs.tag }}
+      rebuild: true
+      publish-to-store: ${{ inputs.publish-to-store }}
+    secrets:
+      SIGNPATH_API_TOKEN: ${{ secrets.SIGNPATH_API_TOKEN }}
+      MSIX_SIGNING_CERTIFICATE_BASE64: ${{ secrets.MSIX_SIGNING_CERTIFICATE_BASE64 }}
+      MSIX_SIGNING_CERTIFICATE_PASSWORD: ${{ secrets.MSIX_SIGNING_CERTIFICATE_PASSWORD }}
+      PARTNER_CENTER_TENANT_ID: ${{ secrets.PARTNER_CENTER_TENANT_ID }}
+      PARTNER_CENTER_SELLER_ID: ${{ secrets.PARTNER_CENTER_SELLER_ID }}
+      PARTNER_CENTER_CLIENT_ID: ${{ secrets.PARTNER_CENTER_CLIENT_ID }}
+      PARTNER_CENTER_CLIENT_SECRET: ${{ secrets.PARTNER_CENTER_CLIENT_SECRET }}
