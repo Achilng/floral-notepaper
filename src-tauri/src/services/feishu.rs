@@ -25,6 +25,7 @@ const KEYRING_USER_EXPIRES_ACCOUNT: &str = "feishu-user-token-expires";
 const SETTINGS_FILE: &str = "feishu.json";
 const SYNC_FILE: &str = "feishu-sync.json";
 const AUTH_DIAGNOSTIC_FILE: &str = "feishu-auth-diagnostic.json";
+#[cfg(target_os = "windows")]
 const USER_TOKENS_DPAPI_FILE: &str = "feishu-user-tokens.dpapi";
 const SYNC_DEBOUNCE: Duration = Duration::from_secs(5);
 const RETRY_DELAYS: [Duration; 2] = [Duration::from_secs(5), Duration::from_secs(30)];
