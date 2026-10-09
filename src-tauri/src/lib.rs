@@ -5,6 +5,10 @@ pub mod services;
 pub mod updater;
 
 use locales::Locale;
+use services::feishu::{
+    DeviceAuthorization, DeviceAuthorizationPoll, FeishuSettings, FeishuSyncRuntime, SyncOverview,
+    SyncSummary,
+};
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
 use std::{env, fs, io::Write, path::PathBuf};
 use tauri::{AppHandle, Emitter, Manager};
@@ -29,6 +33,7 @@ fn notes_get(id: String) -> Result<Note, AppError> {
 fn notes_create(app: AppHandle, request: SaveNoteRequest) -> Result<Note, AppError> {
     let note = default_store()?.create_note(request)?;
     let _ = app.emit("notes-changed", ());
+    services::feishu::enqueue_note(&app, note.id.clone());
     Ok(note)
 }
 
@@ -36,6 +41,7 @@ fn notes_create(app: AppHandle, request: SaveNoteRequest) -> Result<Note, AppErr
 fn notes_update(app: AppHandle, id: String, request: SaveNoteRequest) -> Result<Note, AppError> {
     let note = default_store()?.update_note(&id, request)?;
     let _ = app.emit("notes-changed", ());
+    services::feishu::enqueue_note(&app, note.id.clone());
     Ok(note)
 }
 
@@ -55,6 +61,7 @@ fn notes_import_markdown(
     let note = default_store()?
         .import_markdown_file(&PathBuf::from(path), &category.unwrap_or_default())?;
     let _ = app.emit("notes-changed", ());
+    services::feishu::enqueue_note(&app, note.id.clone());
     Ok(note)
 }
 
@@ -205,6 +212,107 @@ fn images_clean_unused(note_id: String, content: String) -> Result<Vec<String>, 
 #[tauri::command]
 fn config_get() -> Result<AppConfig, AppError> {
     default_store()?.load_config()
+}
+
+#[tauri::command]
+fn feishu_settings_get() -> Result<FeishuSettings, AppError> {
+    services::feishu::get_settings(&default_store()?)
+}
+
+#[tauri::command]
+fn feishu_settings_save(
+    runtime: tauri::State<'_, FeishuSyncRuntime>,
+    settings: FeishuSettings,
+    app_secret: Option<String>,
+) -> Result<FeishuSettings, AppError> {
+    services::feishu::save_settings(&default_store()?, &runtime, settings, app_secret)
+}
+
+#[tauri::command]
+fn feishu_secret_clear(
+    runtime: tauri::State<'_, FeishuSyncRuntime>,
+) -> Result<FeishuSettings, AppError> {
+    services::feishu::clear_secret(&default_store()?, &runtime)
+}
+
+#[tauri::command]
+fn feishu_sync_status(
+    runtime: tauri::State<'_, FeishuSyncRuntime>,
+) -> Result<SyncOverview, AppError> {
+    services::feishu::overview(&default_store()?, &runtime)
+}
+
+#[tauri::command]
+async fn feishu_connection_test(app: AppHandle) -> Result<(), AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let runtime = app.state::<FeishuSyncRuntime>();
+        services::feishu::test_connection(&default_store()?, &runtime)
+    })
+    .await
+    .map_err(|error| AppError {
+        code: "feishuTask".into(),
+        message: error.to_string(),
+        details: Default::default(),
+    })?
+}
+
+#[tauri::command]
+async fn feishu_auth_start() -> Result<DeviceAuthorization, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        services::feishu::start_device_authorization(&default_store()?)
+    })
+    .await
+    .map_err(|error| AppError {
+        code: "feishuTask".into(),
+        message: error.to_string(),
+        details: Default::default(),
+    })?
+}
+
+#[tauri::command]
+async fn feishu_auth_poll(device_code: String) -> Result<DeviceAuthorizationPoll, AppError> {
+    tauri::async_runtime::spawn_blocking(move || {
+        services::feishu::poll_device_authorization(&default_store()?, &device_code)
+    })
+    .await
+    .map_err(|error| AppError {
+        code: "feishuTask".into(),
+        message: error.to_string(),
+        details: Default::default(),
+    })?
+}
+
+#[tauri::command]
+async fn feishu_sync_all(app: AppHandle) -> Result<SyncSummary, AppError> {
+    {
+        let runtime = app.state::<FeishuSyncRuntime>();
+        runtime.set_active(1);
+        if let Ok(store) = default_store() {
+            if let Ok(status) = services::feishu::overview(&store, &runtime) {
+                let _ = app.emit("feishu-sync-status", status);
+            }
+        }
+    }
+
+    let task_app = app.clone();
+    let task_result = tauri::async_runtime::spawn_blocking(move || {
+        let runtime = task_app.state::<FeishuSyncRuntime>();
+        services::feishu::sync_all(&default_store()?, &runtime)
+    })
+    .await;
+
+    let runtime = app.state::<FeishuSyncRuntime>();
+    runtime.set_active(-1);
+    if let Ok(store) = default_store() {
+        if let Ok(status) = services::feishu::overview(&store, &runtime) {
+            let _ = app.emit("feishu-sync-status", status);
+        }
+    }
+    task_result.map_err(|error| AppError {
+        code: "feishuTask".into(),
+        message: error.to_string(),
+        details: Default::default(),
+    })?
 }
 
 #[tauri::command]
@@ -458,6 +566,7 @@ pub fn run() {
                 eprintln!("failed to initialize updater infrastructure: {error}");
             }
             app.manage(updater_state);
+            app.manage(FeishuSyncRuntime::default());
             // MSIX installs are updated by the Microsoft Store; the scheduler
             // must never drive in-app updates against a read-only package.
             if !updater::platform::has_package_identity() {
@@ -489,6 +598,14 @@ pub fn run() {
             images_get_base_dir,
             images_clean_unused,
             config_get,
+            feishu_settings_get,
+            feishu_settings_save,
+            feishu_secret_clear,
+            feishu_connection_test,
+            feishu_auth_start,
+            feishu_auth_poll,
+            feishu_sync_status,
+            feishu_sync_all,
             copy_background_image,
             config_save,
             config_migrate_data_dir,

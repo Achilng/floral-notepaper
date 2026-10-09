@@ -25,7 +25,11 @@
     "opener:default",
     {
       "identifier": "opener:allow-open-url",
-      "allow": [{ "url": "ms-windows-store://*" }]
+      "allow": [
+        { "url": "ms-windows-store://*" },
+        { "url": "https://accounts.feishu.cn/*" },
+        { "url": "https://open.feishu.cn/*" }
+      ]
     },
     "clipboard-manager:allow-write-text",
     "clipboard-manager:allow-read-text"

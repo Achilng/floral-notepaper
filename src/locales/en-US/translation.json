@@ -216,6 +216,42 @@
       "preview": "Preview",
       "split": "Split"
     },
+    "feishu": {
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "clearSecret": "Clear secret",
+      "connectionOk": "Connected successfully; the app credentials are valid",
+      "description": "Local-first, one-way background sync to Feishu Docs. Edits made in Feishu may be overwritten.",
+      "folderPlaceholder": "Token from the Feishu folder link",
+      "folderToken": "Target folder token (optional)",
+      "authCode": "Confirm authorization in the opened Feishu page. Code: {{code}}",
+      "loggedIn": "Feishu account authorized",
+      "loggingIn": "Waiting for authorization…",
+      "login": "Sign in to Feishu",
+      "loginExpired": "Authorization expired. Please try again.",
+      "loginOk": "Feishu account authorized successfully",
+      "notLoggedIn": "Feishu account not authorized",
+      "openAuth": "Reopen authorization page",
+      "permissionHint": "Grant Create and edit Docs. Syncing into a target folder also requires View, comment, edit, and manage all files in My Space (drive:drive). Then publish a new app version.",
+      "save": "Save settings",
+      "saved": "Feishu sync settings saved",
+      "saving": "Saving…",
+      "secretCleared": "App Secret cleared",
+      "secretPlaceholder": "Enter App Secret",
+      "secretStored": "Stored securely; leave blank to keep it",
+      "status": {
+        "counts": "Synced {{synced}}/{{total}}, {{failed}} failed",
+        "notConfigured": "Not configured",
+        "syncing": "Syncing"
+      },
+      "syncAll": "Sync all now",
+      "syncStatus": "Sync status",
+      "syncing": "Syncing…",
+      "syncSummary": "Sync complete: {{synced}} updated, {{skipped}} unchanged, {{failed}} failed",
+      "test": "Test connection",
+      "testing": "Testing…",
+      "title": "Feishu cloud sync"
+    },
     "fontSize": {
       "editor": "Editor font size",
       "surface": "Surface font size"
