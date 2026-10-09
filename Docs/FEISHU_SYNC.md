@@ -5,10 +5,20 @@
 ## 准备飞书应用
 
 1. 在[飞书开放平台](https://open.feishu.cn/app)创建企业自建应用。
-2. 在权限管理中开通“创建及编辑新版文档”（`docx:document`）权限。
-3. 创建并发布一个应用版本，使权限生效。
-4. 从“凭证与基础信息”复制 App ID 和 App Secret。
-5. 如需同步到指定文件夹，还要开通“查看、评论、编辑和管理云空间中所有文件”（`drive:drive`），并再次创建、发布应用版本，然后从文件夹链接中复制 folder token。
+2. 打开“凭证与基础信息”，复制 App ID 和 App Secret；后续创建、发布应用版本也从左侧菜单进入。
+
+   ![飞书应用凭据与版本发布入口](images/feishu-sync/app-credentials.png)
+
+3. 在“权限管理”中开通以下权限：
+   - “创建及编辑新版文档”（`docx:document`）。
+   - 如需同步到指定文件夹，再开通“查看、评论、编辑和管理云空间中所有文件”（`drive:drive`）。
+
+   ![飞书应用权限配置](images/feishu-sync/permissions.png)
+
+4. 创建并发布一个应用版本，使新增权限生效。后续每次增加权限后，都需要重新创建并发布版本。
+5. 如需同步到指定文件夹，在飞书中打开该文件夹，从浏览器地址栏的文件夹链接中复制 folder token，填入花笺的“目标文件夹 Token”字段。请勿把完整 Token 公开到 Issue、PR 或截图中。
+
+   ![飞书文件夹 Token 获取位置](images/feishu-sync/folder-token.png)
 
 “添加文档应用”只适用于给既有的单篇云文档授权；文件夹界面可能没有该入口。
 
