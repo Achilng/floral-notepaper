@@ -104,3 +104,19 @@ export function getInitialUpdateStatusNotice(
 
   return null;
 }
+
+export function getUpdateStatusHydrationNotice(
+  notice: UpdateInlineNotice | null,
+  translate: TFunction,
+): UpdateInlineNotice {
+  if (notice?.tone === "error") {
+    return notice;
+  }
+
+  return {
+    tone: "idle",
+    text: translate("settings.update.loading", {
+      defaultValue: "正在读取更新设置...",
+    }),
+  };
+}

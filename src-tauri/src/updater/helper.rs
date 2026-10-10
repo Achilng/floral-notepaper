@@ -758,6 +758,10 @@ fn apply_update(
         InstallKind::MacosAppBundle => install_macos_bundle(command, log),
         InstallKind::WindowsPortable => install_windows_portable(command, log),
         InstallKind::WindowsNsis => install_windows_installer(command, log),
+        InstallKind::WindowsMsix => {
+            write_log_line(log, "MSIX installs are managed by the Microsoft Store")?;
+            Err(UpdateHelperExitCode::UnsupportedInstallKind)
+        }
         InstallKind::Unknown => {
             write_log_line(log, "unsupported install kind")?;
             Err(UpdateHelperExitCode::UnsupportedInstallKind)
@@ -3199,6 +3203,7 @@ fn install_kind_as_str(kind: &InstallKind) -> &'static str {
     match kind {
         InstallKind::WindowsNsis => "windows-nsis",
         InstallKind::WindowsPortable => "windows-portable",
+        InstallKind::WindowsMsix => "windows-msix",
         InstallKind::MacosAppBundle => "macos-app-bundle",
         InstallKind::Unknown => "unknown",
     }
@@ -3208,6 +3213,7 @@ fn parse_install_kind(value: &str) -> Option<InstallKind> {
     match value.trim() {
         "windows-nsis" | "windowsNsis" => Some(InstallKind::WindowsNsis),
         "windows-portable" | "windowsPortable" => Some(InstallKind::WindowsPortable),
+        "windows-msix" | "windowsMsix" => Some(InstallKind::WindowsMsix),
         "macos-app-bundle" | "macosAppBundle" => Some(InstallKind::MacosAppBundle),
         "unknown" => Some(InstallKind::Unknown),
         _ => None,

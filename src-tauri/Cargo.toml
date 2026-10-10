@@ -1,6 +1,6 @@
 [package]
 name = "floral-notepaper"
-version = "1.0.4"
+version = "1.2.0"
 description = "A lightweight cross-platform desktop note app"
 authors = ["Achilng"]
 edition = "2021"
@@ -44,9 +44,12 @@ dirs = "6"
 libc = "0.2"
 
 [target.'cfg(target_os = "windows")'.dependencies]
+webview2-com = "0.38"
+windows-core = "0.61"
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
   "Win32_Storage_FileSystem",
+  "Win32_Storage_Packaging_Appx",
   "Win32_System_Console",
   "Win32_System_Registry",
   "Win32_System_Threading",

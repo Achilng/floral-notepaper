@@ -144,8 +144,31 @@ fn notes_move_category(
 }
 
 #[tauri::command]
-fn images_save(note_id: String, data: Vec<u8>, extension: String) -> Result<String, AppError> {
-    default_store()?.save_image(&note_id, &data, &extension)
+fn images_save(request: tauri::ipc::Request<'_>) -> Result<String, AppError> {
+    // 前端以 raw payload 直传图片字节流（noteId / 扩展名走 headers），
+    // 避免二进制经 JSON 数字数组序列化的巨大内存与耗时开销
+    let tauri::ipc::InvokeBody::Raw(data) = request.body() else {
+        return Err(AppError {
+            code: "invalidPayload".into(),
+            message: "images_save expects a raw binary payload".into(),
+            details: Default::default(),
+        });
+    };
+    let header = |name: &str| -> Result<String, AppError> {
+        request
+            .headers()
+            .get(name)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_string)
+            .ok_or_else(|| AppError {
+                code: "invalidPayload".into(),
+                message: format!("missing {name} header"),
+                details: Default::default(),
+            })
+    };
+    let note_id = header("x-note-id")?;
+    let extension = header("x-image-ext")?;
+    default_store()?.save_image(&note_id, data, &extension)
 }
 
 #[tauri::command]
@@ -299,6 +322,24 @@ async fn recycle_notepad_window(app: AppHandle, label: String) -> Result<(), App
     desktop::recycle_notepad_window(&app, &label)
 }
 
+/// Pre-shift the window by `(dx, dy)` logical px before starting an OS drag,
+/// so a JS-side deadzone (e.g. tile double-click-to-edit) does not leave the
+/// window lagging the cursor by the deadzone displacement.
+#[tauri::command]
+fn start_window_drag_with_offset(
+    window: tauri::WebviewWindow,
+    dx: f64,
+    dy: f64,
+) -> Result<(), AppError> {
+    let scale = window.scale_factor()?;
+    let pos = window.outer_position()?;
+    let next_x = pos.x + (dx * scale).round() as i32;
+    let next_y = pos.y + (dy * scale).round() as i32;
+    window.set_position(tauri::PhysicalPosition::new(next_x, next_y))?;
+    window.start_dragging()?;
+    Ok(())
+}
+
 #[tauri::command]
 async fn open_tile_window(
     app: AppHandle,
@@ -417,7 +458,11 @@ pub fn run() {
                 eprintln!("failed to initialize updater infrastructure: {error}");
             }
             app.manage(updater_state);
-            updater::start_auto_check_scheduler(app.handle().clone());
+            // MSIX installs are updated by the Microsoft Store; the scheduler
+            // must never drive in-app updates against a read-only package.
+            if !updater::platform::has_package_identity() {
+                updater::start_auto_check_scheduler(app.handle().clone());
+            }
             desktop::setup_desktop(app)?;
             Ok(())
         })
@@ -452,6 +497,7 @@ pub fn run() {
             stop_shortcut_recording,
             open_notepad_window,
             recycle_notepad_window,
+            start_window_drag_with_offset,
             open_tile_window,
             toggle_tile_window,
             open_note_in_editor,

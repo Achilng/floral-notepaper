@@ -45,6 +45,11 @@ export function startCurrentWindowDrag(): Promise<void> {
   return getCurrentWindow().startDragging();
 }
 
+/** Shift window by `(dx, dy)` logical px then start an OS drag, in one IPC. */
+export function startCurrentWindowDragWithOffset(dx: number, dy: number): Promise<void> {
+  return invoke("start_window_drag_with_offset", { dx, dy });
+}
+
 export function startCurrentWindowResize(direction: ResizeDirection = "SouthEast"): Promise<void> {
   return getCurrentWindow().startResizeDragging(direction);
 }

@@ -42,7 +42,10 @@ pub enum InstallPrepareReportStatus {
 
 #[tauri::command]
 pub fn update_status(state: State<'_, UpdaterState>) -> Result<UpdateStateDto, AppError> {
-    state.load_state()
+    let status = state.load_state()?;
+    let status =
+        super::platform::inject_install_kind(status, super::platform::current_install_kind());
+    Ok(status)
 }
 
 #[tauri::command]
@@ -57,6 +60,9 @@ pub fn update_settings_save(
     state: State<'_, UpdaterState>,
     settings: super::types::UpdateSettingsDto,
 ) -> Result<super::types::UpdateSettingsDto, AppError> {
+    if super::platform::current_platform().install_kind == super::types::InstallKind::WindowsMsix {
+        return Err(errors::store_managed_manual_only());
+    }
     state.save_settings(settings)
 }
 
@@ -161,7 +167,11 @@ pub async fn update_download(
     match result {
         Ok(download_result) => {
             if let Ok(next_state) = state.load_state() {
-                if let Err(error) = app.emit("update://download-finished", &next_state) {
+                let payload = super::platform::inject_install_kind(
+                    next_state.clone(),
+                    super::platform::current_install_kind(),
+                );
+                if let Err(error) = app.emit("update://download-finished", &payload) {
                     eprintln!("failed to emit update://download-finished: {error}");
                 }
             }
@@ -228,7 +238,11 @@ pub async fn update_install(
                 if next_state.status == UpdateStatus::Failed {
                     should_terminate = false;
                 }
-                if let Err(error) = app.emit("update://install-finished", &next_state) {
+                let payload = super::platform::inject_install_kind(
+                    next_state.clone(),
+                    super::platform::current_install_kind(),
+                );
+                if let Err(error) = app.emit("update://install-finished", &payload) {
                     eprintln!("failed to emit update://install-finished: {error}");
                 }
             }
@@ -330,7 +344,11 @@ impl UpdateCheckEmitter for tauri::AppHandle {
             "emit update://checking current_version={}",
             state.current_version
         );
-        if let Err(error) = self.emit("update://checking", state) {
+        let payload = super::platform::inject_install_kind(
+            state.clone(),
+            super::platform::current_install_kind(),
+        );
+        if let Err(error) = self.emit("update://checking", &payload) {
             eprintln!("failed to emit update://checking: {error}");
         }
     }
@@ -342,7 +360,11 @@ impl UpdateCheckEmitter for tauri::AppHandle {
             state.status,
             state.latest_version
         );
-        if let Err(error) = self.emit("update://checked", state) {
+        let payload = super::platform::inject_install_kind(
+            state.clone(),
+            super::platform::current_install_kind(),
+        );
+        if let Err(error) = self.emit("update://checked", &payload) {
             eprintln!("failed to emit update://checked: {error}");
         }
     }

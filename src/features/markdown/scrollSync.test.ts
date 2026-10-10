@@ -1,5 +1,11 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { blockIndexAtOffset, measureBlockOffsets, tagPreviewBlocks } from "./scrollSync";
+import {
+  createScrollSyncMap,
+  interpolateScrollOffset,
+  measureBlockOffsets,
+  measurePreviewBlockOffsets,
+  tagPreviewBlocks,
+} from "./scrollSync";
 
 class FakeTextNode {
   constructor(public readonly textContent: string) {}
@@ -166,16 +172,48 @@ afterEach(() => {
 });
 
 describe("scroll sync helpers", () => {
-  test("chooses the last block whose measured offset is at or before scrollTop", () => {
-    const offsets = [0, 25, 50, 90];
+  test("builds a monotonic map with fixed document boundaries", () => {
+    const map = createScrollSyncMap([0, 100, 300, 500], [12, 220, 260, 900], 400, 500);
 
-    expect(blockIndexAtOffset(offsets, -1)).toBe(0);
-    expect(blockIndexAtOffset(offsets, 0)).toBe(0);
-    expect(blockIndexAtOffset(offsets, 24)).toBe(0);
-    expect(blockIndexAtOffset(offsets, 25)).toBe(1);
-    expect(blockIndexAtOffset(offsets, 89)).toBe(2);
-    expect(blockIndexAtOffset(offsets, 90)).toBe(3);
-    expect(blockIndexAtOffset(offsets, 999)).toBe(3);
+    expect(map.source).toEqual([0, 100, 300, 400]);
+    expect(map.target).toEqual([0, 220, 260, 500]);
+  });
+
+  test("interpolates continuously between block anchors and clamps at both ends", () => {
+    const map = createScrollSyncMap([0, 100, 300], [0, 220, 260], 400, 500);
+
+    expect(interpolateScrollOffset(map, -10)).toBe(0);
+    expect(interpolateScrollOffset(map, 50)).toBe(110);
+    expect(interpolateScrollOffset(map, 200)).toBe(240);
+    expect(interpolateScrollOffset(map, 350)).toBe(380);
+    expect(interpolateScrollOffset(map, 999)).toBe(500);
+  });
+
+  test("coalesces duplicate anchors and ignores invalid or out-of-order offsets", () => {
+    const map = createScrollSyncMap(
+      [0, 50, 50, 40, 100, Number.NaN],
+      [0, 20, 30, 35, 80, 90],
+      120,
+      100,
+    );
+
+    expect(map.source).toEqual([0, 50, 100, 120]);
+    expect(map.target).toEqual([0, 30, 80, 100]);
+  });
+
+  test("falls back to proportional scrolling when there are no usable block anchors", () => {
+    const map = createScrollSyncMap([], [], 100, 250);
+
+    expect(interpolateScrollOffset(map, 40)).toBe(100);
+    expect(interpolateScrollOffset(createScrollSyncMap([], [], 0, 250), 40)).toBe(0);
+  });
+
+  test("handles large anchor maps without scanning every block per scroll", () => {
+    const source = Array.from({ length: 10_000 }, (_, index) => index * 10);
+    const target = Array.from({ length: 10_000 }, (_, index) => index * 20);
+    const map = createScrollSyncMap(source, target, 100_000, 200_000);
+
+    expect(interpolateScrollOffset(map, 55_555)).toBe(111_110);
   });
 
   test("tags preview block children with sequential block indices", () => {
@@ -197,6 +235,27 @@ describe("scroll sync helpers", () => {
     expect(heading.getAttribute("data-block-index")).toBe("0");
     expect(paragraph.getAttribute("data-block-index")).toBe("1");
     expect(list.getAttribute("data-block-index")).toBe("2");
+  });
+
+  test("measures preview blocks in the scroll container coordinate space", () => {
+    const elements = [
+      {
+        dataset: { blockIndex: "0" },
+        getBoundingClientRect: () => ({ top: 120 }),
+      },
+      {
+        dataset: { blockIndex: "1" },
+        getBoundingClientRect: () => ({ top: 180 }),
+      },
+    ];
+    const container = {
+      scrollTop: 30,
+      clientTop: 2,
+      getBoundingClientRect: () => ({ top: 100 }),
+      querySelectorAll: () => elements,
+    } as unknown as HTMLElement;
+
+    expect(measurePreviewBlockOffsets(container)).toEqual([48, 108]);
   });
 
   test("measures representative markdown blocks from their source line starts", async () => {

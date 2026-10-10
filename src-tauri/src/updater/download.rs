@@ -501,6 +501,7 @@ impl UpdateDownloadService {
             install_mode: None,
             install_started_at: None,
             install_scheduled_at: None,
+            install_kind: None,
             last_error: None,
         };
         state::save(paths, &downloading_state)?;
@@ -532,6 +533,7 @@ impl UpdateDownloadService {
                     install_mode: None,
                     install_started_at: None,
                     install_scheduled_at: None,
+                    install_kind: None,
                     last_error: None,
                 };
                 state::save(paths, &downloaded_state)?;
@@ -1115,9 +1117,9 @@ fn download_failure_action(code: &str) -> Option<String> {
         | "updateDownloadUrlNotAllowed"
         | "updateDownloadManifestUnavailable"
         | "updateDownloadManifestUnreadable" => Some("configureUpdateSource".to_string()),
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => {
-            Some("useSupportedInstall".to_string())
-        }
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updateStoreManagedManualOnly" => Some("useSupportedInstall".to_string()),
         _ => Some("retryDownload".to_string()),
     }
 }
@@ -1152,6 +1154,7 @@ fn failed_state(
         install_mode: None,
         install_started_at: None,
         install_scheduled_at: None,
+        install_kind: None,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),
@@ -1178,6 +1181,7 @@ fn failed_state_without_plan(current_state: &UpdateStateDto, error: &AppError) -
         install_mode: None,
         install_started_at: None,
         install_scheduled_at: None,
+        install_kind: None,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),
@@ -1257,6 +1261,7 @@ mod tests {
             install_mode: None,
             install_started_at: None,
             install_scheduled_at: None,
+            install_kind: None,
             last_error: None,
         }
     }
@@ -1652,6 +1657,16 @@ mod tests {
                 .as_ref()
                 .and_then(|error| error.action.as_deref()),
             Some("useSupportedInstall")
+        );
+    }
+
+    #[test]
+    fn store_managed_error_maps_to_use_supported_install_action() {
+        let error = errors::store_managed_manual_only();
+
+        assert_eq!(
+            download_failure_action(&error.code),
+            Some("useSupportedInstall".to_string())
         );
     }
 

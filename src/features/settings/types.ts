@@ -23,6 +23,8 @@ export interface AppConfig {
   externalFileAutoSave: boolean;
   rememberSurfaceSize: boolean;
   tileCtrlClose: boolean;
+  tileDoubleClickToEdit: boolean;
+  tileSaveReturnsToPin: boolean;
   tileRenderMarkdown: boolean;
   renderHtmlMarkdown: boolean;
   splitScrollSync: boolean;

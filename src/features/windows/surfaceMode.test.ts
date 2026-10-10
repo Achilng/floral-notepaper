@@ -14,7 +14,12 @@ describe("surface mode helpers", () => {
     expect(NOTE_SURFACE_MODE_EVENT).toBe("floral-notepaper:surface-mode");
   });
 
-  test("keeps the current window bounds when switching surface modes", () => {
+  test("keeps surface mode default sizes explicit", () => {
+    expect(SURFACE_WINDOW_SIZES.pad).toEqual({ width: 260, height: 260 });
+    expect(SURFACE_WINDOW_SIZES.tile).toEqual({ width: 260, height: 260 });
+  });
+
+  test("keeps current bounds when they are already large enough", () => {
     const current = {
       x: 100,
       y: 80,

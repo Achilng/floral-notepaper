@@ -1,17 +1,28 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  Suspense,
+  lazy,
+} from "react";
 import type { MouseEvent } from "react";
 import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { AboutPanel } from "./AboutPanel";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
-import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
+import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
 import { showToast } from "./Toast";
 import {
-  blockIndexAtOffset,
+  createScrollSyncMap,
+  interpolateScrollOffset,
   measureBlockOffsets,
+  measurePreviewBlockOffsets,
   tagPreviewBlocks,
+  type ScrollSyncMap,
 } from "../features/markdown/scrollSync";
 import {
   chooseDataDirectory,
@@ -36,7 +47,7 @@ import type {
   UpdateState,
 } from "../features/update/types";
 import { BackgroundLayer } from "./BackgroundLayer";
-import { SettingsPanel } from "./SettingsPanel";
+import { POPUP_VIEWPORT_MARGIN, useViewportPopupPosition } from "./popupPosition";
 import { SlidingButtonGroup } from "./SlidingButtonGroup";
 import {
   createNote,
@@ -88,6 +99,15 @@ import {
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 type SidePanelMode = "about" | "settings";
+
+// 侧面板只在用户主动打开时挂载，懒加载可把关于面板（贡献者数据、更新设置）
+// 和设置面板从首屏 bundle 中拆出
+const AboutPanel = lazy(() =>
+  import("./AboutPanel").then((module) => ({ default: module.AboutPanel })),
+);
+const SettingsPanel = lazy(() =>
+  import("./SettingsPanel").then((module) => ({ default: module.SettingsPanel })),
+);
 
 interface NoteMenuState {
   x: number;
@@ -269,6 +289,9 @@ function applyFormat(
     }
   }
 
+  // Selecting the whole value scrolls the textarea to the top; capture the
+  // scroll offset so we can restore the viewport after replacing the content.
+  const previousScrollTop = textarea.scrollTop;
   textarea.focus();
   textarea.setSelectionRange(0, value.length);
   document.execCommand("insertText", false, result);
@@ -276,6 +299,7 @@ function applyFormat(
   markDirty();
   requestAnimationFrame(() => {
     textarea.setSelectionRange(cursorStart, cursorEnd);
+    textarea.scrollTop = previousScrollTop;
   });
 }
 
@@ -376,12 +400,22 @@ export function MainWindow({
   const [categoryMenuClosing, setCategoryMenuClosing] = useState(false);
   const [categoryMenuConfirmDelete, setCategoryMenuConfirmDelete] = useState(false);
   const [categoryMenuHoverSuppressed, setCategoryMenuHoverSuppressed] = useState(false);
+  const { popupRef: noteMenuRef, popupPosition: noteMenuPosition } = useViewportPopupPosition(
+    noteMenu,
+    `${noteMenuMode}:${categories.length}`,
+  );
+  const { popupRef: categoryMenuRef, popupPosition: categoryMenuPosition } =
+    useViewportPopupPosition(categoryMenu, categoryMenuConfirmDelete);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const windowLabelRef = useRef("main");
   const previewScrollRef = useRef<HTMLDivElement>(null);
-  const blockOffsets = useRef<number[]>([]);
+  const scrollMaps = useRef<{
+    editorToPreview: ScrollSyncMap;
+    previewToEditor: ScrollSyncMap;
+  } | null>(null);
   const scrollSource = useRef<"editor" | "preview" | null>(null);
-  const scrollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const scrollSyncRafRef = useRef<number>(0);
+  const scrollReleaseRafRef = useRef<number>(0);
   const measureDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const measureRafRef = useRef<number>(0);
   const measureControllerRef = useRef<AbortController | null>(null);
@@ -560,12 +594,16 @@ export function MainWindow({
     [filteredNotes, categories],
   );
 
-  const lineCount = useMemo(() => content.split("\n").length, [content]);
+  // 打字时输入框优先响应：预览渲染与字数/字节统计使用延迟值，
+  // 连续输入期间 React 会自动合并这些重计算，停顿时再追上
+  const deferredContent = useDeferredValue(content);
+
+  const lineCount = useMemo(() => deferredContent.split("\n").length, [deferredContent]);
   const byteSize = useMemo(
-    () => (new TextEncoder().encode(content).length / 1024).toFixed(1),
-    [content],
+    () => (new TextEncoder().encode(deferredContent).length / 1024).toFixed(1),
+    [deferredContent],
   );
-  const charCount = useMemo(() => countNoteChars(content), [content]);
+  const charCount = useMemo(() => countNoteChars(deferredContent), [deferredContent]);
 
   const applyNote = useCallback(
     (note: Note) => {
@@ -1006,6 +1044,8 @@ export function MainWindow({
     if (!selectedExternalFile) return;
 
     const interval = window.setInterval(async () => {
+      // 窗口隐藏（托盘/最小化）时跳过探测，恢复可见后 1s 内自动追上
+      if (document.visibilityState === "hidden") return;
       if (Date.now() - lastExternalSaveRef.current < 2000) return;
       try {
         const mtime = await getFileModifiedTime(selectedExternalFile.filePath);
@@ -1447,16 +1487,11 @@ export function MainWindow({
     event.preventDefault();
     event.stopPropagation();
 
-    const menuWidth = 168;
-    const menuHeight = 76;
-    const x = Math.min(event.clientX, window.innerWidth - menuWidth - 4);
-    const y = Math.min(event.clientY, window.innerHeight - menuHeight - 4);
-
     setNoteMenuClosing(false);
     setHoveredId(noteId);
     setNoteMenu({
-      x: Math.max(4, x),
-      y: Math.max(4, y),
+      x: event.clientX,
+      y: event.clientY,
       noteId,
     });
   };
@@ -1707,6 +1742,14 @@ export function MainWindow({
     measureControllerRef.current?.abort();
   }, []);
 
+  const cancelScheduledScrollSync = useCallback(() => {
+    cancelAnimationFrame(scrollSyncRafRef.current);
+    cancelAnimationFrame(scrollReleaseRafRef.current);
+    scrollSyncRafRef.current = 0;
+    scrollReleaseRafRef.current = 0;
+    scrollSource.current = null;
+  }, []);
+
   const scrollSyncEnabled = settingsConfig?.splitScrollSync ?? true;
 
   const scheduleScrollMeasurement = useCallback(
@@ -1715,20 +1758,38 @@ export function MainWindow({
       if (!contentRef.current || !previewScrollRef.current) return;
 
       // 布局和测量稳定前先清空旧偏移量
-      blockOffsets.current = [];
+      scrollMaps.current = null;
       cancelScrollMeasurement();
 
       const controller = new AbortController();
       measureControllerRef.current = controller;
 
       const measure = async () => {
-        if (!contentRef.current || !previewScrollRef.current) return;
-        const offsets = await measureBlockOffsets(content, contentRef.current, controller.signal);
+        const textarea = contentRef.current;
+        const preview = previewScrollRef.current;
+        if (!textarea || !preview) return;
+
+        const editorOffsets = await measureBlockOffsets(content, textarea, controller.signal);
         if (controller.signal.aborted) return;
-        blockOffsets.current = offsets;
-        if (!controller.signal.aborted && previewScrollRef.current) {
-          tagPreviewBlocks(previewScrollRef.current);
-        }
+
+        tagPreviewBlocks(preview);
+        const previewOffsets = measurePreviewBlockOffsets(preview);
+        const editorMaxScroll = Math.max(0, textarea.scrollHeight - textarea.clientHeight);
+        const previewMaxScroll = Math.max(0, preview.scrollHeight - preview.clientHeight);
+        scrollMaps.current = {
+          editorToPreview: createScrollSyncMap(
+            editorOffsets,
+            previewOffsets,
+            editorMaxScroll,
+            previewMaxScroll,
+          ),
+          previewToEditor: createScrollSyncMap(
+            previewOffsets,
+            editorOffsets,
+            previewMaxScroll,
+            editorMaxScroll,
+          ),
+        };
       };
 
       const runAfterLayout = () => {
@@ -1749,8 +1810,9 @@ export function MainWindow({
   // 切换笔记时通过 rAF 测量（不阻塞首帧渲染），编辑时 debounce 避免频繁重排
   useEffect(() => {
     if (viewMode !== "split" || !scrollSyncEnabled) {
-      blockOffsets.current = [];
+      scrollMaps.current = null;
       cancelScrollMeasurement();
+      cancelScheduledScrollSync();
       return;
     }
 
@@ -1763,6 +1825,7 @@ export function MainWindow({
     };
   }, [
     cancelScrollMeasurement,
+    cancelScheduledScrollSync,
     content,
     scrollSyncEnabled,
     scheduleScrollMeasurement,
@@ -1780,6 +1843,8 @@ export function MainWindow({
     if (splitContainerRef.current) observedElements.push(splitContainerRef.current);
     if (contentRef.current) observedElements.push(contentRef.current);
     if (previewScrollRef.current) observedElements.push(previewScrollRef.current);
+    const previewContent = previewScrollRef.current?.querySelector<HTMLElement>(".font-body");
+    if (previewContent) observedElements.push(previewContent);
 
     if (typeof ResizeObserver === "undefined") {
       const handleResize = () => scheduleScrollMeasurement(120);
@@ -1804,62 +1869,58 @@ export function MainWindow({
     }
   }, [selectedId]);
 
+  const releaseScrollSourceAfterPaint = useCallback((source: "editor" | "preview") => {
+    cancelAnimationFrame(scrollReleaseRafRef.current);
+    scrollReleaseRafRef.current = requestAnimationFrame(() => {
+      scrollReleaseRafRef.current = requestAnimationFrame(() => {
+        if (scrollSource.current === source) scrollSource.current = null;
+        scrollReleaseRafRef.current = 0;
+      });
+    });
+  }, []);
+
+  const scheduleSyncedScroll = useCallback(
+    (source: "editor" | "preview") => {
+      if (scrollSyncRafRef.current) return;
+      scrollSyncRafRef.current = requestAnimationFrame(() => {
+        scrollSyncRafRef.current = 0;
+        const textarea = contentRef.current;
+        const preview = previewScrollRef.current;
+        const maps = scrollMaps.current;
+        if (!textarea || !preview || !maps || scrollSource.current !== source) return;
+
+        if (source === "editor") {
+          preview.scrollTop = interpolateScrollOffset(maps.editorToPreview, textarea.scrollTop);
+        } else {
+          textarea.scrollTop = interpolateScrollOffset(maps.previewToEditor, preview.scrollTop);
+        }
+        releaseScrollSourceAfterPaint(source);
+      });
+    },
+    [releaseScrollSourceAfterPaint],
+  );
+
   const handleEditorScroll = useCallback(() => {
-    if (viewMode !== "split") return;
+    if (viewMode !== "split" || !scrollSyncEnabled || !scrollMaps.current) return;
     if (scrollSource.current === "preview") return;
 
-    const textarea = contentRef.current;
-    const preview = previewScrollRef.current;
-    if (!textarea || !preview) return;
-
     scrollSource.current = "editor";
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(() => {
-      scrollSource.current = null;
-    }, 150);
-
-    const offsets = blockOffsets.current;
-    if (offsets.length === 0) return;
-
-    const blockIdx = blockIndexAtOffset(offsets, textarea.scrollTop);
-    const el = preview.querySelector<HTMLElement>(`[data-block-index="${blockIdx}"]`);
-    if (!el) return;
-
-    el.scrollIntoView({ block: "start", behavior: "instant" });
-  }, [viewMode]);
+    cancelAnimationFrame(scrollReleaseRafRef.current);
+    scrollReleaseRafRef.current = 0;
+    scheduleSyncedScroll("editor");
+  }, [scheduleSyncedScroll, scrollSyncEnabled, viewMode]);
 
   const handlePreviewScroll = useCallback(() => {
-    if (viewMode !== "split") return;
+    if (viewMode !== "split" || !scrollSyncEnabled || !scrollMaps.current) return;
     if (scrollSource.current === "editor") return;
 
-    const textarea = contentRef.current;
-    const preview = previewScrollRef.current;
-    if (!textarea || !preview) return;
-
     scrollSource.current = "preview";
-    if (scrollTimer.current) clearTimeout(scrollTimer.current);
-    scrollTimer.current = setTimeout(() => {
-      scrollSource.current = null;
-    }, 150);
+    cancelAnimationFrame(scrollReleaseRafRef.current);
+    scrollReleaseRafRef.current = 0;
+    scheduleSyncedScroll("preview");
+  }, [scheduleSyncedScroll, scrollSyncEnabled, viewMode]);
 
-    const elements = preview.querySelectorAll<HTMLElement>("[data-block-index]");
-    if (elements.length === 0) return;
-
-    const containerRect = preview.getBoundingClientRect();
-    let topDomIndex = 0;
-    for (const el of elements) {
-      const rect = el.getBoundingClientRect();
-      if (rect.bottom > containerRect.top + 1) {
-        topDomIndex = parseInt(el.getAttribute("data-block-index")!, 10);
-        break;
-      }
-    }
-
-    const offsets = blockOffsets.current;
-    if (topDomIndex >= offsets.length) return;
-
-    textarea.scrollTop = offsets[topDomIndex];
-  }, [viewMode]);
+  useEffect(() => cancelScheduledScrollSync, [cancelScheduledScrollSync]);
 
   const handlePinEntry = async () => {
     if (!selectedId) return;
@@ -2971,7 +3032,7 @@ export function MainWindow({
                         }`}
                       >
                         <MarkdownPreview
-                          content={content}
+                          content={deferredContent}
                           fontSize={settingsConfig?.fontSize ?? 14}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           imageBaseDir={imageBaseDir ?? undefined}
@@ -3040,7 +3101,11 @@ export function MainWindow({
                   : "pointer-events-none translate-x-4 opacity-0"
               }`}
             >
-              {mountedSidePanel === "about" ? <AboutPanel onClose={handleCloseAbout} /> : null}
+              {mountedSidePanel === "about" ? (
+                <Suspense fallback={null}>
+                  <AboutPanel onClose={handleCloseAbout} />
+                </Suspense>
+              ) : null}
             </div>
             <div
               className={`absolute inset-0 w-[360px] h-full transition-[opacity,transform] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
@@ -3052,12 +3117,14 @@ export function MainWindow({
               }`}
             >
               {mountedSidePanel === "settings" && settingsConfig ? (
-                <SettingsPanel
-                  config={settingsConfig}
-                  onChange={handleSettingsChange}
-                  onMigrateDataDir={() => void handleMigrateDataDir()}
-                  onClose={handleCloseSettings}
-                />
+                <Suspense fallback={null}>
+                  <SettingsPanel
+                    config={settingsConfig}
+                    onChange={handleSettingsChange}
+                    onMigrateDataDir={() => void handleMigrateDataDir()}
+                    onClose={handleCloseSettings}
+                  />
+                </Suspense>
               ) : null}
             </div>
           </div>
@@ -3065,8 +3132,14 @@ export function MainWindow({
       </div>
       {noteMenu && noteMenuTarget && (
         <div
-          className={`popup-menu fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${noteMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
-          style={{ left: noteMenu.x, top: noteMenu.y }}
+          ref={noteMenuRef}
+          className={`popup-menu fixed z-[9999] min-w-[168px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-x-hidden overflow-y-auto select-none ${noteMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
+          style={{
+            left: noteMenuPosition?.x ?? noteMenu.x,
+            top: noteMenuPosition?.y ?? noteMenu.y,
+            maxWidth: `calc(100vw - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
+            maxHeight: `calc(100vh - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
+          }}
           onMouseDown={(event) => event.stopPropagation()}
         >
           {noteMenuMode === "main" ? (
@@ -3127,9 +3200,15 @@ export function MainWindow({
 
       {categoryMenu && (
         <div
-          className={`popup-menu fixed z-[9999] min-w-[140px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-hidden select-none ${categoryMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
+          ref={categoryMenuRef}
+          className={`popup-menu fixed z-[9999] min-w-[140px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-x-hidden overflow-y-auto select-none ${categoryMenuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
           data-hover-suppressed={categoryMenuHoverSuppressed ? "" : undefined}
-          style={{ left: categoryMenu.x, top: categoryMenu.y }}
+          style={{
+            left: categoryMenuPosition?.x ?? categoryMenu.x,
+            top: categoryMenuPosition?.y ?? categoryMenu.y,
+            maxWidth: `calc(100vw - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
+            maxHeight: `calc(100vh - ${POPUP_VIEWPORT_MARGIN * 2}px)`,
+          }}
           onMouseDown={(event) => event.stopPropagation()}
         >
           {categoryMenuConfirmDelete ? (

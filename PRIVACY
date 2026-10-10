@@ -1,0 +1,100 @@
+PRIVACY POLICY FOR FLORAL NOTEPAPER (花笺)
+
+Effective date: 23 August 2026
+
+Developer: Floral Notepaper Contributors
+Contact: https://github.com/Achilng/floral-notepaper/issues
+
+
+1. OVERVIEW
+
+Floral Notepaper (the App) is a local desktop note-taking application. We respect your privacy and do not operate an advertising, analytics, or user-account system for the App.
+
+
+2. INFORMATION STORED LOCALLY
+
+The App stores the following information on your device:
+
+1) Notes and Markdown or text content.
+2) Note metadata, categories, timestamps, and previews.
+3) Images and background images used by your notes.
+4) Application settings, language, theme, keyboard shortcuts, window preferences, and startup preferences.
+5) Local update state, downloaded update packages, and diagnostic or installation logs.
+
+This information is stored in the application configuration directory and the data directory selected by you. The App does not upload your notes, images, backgrounds, or settings to the developer.
+
+
+3. UPDATE SERVICES
+
+When you manually or automatically check for updates, the App may contact GitHub to retrieve release information and update packages, or MirrorChyan if you select MirrorChyan as an update source.
+
+Depending on the selected source, the update request may include the current application version, operating system, processor architecture, and application user-agent. Normal network information, such as your IP address, request time, and HTTP metadata, may be visible to the relevant service provider.
+
+If you enter a MirrorChyan CDK, it is stored in the operating system's secure credential storage and is sent to MirrorChyan over HTTPS only when required to validate or obtain an update. The developer does not receive the CDK.
+
+Update services never receive the content of your notes or local attachments from the App.
+
+The App does not automatically send telemetry, advertising identifiers, crash reports, or usage analytics to the developer.
+
+
+4. FULL-TRUST AND LOCAL FILE ACCESS
+
+The Microsoft Store package uses the runFullTrust and unvirtualizedResources capabilities to provide desktop features such as tray operation, startup configuration, file associations, and access to the local data directory.
+
+These capabilities are used for local application functionality. They do not give the developer remote access to your device and do not cause your files to be transmitted to the developer.
+
+
+5. THIRD-PARTY SERVICES
+
+When update services are used, GitHub or MirrorChyan may process information according to their own privacy policies. When you open an external link from the App, the link is opened in your browser and the relevant website's privacy policy applies.
+
+The App does not sell, rent, or otherwise disclose your local note content to third parties.
+
+
+6. DATA RETENTION AND DELETION
+
+Local application data remains on your device until you delete it or select another data directory. Uninstalling the App may not remove files stored in your user-selected data directory or unvirtualized application configuration directories. You can delete those files manually from Windows or from the data-location settings in the App.
+
+You can clear a stored MirrorChyan CDK from the App's update settings. Temporary update files and local update logs may be removed automatically during update maintenance.
+
+
+7. SECURITY
+
+Update requests and update downloads use HTTPS where supported by the selected service. Credentials configured for MirrorChyan are stored using the operating system's secure credential storage.
+
+No method of storage or transmission can be guaranteed to be completely secure. You are responsible for protecting access to your device and local data.
+
+
+8. CHILDREN'S PRIVACY
+
+The App is a general-purpose desktop application and is not directed to children. We do not knowingly collect personal information from children.
+
+
+9. OPEN-SOURCE TRANSPARENCY
+
+Floral Notepaper is free and open-source software (FOSS), released under the MIT License. Its source code is publicly available at:
+
+https://github.com/Achilng/floral-notepaper
+
+Anyone with privacy or security concerns may inspect, audit, or build the source code independently. The MIT License is available at:
+
+https://github.com/Achilng/floral-notepaper/blob/main/LICENSE
+
+The MirrorChyan platform, including its frontend and backend components, is fully open source. Its source code can be reviewed at:
+
+https://github.com/MirrorChyan
+
+MirrorChyan is an independent third-party service. Its service operation, API processing, and privacy practices are governed by its own applicable terms and privacy policy.
+
+
+10. CHANGES TO THIS POLICY
+
+We may update this Privacy Policy when the App's data practices or applicable requirements change. The updated version will be published at the same URL, with a revised effective date.
+
+
+11. CONTACT
+
+For privacy questions or requests, contact:
+
+Floral Notepaper Contributors
+https://github.com/Achilng/floral-notepaper/issues

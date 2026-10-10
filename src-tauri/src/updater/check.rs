@@ -421,6 +421,7 @@ impl UpdateCheckService {
                 install_mode: None,
                 install_started_at: None,
                 install_scheduled_at: None,
+                install_kind: None,
                 last_error: None,
             };
             return Ok((result, next_state));
@@ -455,6 +456,7 @@ impl UpdateCheckService {
                 install_mode: None,
                 install_started_at: None,
                 install_scheduled_at: None,
+                install_kind: None,
                 last_error: None,
             };
             return Ok((result, next_state));
@@ -1168,6 +1170,7 @@ fn failed_state(
         install_mode: context.previous_state.install_mode.clone(),
         install_started_at: context.previous_state.install_started_at,
         install_scheduled_at: context.previous_state.install_scheduled_at,
+        install_kind: None,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),
@@ -1182,7 +1185,9 @@ fn update_error_action(error: &AppError) -> Option<&'static str> {
             Some("configureUpdateSource")
         }
         "updateProviderFixtureUnreadable" => Some("fixFixturePath"),
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => Some("useSupportedInstall"),
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updateStoreManagedManualOnly" => Some("useSupportedInstall"),
         "updateGithubApi" | "updateGithubRateLimited" | "updateGithubNoAssets" => Some("retry"),
         "updateMirrorChyanApi" => Some("retry"),
         "updateMirrorChyanCdkExpired"
@@ -1512,6 +1517,13 @@ mod tests {
                 .and_then(|error| error.action.as_deref()),
             Some("useSupportedInstall")
         );
+    }
+
+    #[test]
+    fn store_managed_error_maps_to_use_supported_install_action() {
+        let error = errors::store_managed_manual_only();
+
+        assert_eq!(update_error_action(&error), Some("useSupportedInstall"));
     }
 
     #[test]

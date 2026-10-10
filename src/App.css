@@ -627,6 +627,12 @@ input::placeholder {
 .katex .mop {
   color: var(--color-bamboo);
 }
+/* In dark mode --color-bamboo is a vivid green that makes operators (∫, \sin …)
+   and their limits stand out as "colored"; fall back to the body ink so math
+   renders in one uniform color. */
+:root[data-theme="dark"] .katex .mop {
+  color: var(--color-ink-soft);
+}
 .katex .katex-html .newline {
   height: 0.5em;
 }

@@ -66,6 +66,7 @@ pub enum UpdateCheckStatus {
 pub enum InstallKind {
     WindowsNsis,
     WindowsPortable,
+    WindowsMsix,
     MacosAppBundle,
     Unknown,
 }
@@ -145,6 +146,11 @@ pub struct UpdateStateDto {
     pub install_mode: Option<UpdateInstallMode>,
     pub install_started_at: Option<DateTime<Utc>>,
     pub install_scheduled_at: Option<DateTime<Utc>>,
+    /// 安装形态，运行时注入字段：磁盘持久化状态恒为 None，仅在
+    /// `update_status` 响应与各 emit 事件出口由
+    /// `platform::inject_install_kind` 注入；不做 `#[serde(skip)]`，
+    /// API 响应需要该字段。
+    pub install_kind: Option<InstallKind>,
     pub last_error: Option<UpdateErrorDto>,
 }
 
@@ -172,6 +178,7 @@ impl UpdateStateDto {
             install_mode: None,
             install_started_at: None,
             install_scheduled_at: None,
+            install_kind: None,
             last_error: None,
         }
     }

@@ -12,6 +12,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import type { Components } from "react-markdown";
 import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
+import { resolveMarkdownImageSrc } from "./imageSrc";
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
   const { t } = useTranslation();
@@ -287,10 +288,7 @@ export function MarkdownPreview({
     () => ({
       ...staticComponents,
       img: ({ src, alt, ...props }) => {
-        let resolvedSrc = src ?? "";
-        if (src?.startsWith("images/") && imageBaseDir) {
-          resolvedSrc = convertFileSrc(imageBaseDir + "/" + src);
-        }
+        const resolvedSrc = resolveMarkdownImageSrc(src, imageBaseDir, convertFileSrc);
         return (
           <img
             src={resolvedSrc}

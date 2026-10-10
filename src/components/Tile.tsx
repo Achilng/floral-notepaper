@@ -3,7 +3,7 @@ import type { CSSProperties, HTMLAttributes } from "react";
 import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
-import { MarkdownPreview } from "../features/markdown/MarkdownPreview";
+import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
 
 export interface TileProps extends Omit<
   HTMLAttributes<HTMLDivElement>,

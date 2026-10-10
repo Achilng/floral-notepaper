@@ -199,6 +199,16 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             onChange={(checked) => setConfigValue("tileRenderMarkdown", checked)}
           />
           <ToggleRow
+            label={t("settings.tileDoubleClickToEdit", { defaultValue: "双击磁贴进入编辑" })}
+            checked={config.tileDoubleClickToEdit ?? false}
+            onChange={(checked) => setConfigValue("tileDoubleClickToEdit", checked)}
+          />
+          <ToggleRow
+            label={t("settings.tileSaveReturnsToPin", { defaultValue: "保存后回到磁贴" })}
+            checked={config.tileSaveReturnsToPin ?? false}
+            onChange={(checked) => setConfigValue("tileSaveReturnsToPin", checked)}
+          />
+          <ToggleRow
             label={t("settings.renderHtmlMarkdown", { defaultValue: "允许 HTML 标签渲染" })}
             checked={config.renderHtmlMarkdown}
             onChange={(checked) => setConfigValue("renderHtmlMarkdown", checked)}

@@ -93,6 +93,13 @@ pub fn portable_manual_only() -> AppError {
     )
 }
 
+pub fn store_managed_manual_only() -> AppError {
+    app_error(
+        "updateStoreManagedManualOnly",
+        "此版本由 Microsoft Store 管理更新，请在 Microsoft Store 中获取更新",
+    )
+}
+
 pub fn mirror_chyan_api_error(message: impl Into<String>) -> AppError {
     app_error(
         "updateMirrorChyanApi",

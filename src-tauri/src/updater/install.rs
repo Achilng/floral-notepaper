@@ -393,6 +393,7 @@ fn resolve_install_target(platform: &PlatformInfo) -> Result<PathBuf, AppError> 
             .map(PathBuf::from)
             .ok_or_else(errors::unsupported_platform),
         super::types::InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
+        super::types::InstallKind::WindowsMsix => Err(errors::store_managed_manual_only()),
         super::types::InstallKind::Unknown => Err(errors::unsupported_platform()),
     }
 }
@@ -730,6 +731,7 @@ fn scheduled_state(
         install_mode: Some(install_mode),
         install_started_at: None,
         install_scheduled_at: Some(started_at),
+        install_kind: None,
         last_error: None,
     }
 }
@@ -757,6 +759,7 @@ fn validated_test_state(
         install_mode: Some(install_mode),
         install_started_at: Some(started_at),
         install_scheduled_at: None,
+        install_kind: None,
         last_error: None,
     }
 }
@@ -785,6 +788,7 @@ fn failed_state(
         install_mode: Some(install_mode),
         install_started_at: Some(started_at),
         install_scheduled_at: None,
+        install_kind: None,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),
@@ -814,6 +818,7 @@ fn failed_state_without_request(
         install_mode: None,
         install_started_at: None,
         install_scheduled_at: None,
+        install_kind: None,
         last_error: Some(UpdateErrorDto::recoverable(
             error.code.clone(),
             error.message.clone(),
@@ -828,7 +833,9 @@ fn install_failure_action(code: &str) -> &'static str {
         | "updateInstallAssetSizeMismatch"
         | "updateInstallAssetHashMismatch"
         | "updateInstallAssetExtractFailed" => "retryDownload",
-        "updatePlatformUnsupported" | "updatePortableManualOnly" => "useSupportedInstall",
+        "updatePlatformUnsupported"
+        | "updatePortableManualOnly"
+        | "updateStoreManagedManualOnly" => "useSupportedInstall",
         _ => "retryInstall",
     }
 }
@@ -945,6 +952,7 @@ mod tests {
             install_mode: None,
             install_started_at: None,
             install_scheduled_at: None,
+            install_kind: None,
             last_error: None,
         }
     }
@@ -1251,5 +1259,12 @@ mod tests {
             b"dll dependency"
         );
         assert!(!staged_dir.join("notes.txt").exists());
+    }
+
+    #[test]
+    fn store_managed_error_maps_to_use_supported_install_action() {
+        let error = errors::store_managed_manual_only();
+
+        assert_eq!(install_failure_action(&error.code), "useSupportedInstall");
     }
 }

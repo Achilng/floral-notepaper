@@ -4,6 +4,11 @@ interface ParsedBlock {
   endLine: number; // exclusive
 }
 
+export interface ScrollSyncMap {
+  source: number[];
+  target: number[];
+}
+
 const MIRROR_STYLE_PROPERTIES = [
   "font",
   "fontSize",
@@ -223,12 +228,76 @@ export async function measureBlockOffsets(
   return offsets;
 }
 
-/** Find which block index occupies the given textarea scrollTop. */
-export function blockIndexAtOffset(offsets: number[], scrollTop: number): number {
-  for (let i = offsets.length - 1; i >= 0; i--) {
-    if (offsets[i] <= scrollTop) return i;
+function clamp(value: number, min: number, max: number): number {
+  return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * Build a compact, monotonic mapping between two scrollable surfaces.
+ * The first and last scroll positions are always paired so both panes
+ * remain aligned at the document boundaries.
+ */
+export function createScrollSyncMap(
+  sourceOffsets: number[],
+  targetOffsets: number[],
+  sourceMaxScroll: number,
+  targetMaxScroll: number,
+): ScrollSyncMap {
+  const sourceMax = Math.max(0, sourceMaxScroll);
+  const targetMax = Math.max(0, targetMaxScroll);
+  const source = [0];
+  const target = [0];
+  const count = Math.min(sourceOffsets.length, targetOffsets.length);
+
+  for (let index = 0; index < count; index++) {
+    const rawSource = sourceOffsets[index];
+    const rawTarget = targetOffsets[index];
+    if (!Number.isFinite(rawSource) || !Number.isFinite(rawTarget)) continue;
+
+    const nextSource = clamp(rawSource, 0, sourceMax);
+    if (nextSource <= 0 || nextSource >= sourceMax) continue;
+
+    const previousSource = source[source.length - 1];
+    const nextTarget = Math.max(target[target.length - 1], clamp(rawTarget, 0, targetMax));
+    if (nextSource <= previousSource) {
+      if (nextSource === previousSource) target[target.length - 1] = nextTarget;
+      continue;
+    }
+
+    source.push(nextSource);
+    target.push(nextTarget);
   }
-  return 0;
+
+  if (sourceMax > 0) {
+    source.push(sourceMax);
+    target.push(targetMax);
+  }
+
+  return { source, target };
+}
+
+/** Map a scroll position through precomputed anchors using linear interpolation. */
+export function interpolateScrollOffset(map: ScrollSyncMap, scrollTop: number): number {
+  const { source, target } = map;
+  if (source.length < 2) return 0;
+
+  const maxSource = source[source.length - 1];
+  const position = clamp(scrollTop, 0, maxSource);
+  if (position <= 0) return 0;
+  if (position >= maxSource) return target[target.length - 1];
+
+  let low = 0;
+  let high = source.length - 1;
+  while (low + 1 < high) {
+    const middle = Math.floor((low + high) / 2);
+    if (source[middle] <= position) low = middle;
+    else high = middle;
+  }
+
+  const sourceRange = source[high] - source[low];
+  if (sourceRange <= 0) return target[high];
+  const progress = (position - source[low]) / sourceRange;
+  return target[low] + (target[high] - target[low]) * progress;
 }
 
 /**
@@ -245,4 +314,23 @@ export function tagPreviewBlocks(container: HTMLElement): void {
       child.setAttribute("data-block-index", String(index++));
     }
   }
+}
+
+/** Measure tagged preview blocks in the scroll container's coordinate space. */
+export function measurePreviewBlockOffsets(container: HTMLElement): number[] {
+  const containerRect = container.getBoundingClientRect();
+  const elements = container.querySelectorAll<HTMLElement>("[data-block-index]");
+  const offsets: number[] = [];
+
+  for (const element of elements) {
+    const index = Number.parseInt(element.dataset.blockIndex ?? "", 10);
+    if (!Number.isFinite(index)) continue;
+    const elementRect = element.getBoundingClientRect();
+    offsets[index] = Math.max(
+      0,
+      container.scrollTop + elementRect.top - containerRect.top - container.clientTop,
+    );
+  }
+
+  return offsets;
 }

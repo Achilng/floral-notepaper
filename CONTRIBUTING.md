@@ -98,6 +98,10 @@ npx oxfmt --check                           # 格式检查
 
 PR 标题同样遵循 Conventional Commits 格式，例如 `feat: 添加笔记标签功能`。
 
+## 发布流程（维护者）
+
+正式版本的 Tag、跨平台构建、Windows SignPath 签名、安装验证和 Draft Release 操作，请参考 [Release 发布流程](Docs/RELEASE_WORKFLOW.md)。
+
 ## 问题反馈
 
 - 报告 bug：[提交 Issue](https://github.com/Achilng/floral-notepaper/issues/new?template=bug.yml)
