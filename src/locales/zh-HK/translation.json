@@ -216,6 +216,42 @@
       "preview": "預覽",
       "split": "分欄"
     },
+    "feishu": {
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "clearSecret": "清除密鑰",
+      "connectionOk": "連線成功，應用程式憑據有效",
+      "description": "本機優先，儲存後非同步單向同步至飛書文件。飛書端修改可能被覆蓋。",
+      "folderPlaceholder": "飛書資料夾連結中的 token",
+      "folderToken": "目標資料夾 Token（可選）",
+      "authCode": "請在已開啟的飛書頁面確認授權，驗證碼：{{code}}",
+      "loggedIn": "飛書帳號已授權",
+      "loggingIn": "等待授權…",
+      "login": "登入飛書",
+      "loginExpired": "授權已過期，請重試",
+      "loginOk": "飛書帳號授權成功",
+      "notLoggedIn": "飛書帳號未授權",
+      "openAuth": "重新開啟授權頁",
+      "permissionHint": "需開通「建立及編輯新版文件」；同步至指定資料夾還需開通「檢視、評論、編輯和管理雲空間中所有檔案」，然後發佈應用程式新版本。",
+      "save": "儲存設定",
+      "saved": "飛書同步設定已儲存",
+      "saving": "儲存中…",
+      "secretCleared": "App Secret 已清除",
+      "secretPlaceholder": "輸入 App Secret",
+      "secretStored": "已安全儲存；留空表示不修改",
+      "status": {
+        "counts": "已同步 {{synced}}/{{total}}，失敗 {{failed}}",
+        "notConfigured": "尚未完成設定",
+        "syncing": "正在同步"
+      },
+      "syncAll": "立即同步全部",
+      "syncStatus": "同步狀態",
+      "syncing": "同步中…",
+      "syncSummary": "同步完成：{{synced}} 篇更新，{{skipped}} 篇無需更新，{{failed}} 篇失敗",
+      "test": "測試連線",
+      "testing": "測試中…",
+      "title": "飛書雲端同步"
+    },
     "fontSize": {
       "editor": "編輯器字級",
       "surface": "小窗／磁貼字級"

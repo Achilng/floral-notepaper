@@ -38,6 +38,8 @@ Most note-taking or sticky note apps out there are either bloated and steep to l
 
   ![Main window screenshot](Docs/images/主窗口截图.png)
 
+- **Feishu Cloud Sync** — Optional local-first, one-way background sync to Feishu Docs ([setup guide](Docs/FEISHU_SYNC.md))
+
 - **Quick Note** — Summon a note window instantly from the system tray or via a global hotkey (default: `Ctrl+Space`)
 
   ![Multi-window example](Docs/images/小窗多开示例.gif)
