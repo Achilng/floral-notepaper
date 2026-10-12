@@ -3033,6 +3033,18 @@ export function MainWindow({
                       >
                         <MarkdownPreview
                           content={deferredContent}
+                          onContentChange={
+                            selectedId
+                              ? (nextContent) => {
+                                  // 仅拦截过期预览的写入，不切换整组复选框的 disabled 状态，
+                                  // 避免延迟预览追上正文之前出现闪烁和键盘焦点丢失。
+                                  if (contentValueRef.current !== deferredContent) return;
+                                  contentValueRef.current = nextContent;
+                                  setContent(nextContent);
+                                  markDirty();
+                                }
+                              : undefined
+                          }
                           fontSize={settingsConfig?.fontSize ?? 14}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           imageBaseDir={imageBaseDir ?? undefined}

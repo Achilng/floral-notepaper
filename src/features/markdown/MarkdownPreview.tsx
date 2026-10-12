@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from "react";
+import { createContext, useContext, useState, useCallback, useMemo } from "react";
+import type { InputHTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -9,9 +10,10 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeSlug from "rehype-slug";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import type { Components } from "react-markdown";
+import type { Components, ExtraProps } from "react-markdown";
 import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
+import rehypeTaskLists from "./rehypeTaskLists";
 import { resolveMarkdownImageSrc } from "./imageSrc";
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
@@ -69,7 +71,12 @@ interface MarkdownPreviewProps {
   fontSize?: number;
   renderHtml?: boolean;
   imageBaseDir?: string;
+  onContentChange?: (content: string) => void;
 }
+
+const TaskListContext = createContext<((offset: number, checked: boolean) => void) | undefined>(
+  undefined,
+);
 
 const remarkPlugins = [remarkGfm, remarkMath, remarkAlerts];
 const sanitizeSchema = {
@@ -88,12 +95,13 @@ const sanitizeSchema = {
     abbr: ["title"],
   },
 };
-const rehypePluginsDefault = [rehypeKatex, rehypeSlug];
+const rehypePluginsDefault = [rehypeKatex, rehypeSlug, rehypeTaskLists];
 const rehypePluginsWithHtml = [
   rehypeRaw,
   [rehypeSanitize, sanitizeSchema],
   rehypeKatex,
   rehypeSlug,
+  rehypeTaskLists,
 ] as Parameters<typeof Markdown>[0]["rehypePlugins"];
 
 function AlertIcon({ type }: { type: string }) {
@@ -272,16 +280,37 @@ const staticComponents: Components = {
   td: ({ children }) => (
     <td className="px-3 py-1.5 border border-paper-deep/35 text-ink-soft">{children}</td>
   ),
-  input: ({ checked, ...props }) => (
-    <input {...props} checked={checked} disabled className="mr-1.5 accent-bamboo" />
-  ),
+  input: TaskCheckbox,
 };
+
+function TaskCheckbox({
+  node,
+  checked,
+  ...props
+}: InputHTMLAttributes<HTMLInputElement> & ExtraProps) {
+  const onToggle = useContext(TaskListContext);
+  const offset = node?.properties.dataTaskOffset;
+  const interactive = typeof offset === "number" && Boolean(onToggle);
+  return (
+    <input
+      {...props}
+      checked={checked ?? false}
+      disabled={!interactive}
+      aria-label={props["aria-label"] ?? node?.properties.dataTaskLabel?.toString()}
+      onChange={(event) => {
+        if (typeof offset === "number") onToggle?.(offset, event.target.checked);
+      }}
+      className="mr-1.5 accent-bamboo"
+    />
+  );
+}
 
 export function MarkdownPreview({
   content,
   fontSize = 14,
   renderHtml = false,
   imageBaseDir,
+  onContentChange,
 }: MarkdownPreviewProps) {
   const { t } = useTranslation();
   const components = useMemo<Components>(
@@ -303,20 +332,33 @@ export function MarkdownPreview({
     [imageBaseDir],
   );
   return (
-    <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>
-      {content.trim() ? (
-        <Markdown
-          remarkPlugins={remarkPlugins}
-          rehypePlugins={renderHtml ? rehypePluginsWithHtml : rehypePluginsDefault}
-          components={components}
-        >
-          {content}
-        </Markdown>
-      ) : (
-        <p className="text-ink-ghost leading-[1.9]">
-          {t("markdown.emptyHint", { defaultValue: "预览区会显示当前笔记内容" })}
-        </p>
-      )}
-    </div>
+    <TaskListContext.Provider
+      value={
+        onContentChange
+          ? (offset, checked) => {
+              if (!/^[ xX]$/.test(content[offset] ?? "")) return;
+              onContentChange(
+                content.slice(0, offset) + (checked ? "x" : " ") + content.slice(offset + 1),
+              );
+            }
+          : undefined
+      }
+    >
+      <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>
+        {content.trim() ? (
+          <Markdown
+            remarkPlugins={remarkPlugins}
+            rehypePlugins={renderHtml ? rehypePluginsWithHtml : rehypePluginsDefault}
+            components={components}
+          >
+            {content}
+          </Markdown>
+        ) : (
+          <p className="text-ink-ghost leading-[1.9]">
+            {t("markdown.emptyHint", { defaultValue: "预览区会显示当前笔记内容" })}
+          </p>
+        )}
+      </div>
+    </TaskListContext.Provider>
   );
 }
