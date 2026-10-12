@@ -47,6 +47,10 @@ export function moveNoteCategory(id: string, category: string): Promise<NoteMeta
   return invoke("notes_move_category", { id, category });
 }
 
+export function startNoteDrag(noteId: string): Promise<void> {
+  return invoke("start_note_drag", { noteId });
+}
+
 export function listCategories(): Promise<string[]> {
   return invoke("categories_list");
 }
@@ -65,6 +69,10 @@ export function deleteCategory(name: string): Promise<void> {
 
 export function readExternalFile(path: string): Promise<string> {
   return invoke("read_external_file", { path });
+}
+
+export function resolveNotePath(path: string): Promise<NoteMetadata | null> {
+  return invoke("notes_resolve_path", { path });
 }
 
 export function saveExternalFile(path: string, content: string): Promise<void> {

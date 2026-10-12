@@ -5,6 +5,7 @@ import {
   filterNotes,
   getDisplayTitle,
   groupNotesByCategory,
+  titleFromFileName,
 } from "./noteUtils";
 import type { NoteMetadata } from "./types";
 
@@ -58,5 +59,13 @@ describe("note utilities", () => {
     expect(categoryNames).toContain("工作");
     const workGroup = groups.find((g) => g.category === "工作");
     expect(workGroup?.notes).toEqual([]);
+  });
+
+  it("recovers a readable title from legacy, clean, and suffixed file names", () => {
+    expect(titleFromFileName("11111111-2222-3333-4444-555555555555_读书笔记.md")).toBe("读书笔记");
+    expect(titleFromFileName("读书笔记.md")).toBe("读书笔记");
+    expect(titleFromFileName("读书笔记 (2).md")).toBe("读书笔记");
+    expect(titleFromFileName("A_B_Test.md")).toBe("A B Test");
+    expect(titleFromFileName("11111111-2222-3333-4444-555555555555_会议记录.txt")).toBe("会议记录");
   });
 });

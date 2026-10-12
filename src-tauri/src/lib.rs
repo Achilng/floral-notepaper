@@ -4,6 +4,9 @@ pub mod locales;
 pub mod services;
 pub mod updater;
 
+#[cfg(target_os = "windows")]
+mod drag_out;
+
 use locales::Locale;
 use services::notes::{default_store, AppConfig, AppError, Note, NoteMetadata, SaveNoteRequest};
 use std::{env, fs, io::Write, path::PathBuf};
@@ -64,12 +67,78 @@ fn notes_export_markdown(id: String, path: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+fn notes_resolve_path(path: String) -> Result<Option<NoteMetadata>, AppError> {
+    default_store()?.resolve_note_by_path(&PathBuf::from(path))
+}
+
+/// Ctrl+拖拽：把笔记的 `.md` 以干净副本（剥离 UUID 标记）经原生 OLE 拖拽
+/// 发送到 QQ / 微信 / 资源管理器。仅 Windows 支持；其它平台返回错误。
+#[tauri::command]
+fn start_note_drag(app: AppHandle, note_id: String) -> Result<(), AppError> {
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = (app, note_id);
+        return Err(AppError {
+            code: "unsupportedPlatform".into(),
+            message: "拖拽发送文件仅支持 Windows".into(),
+            details: Default::default(),
+        });
+    }
+
+    #[cfg(target_os = "windows")]
+    start_note_drag_windows(app, note_id)
+}
+
+#[cfg(target_os = "windows")]
+fn start_note_drag_windows(app: AppHandle, note_id: String) -> Result<(), AppError> {
+    let note = default_store()?.read_note(&note_id)?;
+
+    // read_note 已剥离 UUID 标记；写入按 note_id 隔离的临时目录，文件名即
+    // 干净的 `{标题}.md`，供拖拽目标直接识别。
+    let temp_dir = std::env::temp_dir()
+        .join("floral-notepaper-drag")
+        .join(&note_id);
+    std::fs::create_dir_all(&temp_dir)?;
+    let temp_path = temp_dir.join(&note.file_name);
+    std::fs::write(&temp_path, &note.content)?;
+
+    // DoDragDrop 必须在拥有消息泵的线程上运行；用 run_on_main_thread 切到主
+    // 线程并阻塞本命令线程直到拖拽结束。
+    let path = temp_path;
+    let (tx, rx) = std::sync::mpsc::channel::<Result<(), String>>();
+    app.run_on_main_thread(move || {
+        let result = drag_out::drag_file_out(&path);
+        let _ = tx.send(result);
+    })
+    .map_err(|error| AppError {
+        code: "dragFailed".into(),
+        message: error.to_string(),
+        details: Default::default(),
+    })?;
+
+    match rx.recv() {
+        Ok(Ok(())) => Ok(()),
+        Ok(Err(message)) => Err(AppError {
+            code: "dragFailed".into(),
+            message,
+            details: Default::default(),
+        }),
+        Err(error) => Err(AppError {
+            code: "dragFailed".into(),
+            message: error.to_string(),
+            details: Default::default(),
+        }),
+    }
+}
+
+#[tauri::command]
 fn read_external_file(path: String) -> Result<String, AppError> {
-    std::fs::read_to_string(&path).map_err(|e| AppError {
+    let raw = std::fs::read_to_string(&path).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
         details: Default::default(),
-    })
+    })?;
+    Ok(services::notes::strip_note_id_marker(&raw))
 }
 
 #[tauri::command]
@@ -99,6 +168,12 @@ fn save_external_file(path: String, content: String) -> Result<(), AppError> {
             details: Default::default(),
         })?;
     }
+    // Preserve the note id marker across external edits so a managed note keeps
+    // its identity (and its images) when saved from the external-file path.
+    let content = match std::fs::read_to_string(&path) {
+        Ok(existing) => services::notes::preserve_note_id_marker(&existing, &content),
+        Err(_) => content,
+    };
     std::fs::write(&path, content).map_err(|e| AppError {
         code: "io".into(),
         message: e.to_string(),
@@ -477,6 +552,8 @@ pub fn run() {
             notes_import_markdown,
             notes_export_markdown,
             notes_move_category,
+            notes_resolve_path,
+            start_note_drag,
             read_external_file,
             save_external_file,
             get_file_modified_time,
