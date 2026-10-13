@@ -4,6 +4,7 @@ import { useMemo } from "react";
 import { useTranslation } from "react-i18next";
 import { DEFAULT_TILE_COLOR, normalizeTileColor } from "../features/settings/tileColor";
 import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
+import { shouldRenderTileMarkdown } from "../features/markdown/tileContent";
 
 export interface TileProps extends Omit<
   HTMLAttributes<HTMLDivElement>,
@@ -105,6 +106,7 @@ export function Tile({
     ...(rotation ? { transform: `rotate(${rotation}deg)` } : {}),
     ...style,
   };
+  const renderTileContentAsMarkdown = shouldRenderTileMarkdown(content, renderMarkdown);
 
   return (
     <div
@@ -122,7 +124,7 @@ export function Tile({
           </div>
         )}
         {content ? (
-          renderMarkdown ? (
+          renderTileContentAsMarkdown ? (
             <div style={{ color: contentColor }}>
               <MarkdownPreview
                 content={content}
