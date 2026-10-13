@@ -174,6 +174,11 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
             onChange={(checked) => setConfigValue("autostart", checked)}
           />
           <ToggleRow
+            label={t("settings.showNotepadOnStartup", { defaultValue: "开机后自动显示快捷便签" })}
+            checked={config.showNotepadOnStartup ?? false}
+            onChange={(checked) => setConfigValue("showNotepadOnStartup", checked)}
+          />
+          <ToggleRow
             label={t("settings.autoSave.note", { defaultValue: "自动保存笔记" })}
             checked={config.noteAutoSave}
             onChange={(checked) => setConfigValue("noteAutoSave", checked)}
