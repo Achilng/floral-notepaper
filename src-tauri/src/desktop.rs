@@ -2399,9 +2399,20 @@ pub fn stop_shortcut_recording(app: &AppHandle) -> Result<(), Box<dyn Error>> {
     #[cfg(target_os = "windows")]
     keyboard_hook::stop();
 
-    let config = load_config()?;
-    if let Err(e) = install_global_shortcut_bindings(app, &config, false) {
-        eprintln!("failed to re-register global shortcuts after recording: {e}");
+    // 从 RuntimeState 重新注册快捷键，避免读取磁盘配置导致的竞态条件：
+    // config_save 可能在 stop_shortcut_recording 之后/同时运行，
+    // 如果 stop 时从磁盘读取了旧配置，会重新注册已被用户清除的快捷键。
+    if let Some(state) = app.try_state::<RuntimeState>() {
+        if let Ok(guard) = state.shortcut_bindings.lock() {
+            let bindings = guard.clone();
+            drop(guard);
+            if let Some(s) = &bindings.open_notepad {
+                let _ = app.global_shortcut().register(*s);
+            }
+            if let Some(s) = &bindings.toggle_visibility {
+                let _ = app.global_shortcut().register(*s);
+            }
+        }
     }
 
     Ok(())
