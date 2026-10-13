@@ -88,9 +88,25 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
     [t],
   );
 
+  const panelRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const firstFocusable = panelRef.current?.querySelector<HTMLElement>(
+      'button, input, select, textarea, [tabindex]:not([tabindex="-1"])',
+    );
+    const timer = setTimeout(() => firstFocusable?.focus(), 60);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
-    <aside className="w-[360px] h-full shrink-0 border-l border-paper-deep/30 bg-cloud/92 backdrop-blur-sm flex flex-col">
-      <div className="flex items-center justify-between h-11 px-4 border-b border-paper-deep/25">
+    <aside
+      ref={panelRef}
+      className="w-[360px] h-full shrink-0 min-h-0 overflow-y-auto scrollbar-hidden border-l border-paper-deep/30 bg-cloud/92 backdrop-blur-sm flex flex-col"
+      onKeyDown={(e) => {
+        if (e.key === "Escape") onClose();
+      }}
+    >
+      <div className="flex items-center justify-between h-11 px-4 border-b border-paper-deep/25 shrink-0">
         <h2 className="text-[13px] font-display font-medium text-ink-soft">
           {t("settings.title", { defaultValue: "应用设置" })}
         </h2>
@@ -114,7 +130,7 @@ export function SettingsPanel({ config, onChange, onMigrateDataDir, onClose }: S
         </button>
       </div>
 
-      <div className="flex-1 overflow-y-auto scrollbar-hidden px-4 py-4 space-y-5">
+      <div className="flex-1 px-4 py-4 space-y-5">
         <section className="space-y-2">
           <label className="block text-[11px] font-body text-ink-faint">
             {t("settings.theme.label", { defaultValue: "主题" })}
@@ -490,7 +506,15 @@ interface ToggleRowProps {
 
 function ToggleRow({ label, checked, onChange }: ToggleRowProps) {
   return (
-    <label className="flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25 cursor-pointer">
+    <label
+      className="flex items-center justify-between h-9 rounded-lg px-2.5 bg-paper-warm/45 border border-paper-deep/25 cursor-pointer focus-within:ring-2 focus-within:ring-bamboo/40"
+      onKeyDown={(e) => {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          onChange(!checked);
+        }
+      }}
+    >
       <span className="text-[12px] text-ink-soft">{label}</span>
       <input
         type="checkbox"

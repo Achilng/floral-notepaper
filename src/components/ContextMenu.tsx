@@ -215,12 +215,61 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     [menu, runCommand, t, tileContextMenuItems],
   );
 
+  // 菜单打开时自动聚焦第一个可用的菜单项
+  useEffect(() => {
+    if (menu && !menuClosing) {
+      requestAnimationFrame(() => {
+        const first = menuRef.current?.querySelector<HTMLButtonElement>("button:not([disabled])");
+        first?.focus();
+      });
+    }
+  }, [menu, menuClosing]);
+
+  // 键盘方向键导航
+  const handleMenuKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLDivElement>) => {
+      if (menuClosing || !menuRef.current) return;
+
+      const buttons = Array.from(
+        menuRef.current.querySelectorAll<HTMLButtonElement>("button:not([disabled])"),
+      );
+      if (buttons.length === 0) return;
+
+      const currentIndex = buttons.indexOf(document.activeElement as HTMLButtonElement);
+
+      switch (e.key) {
+        case "ArrowDown":
+          e.preventDefault();
+          {
+            const next = buttons[Math.min(currentIndex + 1, buttons.length - 1)];
+            next?.focus();
+          }
+          break;
+        case "ArrowUp":
+          e.preventDefault();
+          {
+            const prev = buttons[Math.max(currentIndex - 1, 0)];
+            prev?.focus();
+          }
+          break;
+        case "Escape":
+          e.preventDefault();
+          dismissMenu();
+          break;
+      }
+    },
+    [menuClosing, dismissMenu],
+  );
+
   return (
     <>
       {children}
       {menu && (
         <div
           ref={menuRef}
+          role="menu"
+          tabIndex={-1}
+          onKeyDown={handleMenuKeyDown}
           className={`fixed z-[9999] min-w-[152px] py-1.5 bg-cloud/95 backdrop-blur-sm border border-paper-deep/50 rounded-lg overflow-x-hidden overflow-y-auto select-none ${menuClosing ? "animate-menu-exit" : "animate-menu-enter"}`}
           style={{
             left: menuPosition?.x ?? menu.x,
