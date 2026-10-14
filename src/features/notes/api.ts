@@ -4,11 +4,16 @@ import type { Note, NoteMetadata, SaveNoteRequest } from "./types";
 
 interface SerializedAppError {
   code?: unknown;
+  name?: unknown;
   message?: unknown;
   details?: unknown;
 }
 
 type ErrorDetails = Record<string, string>;
+
+export interface DeleteNoteOptions {
+  permanent?: boolean;
+}
 
 const LOCALIZED_ERROR_CODES = new Set([
   "categoryAlreadyExists",
@@ -39,8 +44,8 @@ export function updateNote(id: string, request: SaveNoteRequest): Promise<Note> 
   return invoke("notes_update", { id, request });
 }
 
-export function deleteNote(id: string): Promise<void> {
-  return invoke("notes_delete", { id });
+export function deleteNote(id: string, options: DeleteNoteOptions = {}): Promise<void> {
+  return invoke("notes_delete", options.permanent ? { id, permanent: true } : { id });
 }
 
 export function moveNoteCategory(id: string, category: string): Promise<NoteMetadata> {
@@ -96,6 +101,7 @@ function normalizeErrorDetails(value: unknown): ErrorDetails {
 
 function parseAppError(error: unknown): {
   code?: string;
+  name?: string;
   message?: string;
   details: ErrorDetails;
 } | null {
@@ -105,9 +111,15 @@ function parseAppError(error: unknown): {
 
   return {
     code: typeof error.code === "string" ? error.code : undefined,
+    name: typeof error.name === "string" ? error.name : undefined,
     message: typeof error.message === "string" ? error.message : undefined,
     details: normalizeErrorDetails(error.details),
   };
+}
+
+export function isWslTrashUnavailableError(error: unknown): boolean {
+  const appError = parseAppError(error);
+  return appError?.code === "wslTrashUnavailable" || appError?.name === "wslTrashUnavailable";
 }
 
 function shortcutFieldLabel(field: string | undefined, translate: TFunction): string | null {
