@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { PhysicalPosition, PhysicalSize } from "@tauri-apps/api/dpi";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { currentMonitor, getCurrentWindow } from "@tauri-apps/api/window";
 import type { WindowBounds } from "./api";
+import type { SurfaceBoundsContext } from "./surfaceMode";
 
 export type ResizeDirection = "NorthWest" | "NorthEast" | "SouthWest" | "SouthEast";
 
@@ -39,6 +40,27 @@ export function isCurrentWindowMaximized(): Promise<boolean> {
 
 export function setCurrentWindowAlwaysOnTop(enabled: boolean): Promise<void> {
   return getCurrentWindow().setAlwaysOnTop(enabled);
+}
+
+/** 撑高换算需要的窗口度量：设备像素比 + 当前显示器工作区，读不到就留空。 */
+export async function getSurfaceMetrics(): Promise<SurfaceBoundsContext> {
+  const [scale, monitor] = await Promise.all([
+    getCurrentWindow()
+      .scaleFactor()
+      .catch(() => 1),
+    currentMonitor().catch(() => null),
+  ]);
+  return {
+    scale,
+    workArea: monitor
+      ? {
+          x: monitor.workArea.position.x,
+          y: monitor.workArea.position.y,
+          width: monitor.workArea.size.width,
+          height: monitor.workArea.size.height,
+        }
+      : null,
+  };
 }
 
 export function startCurrentWindowDrag(): Promise<void> {
