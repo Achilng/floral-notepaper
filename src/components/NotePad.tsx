@@ -16,14 +16,17 @@ import {
   animateCurrentWindowBounds,
   closeCurrentWindow,
   getCurrentWindowBounds,
+  getSurfaceMetrics,
   recycleCurrentNotepad,
   setCurrentWindowAlwaysOnTop,
+  setCurrentWindowBounds,
   showCurrentWindow,
   startCurrentWindowDrag,
   startCurrentWindowDragWithOffset,
   startCurrentWindowResize,
 } from "../features/windows/controls";
 import type { ResizeDirection } from "../features/windows/controls";
+import type { WindowBounds } from "../features/windows/api";
 import { getConfig } from "../features/settings/api";
 import {
   DEFAULT_TILE_COLOR,
@@ -147,6 +150,8 @@ export function NotePad({
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const tileDragIntentRef = useRef<{ x: number; y: number } | null>(null);
+  // 进入编辑前的窗口边界，退回磁贴/关窗时整体还原
+  const restingSurfaceBoundsRef = useRef<WindowBounds | null>(null);
   const windowLabelRef = useRef("");
   const statusRef = useRef<NotePadStatus>("empty");
   const contentValueRef = useRef(content);
@@ -326,6 +331,7 @@ export function NotePad({
       setStatus("empty");
       setIsExiting(false);
       setSurfaceMode("pad");
+      restingSurfaceBoundsRef.current = null;
       void refreshNotes().catch(() => undefined);
       void showCurrentWindow()
         .then(() => contentRef.current?.focus())
@@ -435,6 +441,9 @@ export function NotePad({
 
   const switchSurfaceMode = useCallback(
     async (nextMode: NoteSurfaceMode) => {
+      // 编辑态里打开另一篇笔记等请求仍是同一模式，直接跳过，避免把撑高后的边界当基线
+      if (nextMode === surfaceMode) return;
+
       const unpinnedNoteId = tileSurfaceModeUnpinNoteId(surfaceMode, nextMode, tileNoteId);
       setSurfaceMode(nextMode);
       if (unpinnedNoteId) {
@@ -443,7 +452,13 @@ export function NotePad({
 
       try {
         const currentBounds = await getCurrentWindowBounds();
-        const targetBounds = getSurfaceTargetBounds(nextMode, currentBounds);
+        const { target: targetBounds, resting } = getSurfaceTargetBounds(
+          nextMode,
+          currentBounds,
+          nextMode === "pad" ? await getSurfaceMetrics() : {},
+          restingSurfaceBoundsRef.current,
+        );
+        restingSurfaceBoundsRef.current = resting;
 
         if (nextMode === "tile") {
           await setCurrentWindowAlwaysOnTop(true);
@@ -608,7 +623,12 @@ export function NotePad({
     // 回收进窗口池：窗口只是被隐藏，立刻清空编辑器状态并进入休眠，
     // 避免上一篇笔记全文和笔记列表驻留在隐藏窗口的内存里
     dormantRef.current = true;
-    void recycleCurrentNotepad()
+    const resting = restingSurfaceBoundsRef.current;
+    // 回收会把当前窗口尺寸记成表面尺寸，先还原回磁贴大小
+    void (async () => {
+      if (resting) await setCurrentWindowBounds(resting).catch(() => undefined);
+      await recycleCurrentNotepad();
+    })()
       .then(() => {
         setEditingNoteId(null);
         setTitle("");

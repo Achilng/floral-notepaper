@@ -19,16 +19,9 @@ describe("surface mode helpers", () => {
     expect(SURFACE_WINDOW_SIZES.tile).toEqual({ width: 260, height: 260 });
   });
 
-  test("keeps current bounds when they are already large enough", () => {
-    const current = {
-      x: 100,
-      y: 80,
-      width: 420,
-      height: 430,
-    };
-    const target = getSurfaceTargetBounds("tile", {
-      ...current,
-    });
+  test("keeps current bounds when switching to tile without a snapshot", () => {
+    const current = { x: 100, y: 80, width: 420, height: 430 };
+    const { target } = getSurfaceTargetBounds("tile", current);
 
     expect(SURFACE_WINDOW_SIZES.tile).toEqual(SURFACE_WINDOW_SIZES.pad);
     expect(SURFACE_WINDOW_SIZES.pad).toEqual({ width: 260, height: 260 });
