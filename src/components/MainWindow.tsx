@@ -25,6 +25,15 @@ import {
   type ScrollSyncMap,
 } from "../features/markdown/scrollSync";
 import {
+  findNoteByLinkTitle,
+  isAbsolutePath,
+  isSamePath,
+  isTextFilePath,
+  joinLinkPath,
+  parentDirectory,
+  type FileLinkTarget,
+} from "../features/markdown/linkTarget";
+import {
   chooseDataDirectory,
   getConfig,
   migrateDataDir,
@@ -1465,6 +1474,107 @@ export function MainWindow({
       clearCurrentNote();
     }
   };
+
+  // 跳转到链接目标文件中的锚点：新笔记经 useDeferredValue 延迟渲染，
+  // 用 rAF 轮询等待元素出现（上限约 1 秒），找不到锚点则静默放弃
+  const scrollPreviewToAnchor = useCallback((anchor: string) => {
+    let attempts = 0;
+    const locate = () => {
+      const element = document.getElementById(anchor);
+      if (element) {
+        element.scrollIntoView({ behavior: "smooth" });
+        return;
+      }
+      if (attempts++ < 60) requestAnimationFrame(locate);
+    };
+    requestAnimationFrame(locate);
+  }, []);
+
+  // 打开链接指向的本地文本文件：非文本类型提示不支持；已打开过的复用原记录，
+  // 避免因分隔符差异在列表里产生重复条目
+  const openLinkedTextFile = useCallback(
+    async (path: string, anchor: string | undefined) => {
+      if (!isTextFilePath(path)) {
+        showToast(
+          t("errors.linkUnsupportedType", { defaultValue: "仅支持打开 Markdown 或文本文件" }),
+        );
+        return;
+      }
+      const existing = externalFilesRef.current.find((file) => isSamePath(file.filePath, path));
+      const targetPath = existing?.filePath ?? path;
+      if (isSamePath(targetPath, selectedIdRef.current ?? "")) {
+        if (anchor) scrollPreviewToAnchor(anchor);
+        return;
+      }
+      try {
+        // 先探测存在性：文件不存在时给出本地化提示，而不是 readExternalFile 的裸 io 错误
+        await getFileModifiedTime(targetPath);
+      } catch {
+        showToast(
+          t("errors.linkTargetNotFound", {
+            path: targetPath,
+            defaultValue: "找不到链接的文件：{{path}}",
+          }),
+        );
+        return;
+      }
+      await saveCurrentNote();
+      await loadExternalFile(targetPath);
+      if (anchor) scrollPreviewToAnchor(anchor);
+    },
+    [loadExternalFile, saveCurrentNote, scrollPreviewToAnchor, t],
+  );
+
+  // 预览里点击指向本地文件/笔记的链接：外部文件按所在目录解析相对路径；
+  // 内部笔记存储文件名带 uuid 无法按路径互链，改按标题匹配目标笔记
+  const handleOpenFileLink = useCallback(
+    async (target: FileLinkTarget) => {
+      if (!target.path) return;
+      try {
+        const currentExternal = externalFilesRef.current.find(
+          (file) => file.id === selectedIdRef.current,
+        );
+
+        if (currentExternal) {
+          const path = isAbsolutePath(target.path)
+            ? target.path
+            : joinLinkPath(parentDirectory(currentExternal.filePath), target.path);
+          await openLinkedTextFile(path, target.anchor);
+          return;
+        }
+
+        const matched = findNoteByLinkTitle(
+          notesRef.current,
+          target.path,
+          selectedNoteRef.current?.category ?? "",
+        );
+        if (matched) {
+          if (matched.id !== selectedIdRef.current) {
+            await saveCurrentNote();
+            await loadNote(matched.id);
+          }
+          if (target.anchor) scrollPreviewToAnchor(target.anchor);
+          return;
+        }
+
+        // 内部笔记里写的绝对路径按外部文件打开
+        if (isAbsolutePath(target.path)) {
+          await openLinkedTextFile(target.path, target.anchor);
+          return;
+        }
+
+        showToast(
+          t("errors.linkNoteNotFound", {
+            title: target.path,
+            defaultValue: "找不到链接的笔记：{{title}}",
+          }),
+        );
+      } catch (error) {
+        showToast(getErrorMessage(error));
+      }
+    },
+    [loadNote, openLinkedTextFile, saveCurrentNote, scrollPreviewToAnchor, t],
+  );
 
   const handleDeleteNote = async (noteId = selectedId) => {
     if (!noteId) return;
@@ -3048,6 +3158,7 @@ export function MainWindow({
                           fontSize={settingsConfig?.fontSize ?? 14}
                           renderHtml={settingsConfig?.renderHtmlMarkdown ?? false}
                           imageBaseDir={imageBaseDir ?? undefined}
+                          onOpenFileLink={handleOpenFileLink}
                         />
                       </div>
                     </div>
