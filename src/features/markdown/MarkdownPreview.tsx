@@ -1,7 +1,7 @@
 import { createContext, useContext, useState, useCallback, useMemo } from "react";
 import type { InputHTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
-import Markdown from "react-markdown";
+import Markdown, { defaultUrlTransform } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
@@ -15,6 +15,7 @@ import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
 import rehypeTaskLists from "./rehypeTaskLists";
 import { resolveMarkdownImageSrc } from "./imageSrc";
+import { classifyMarkdownLink, type FileLinkTarget } from "./linkTarget";
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
   const { t } = useTranslation();
@@ -72,6 +73,8 @@ interface MarkdownPreviewProps {
   renderHtml?: boolean;
   imageBaseDir?: string;
   onContentChange?: (content: string) => void;
+  // 点击指向本地文件的链接（相对/绝对路径、file:// URL）时回调，由宿主决定如何打开
+  onOpenFileLink?: (target: FileLinkTarget) => void;
 }
 
 const TaskListContext = createContext<((offset: number, checked: boolean) => void) | undefined>(
@@ -94,6 +97,11 @@ const sanitizeSchema = {
     font: ["color", "size", "face"],
     abbr: ["title"],
   },
+  // 默认协议白名单不含 file，不放行的话 HTML 渲染模式下 file:// 链接会被剥掉 href
+  protocols: {
+    ...defaultSchema.protocols,
+    href: [...(defaultSchema.protocols?.href ?? []), "file"],
+  },
 };
 const rehypePluginsDefault = [rehypeKatex, rehypeSlug, rehypeTaskLists];
 const rehypePluginsWithHtml = [
@@ -103,6 +111,11 @@ const rehypePluginsWithHtml = [
   rehypeSlug,
   rehypeTaskLists,
 ] as Parameters<typeof Markdown>[0]["rehypePlugins"];
+
+// react-markdown 默认会把白名单之外协议的 URL 清空，file:// 需要保留给链接跳转；
+// 其余协议仍走默认转换（javascript: 等危险协议继续被清空）
+const markdownUrlTransform = (value: string) =>
+  /^file:\/\//i.test(value) ? value : defaultUrlTransform(value);
 
 function AlertIcon({ type }: { type: string }) {
   switch (type) {
@@ -247,24 +260,6 @@ const staticComponents: Components = {
 
     return <CodeBlock language={language}>{children}</CodeBlock>;
   },
-  a: ({ href, children }) => (
-    <a
-      href={href}
-      onClick={(e) => {
-        e.preventDefault();
-        if (!href) return;
-        if (/^https?:\/\//i.test(href)) {
-          openUrl(href);
-        } else if (href.startsWith("#")) {
-          const id = decodeURIComponent(href.slice(1));
-          document.getElementById(id)?.scrollIntoView({ behavior: "smooth" });
-        }
-      }}
-      className="text-bamboo hover:text-bamboo-light underline underline-offset-2 cursor-pointer"
-    >
-      {children}
-    </a>
-  ),
   table: ({ children }) => (
     <div className="my-3 overflow-x-auto">
       <table className="w-full text-[0.93em] border-collapse border border-paper-deep/50">
@@ -311,11 +306,33 @@ export function MarkdownPreview({
   renderHtml = false,
   imageBaseDir,
   onContentChange,
+  onOpenFileLink,
 }: MarkdownPreviewProps) {
   const { t } = useTranslation();
   const components = useMemo<Components>(
     () => ({
       ...staticComponents,
+      a: ({ href, children }) => (
+        <a
+          href={href}
+          onClick={(e) => {
+            e.preventDefault();
+            if (typeof href !== "string") return;
+            const target = classifyMarkdownLink(href);
+            if (!target) return;
+            if (target.kind === "url") {
+              openUrl(href);
+            } else if (target.kind === "anchor") {
+              document.getElementById(target.id)?.scrollIntoView({ behavior: "smooth" });
+            } else if (target.kind === "file") {
+              onOpenFileLink?.(target);
+            }
+          }}
+          className="text-bamboo hover:text-bamboo-light underline underline-offset-2 cursor-pointer"
+        >
+          {children}
+        </a>
+      ),
       img: ({ src, alt, ...props }) => {
         const resolvedSrc = resolveMarkdownImageSrc(src, imageBaseDir, convertFileSrc);
         return (
@@ -329,7 +346,7 @@ export function MarkdownPreview({
         );
       },
     }),
-    [imageBaseDir],
+    [imageBaseDir, onOpenFileLink],
   );
   return (
     <TaskListContext.Provider
@@ -349,6 +366,7 @@ export function MarkdownPreview({
           <Markdown
             remarkPlugins={remarkPlugins}
             rehypePlugins={renderHtml ? rehypePluginsWithHtml : rehypePluginsDefault}
+            urlTransform={markdownUrlTransform}
             components={components}
           >
             {content}
