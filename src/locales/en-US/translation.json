@@ -57,6 +57,8 @@
     "unsupportedShortcutGeneric": "Shortcut configuration is invalid"
   },
   "markdown": {
+    "outline": "Outline",
+    "outlineEmpty": "No headings",
     "copied": "Copied",
     "copy": "Copy",
     "emptyHint": "Preview of the current note",
@@ -66,7 +68,10 @@
       "important": "Important",
       "warning": "Warning",
       "caution": "Caution"
-    }
+    },
+    "mermaidDiagram": "Mermaid diagram",
+    "mermaidLoading": "Rendering Mermaid diagram…",
+    "mermaidError": "Unable to render Mermaid diagram. Check the source below."
   },
   "main": {
     "category": {
@@ -163,6 +168,7 @@
   "noteMenu": {
     "delete": "Delete Note",
     "export": "Export Markdown",
+    "exportDocx": "Export DOCX",
     "moveToCategory": "Move to category…"
   },
   "notepad": {

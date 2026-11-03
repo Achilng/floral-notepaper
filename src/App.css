@@ -1,5 +1,60 @@
 @import "tailwindcss";
 
+.markdown-preview-scroll {
+  container-type: size;
+}
+
+.markdown-preview-layout {
+  display: flex;
+  align-items: flex-start;
+  gap: 24px;
+  min-height: 100%;
+}
+
+.markdown-outline {
+  position: sticky;
+  top: 0;
+  flex: 0 0 clamp(100px, 22%, 200px);
+  min-width: 0;
+  padding: 10px 0 10px 12px;
+  border-left: 1px solid var(--color-paper-deep);
+}
+
+.markdown-outline-items {
+  /* Preview viewport minus outline padding, summary line and list spacing. */
+  max-height: max(0px, calc(100cqh - 20px - 16px - 8px));
+  overflow-y: auto;
+  margin-top: 8px;
+}
+
+.markdown-outline > summary {
+  line-height: 16px;
+}
+
+.markdown-outline-items button {
+  display: block;
+  width: 100%;
+  padding: 5px 8px;
+  border-radius: 4px;
+  text-align: start;
+  overflow-wrap: anywhere;
+  font-size: 12px;
+  color: var(--color-ink-faint);
+  cursor: pointer;
+}
+
+.markdown-outline-items button:hover,
+.markdown-outline-items button:focus-visible {
+  color: var(--color-bamboo);
+  background: var(--color-paper-warm);
+}
+
+@media (max-width: 640px) {
+  .markdown-preview-layout {
+    gap: 12px;
+  }
+}
+
 @font-face {
   font-family: "HarmonyOS Sans SC";
   src: url("./assets/fonts/HarmonyOS_Sans_SC.ttf") format("truetype");
@@ -278,6 +333,13 @@ input::placeholder {
 
 .markdown-selectable {
   cursor: text;
+}
+
+.markdown-mermaid-diagram > svg {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 0 auto;
 }
 
 .markdown-selectable input[type="checkbox"] {

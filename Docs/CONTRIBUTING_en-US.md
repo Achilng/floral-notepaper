@@ -8,7 +8,7 @@ Thank you for your interest in Floral Notepaper! This guide will help you get st
 
 ### Dependencies
 
-- [Node.js](https://nodejs.org/) - 20.19+ or 22.12+
+- [Node.js](https://nodejs.org/) - 22.12+ (required by Mermaid 12; Node 24 LTS recommended)
 - [Rust](https://www.rust-lang.org/tools/install) toolchain
 - Additional:
 

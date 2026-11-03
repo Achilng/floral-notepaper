@@ -5,7 +5,7 @@
   "identifier": "com.floral-notepaper.app",
   "build": {
     "beforeDevCommand": "npm run dev",
-    "devUrl": "http://localhost:1420",
+    "devUrl": "http://localhost:21420",
     "beforeBuildCommand": "taskkill /F /IM floral-notepaper.exe 2>nul & taskkill /F /IM 花笺.exe 2>nul & npm run build",
     "frontendDist": "../dist"
   },

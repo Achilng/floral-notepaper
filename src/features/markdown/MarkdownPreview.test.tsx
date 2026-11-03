@@ -29,4 +29,22 @@ describe("MarkdownPreview", () => {
     expect(preCloseIndex).toBeGreaterThan(-1);
     expect(buttonIndex).toBeGreaterThan(preCloseIndex);
   });
+
+  test.each([false, true])("recognizes Mermaid fences with renderHtml=%s", (renderHtml) => {
+    const markup = renderToStaticMarkup(
+      <MarkdownPreview content={"```mermaid\ngraph TD\nA --> B\n```"} renderHtml={renderHtml} />,
+    );
+    expect(markup).toContain("markdown-mermaid");
+    expect(markup).toContain("A --&gt; B");
+    expect(markup).toContain("复制");
+  });
+
+  test.each(["```js\ngraph TD\n```", "```\ngraph TD\n```", "`mermaid`"])(
+    "keeps ordinary and inline code unchanged: %s",
+    (content) => {
+      const markup = renderToStaticMarkup(<MarkdownPreview content={content} />);
+      expect(markup).not.toContain("markdown-mermaid");
+      expect(markup).toContain("<code");
+    },
+  );
 });

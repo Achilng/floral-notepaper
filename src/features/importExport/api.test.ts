@@ -1,7 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { exportMarkdownNote, importMarkdownNote } from "./api";
+import { exportDocxNote, exportMarkdownNote, importMarkdownNote } from "./api";
+import { markdownToDocx } from "./docx";
+
+vi.mock("./docx", () => ({ markdownToDocx: vi.fn() }));
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
@@ -21,6 +24,7 @@ describe("importExport api", () => {
     mockedInvoke.mockReset();
     mockedOpen.mockReset();
     mockedSave.mockReset();
+    vi.mocked(markdownToDocx).mockReset();
   });
 
   test("imports the selected markdown path through Rust", async () => {
@@ -92,5 +96,40 @@ describe("importExport api", () => {
       filters: [{ name: "Markdown", extensions: ["md"] }],
     });
     expect(invoke).not.toHaveBeenCalled();
+  });
+
+  test("exports saved content as binary DOCX with a Unicode destination", async () => {
+    const path = "D:\\exports\\读书笔记.docx";
+    const bytes = new Uint8Array([80, 75, 3, 4]);
+    mockedSave.mockResolvedValue(path);
+    mockedInvoke.mockResolvedValueOnce({ title: "读书笔记", content: "# 最新内容" });
+    vi.mocked(markdownToDocx).mockResolvedValue(bytes);
+    await expect(exportDocxNote({ id: "note-1", title: "A/B" }, "D:/notes")).resolves.toBe(true);
+    expect(save).toHaveBeenCalledWith({
+      defaultPath: "A_B.docx",
+      filters: [{ name: "Word Document", extensions: ["docx"] }],
+    });
+    expect(invoke).toHaveBeenNthCalledWith(1, "notes_get", { id: "note-1" });
+    expect(markdownToDocx).toHaveBeenCalledWith("# 最新内容", "读书笔记", "D:/notes");
+    expect(invoke).toHaveBeenNthCalledWith(2, "notes_export_docx", bytes, {
+      headers: { "x-export-path": encodeURIComponent(path) },
+    });
+  });
+
+  test("does not read or write a note when DOCX save is cancelled", async () => {
+    mockedSave.mockResolvedValue(null);
+    await expect(exportDocxNote({ id: "note-1", title: "" })).resolves.toBe(false);
+    expect(invoke).not.toHaveBeenCalled();
+    expect(markdownToDocx).not.toHaveBeenCalled();
+  });
+
+  test("does not write an incomplete document after conversion failure", async () => {
+    mockedSave.mockResolvedValue("D:/note.docx");
+    mockedInvoke.mockResolvedValueOnce({ title: "笔记", content: "![图](missing.png)" });
+    vi.mocked(markdownToDocx).mockRejectedValue(new Error("Image unavailable"));
+    await expect(exportDocxNote({ id: "note-1", title: "笔记" })).rejects.toThrow(
+      "Image unavailable",
+    );
+    expect(invoke).toHaveBeenCalledTimes(1);
   });
 });

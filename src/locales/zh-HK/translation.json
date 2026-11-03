@@ -57,6 +57,8 @@
     "unsupportedShortcutGeneric": "快捷鍵配置無效"
   },
   "markdown": {
+    "outline": "大綱",
+    "outlineEmpty": "暫無標題",
     "copied": "已複製",
     "copy": "複製",
     "emptyHint": "預覽區會顯示目前筆記內容",
@@ -66,7 +68,10 @@
       "important": "重要",
       "warning": "警告",
       "caution": "注意"
-    }
+    },
+    "mermaidDiagram": "Mermaid 圖表",
+    "mermaidLoading": "正在渲染 Mermaid 圖表…",
+    "mermaidError": "Mermaid 圖表渲染失敗，請檢查下方原始碼。"
   },
   "main": {
     "category": {
@@ -163,6 +168,7 @@
   "noteMenu": {
     "delete": "刪除筆記",
     "export": "匯出 Markdown",
+    "exportDocx": "匯出 DOCX",
     "moveToCategory": "移至分類…"
   },
   "notepad": {

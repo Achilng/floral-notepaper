@@ -8,7 +8,7 @@
 
 ### 依赖
 
-- [Node.js](https://nodejs.org/) - 20.19+ 或 22.12+
+- [Node.js](https://nodejs.org/) - 22.12+（Mermaid 12 要求；推荐使用 Node 24 LTS）
 - [Rust](https://www.rust-lang.org/tools/install) 工具链
 - 其他：
 

@@ -46,7 +46,7 @@ Most note-taking or sticky note apps out there are either bloated and steep to l
 
   ![Pin mode example](Docs/images/AI绘画截图.png)
 
-- **Import & Export** — Import and export notes as `.md` files
+- **Import & Export** — Import and export `.md` files; right-click a note to export `.docx` with headings, lists, tables, links, and code. Images and Mermaid diagrams are embedded as images; equations and raw HTML currently retain their source text
 
 ## Use Cases
 

@@ -2374,9 +2374,30 @@ fn apply_autostart(app: &AppHandle, enabled: bool) -> Result<(), Box<dyn Error>>
     if enabled {
         manager.enable()?;
     } else {
-        manager.disable()?;
+        finish_disabling_autostart(manager.disable())?;
     }
     Ok(())
+}
+
+#[cfg(desktop)]
+fn finish_disabling_autostart(
+    result: Result<(), tauri_plugin_autostart::Error>,
+) -> Result<(), tauri_plugin_autostart::Error> {
+    #[cfg(target_os = "windows")]
+    if let Err(error) = &result {
+        // The plugin stringifies auto-launch's registry errors. Windows error 2
+        // means the Run key/value is already absent; disabling is idempotent.
+        let missing = match error {
+            tauri_plugin_autostart::Error::Io(error) => {
+                error.kind() == std::io::ErrorKind::NotFound
+            }
+            tauri_plugin_autostart::Error::Anyhow(message) => message.ends_with("(os error 2)"),
+        };
+        if missing {
+            return Ok(());
+        }
+    }
+    result
 }
 
 #[cfg(not(desktop))]
@@ -2420,6 +2441,26 @@ pub fn stop_shortcut_recording(_app: &AppHandle) -> Result<(), Box<dyn Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(all(desktop, target_os = "windows"))]
+    #[test]
+    fn disabling_autostart_accepts_missing_entries_but_preserves_other_errors() {
+        use tauri_plugin_autostart::Error;
+        assert!(finish_disabling_autostart(Ok(())).is_ok());
+        assert!(finish_disabling_autostart(Err(Error::Anyhow(
+            "系统找不到指定的文件。 (os error 2)".into()
+        )))
+        .is_ok());
+        assert!(
+            finish_disabling_autostart(Err(Error::Io(std::io::Error::from_raw_os_error(2))))
+                .is_ok()
+        );
+        assert!(finish_disabling_autostart(Err(Error::Anyhow(
+            "Access is denied. (os error 5)".into()
+        )))
+        .is_err());
+        assert!(finish_disabling_autostart(Err(Error::Anyhow("Unknown error".into()))).is_err());
+    }
 
     #[test]
     fn maps_tray_menu_ids_to_actions() {

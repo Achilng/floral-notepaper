@@ -38,6 +38,27 @@ export async function exportMarkdownNote(note: ExportableNote): Promise<boolean>
   return true;
 }
 
+export async function exportDocxNote(
+  note: ExportableNote,
+  imageBaseDir?: string,
+): Promise<boolean> {
+  const path = await save({
+    defaultPath: markdownFileName(note.title).replace(/\.md$/, ".docx"),
+    filters: [{ name: "Word Document", extensions: ["docx"] }],
+  });
+  if (typeof path !== "string") return false;
+
+  const [{ markdownToDocx }, savedNote] = await Promise.all([
+    import("./docx"),
+    invoke<Note>("notes_get", { id: note.id }),
+  ]);
+  const bytes = await markdownToDocx(savedNote.content, savedNote.title, imageBaseDir);
+  await invoke("notes_export_docx", bytes, {
+    headers: { "x-export-path": encodeURIComponent(path) },
+  });
+  return true;
+}
+
 function markdownFileName(title: string, translate: TFunction = t): string {
   const safeTitle =
     safeFileStem(title) || translate("common.untitledNote", { defaultValue: "无标题笔记" });

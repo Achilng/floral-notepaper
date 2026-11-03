@@ -1,4 +1,12 @@
-import { createContext, useContext, useState, useCallback, useMemo } from "react";
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useMemo,
+  useEffect,
+  useRef,
+} from "react";
 import type { InputHTMLAttributes } from "react";
 import { useTranslation } from "react-i18next";
 import Markdown from "react-markdown";
@@ -15,6 +23,7 @@ import "katex/dist/katex.min.css";
 import remarkAlerts from "./remarkAlerts";
 import rehypeTaskLists from "./rehypeTaskLists";
 import { resolveMarkdownImageSrc } from "./imageSrc";
+import { MermaidBlock } from "./MermaidBlock";
 
 function CodeBlock({ children, language }: { children: React.ReactNode; language?: string }) {
   const { t } = useTranslation();
@@ -30,13 +39,17 @@ function CodeBlock({ children, language }: { children: React.ReactNode; language
 
   return (
     <div className="markdown-code-block my-3 relative group">
-      <pre
-        className={`markdown-code-scroll m-0 px-4 rounded bg-paper-warm/80 overflow-x-auto ${
-          language ? "pt-8 pb-3" : "py-3"
-        }`}
-      >
-        {children}
-      </pre>
+      {language?.toLowerCase() === "mermaid" ? (
+        <MermaidBlock source={extractText(children)}>{children}</MermaidBlock>
+      ) : (
+        <pre
+          className={`markdown-code-scroll m-0 px-4 rounded bg-paper-warm/80 overflow-x-auto ${
+            language ? "pt-8 pb-3" : "py-3"
+          }`}
+        >
+          {children}
+        </pre>
+      )}
       {language && (
         <span className="absolute top-2 left-3 text-[10px] font-mono text-ink-faint/70 uppercase tracking-wider select-none">
           {language}
@@ -71,6 +84,7 @@ interface MarkdownPreviewProps {
   fontSize?: number;
   renderHtml?: boolean;
   imageBaseDir?: string;
+  showOutline?: boolean;
   onContentChange?: (content: string) => void;
 }
 
@@ -310,9 +324,33 @@ export function MarkdownPreview({
   fontSize = 14,
   renderHtml = false,
   imageBaseDir,
+  showOutline = false,
   onContentChange,
 }: MarkdownPreviewProps) {
   const { t } = useTranslation();
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [headings, setHeadings] = useState<
+    Array<{ element: HTMLElement; title: string; level: number }>
+  >([]);
+
+  useEffect(() => {
+    if (!showOutline) {
+      setHeadings([]);
+      return;
+    }
+    setHeadings(
+      Array.from(contentRef.current?.querySelectorAll<HTMLElement>("h1, h2, h3, h4, h5, h6") ?? [])
+        .map((element) => ({
+          element,
+          title: element.textContent?.trim() || element.querySelector("img")?.alt || "",
+          level: Number(element.tagName.slice(1)),
+        }))
+        .filter((heading) => heading.title),
+    );
+  }, [content, renderHtml, showOutline]);
+
+  const outlineTitle = t("markdown.outline", { defaultValue: "大纲" });
+  const baseLevel = Math.min(...headings.map((heading) => heading.level), 6);
   const components = useMemo<Components>(
     () => ({
       ...staticComponents,
@@ -344,19 +382,56 @@ export function MarkdownPreview({
           : undefined
       }
     >
-      <div className="font-body markdown-selectable" style={{ fontSize: `${fontSize}px` }}>
-        {content.trim() ? (
-          <Markdown
-            remarkPlugins={remarkPlugins}
-            rehypePlugins={renderHtml ? rehypePluginsWithHtml : rehypePluginsDefault}
-            components={components}
-          >
-            {content}
-          </Markdown>
-        ) : (
-          <p className="text-ink-ghost leading-[1.9]">
-            {t("markdown.emptyHint", { defaultValue: "预览区会显示当前笔记内容" })}
-          </p>
+      <div className={showOutline ? "markdown-preview-layout" : undefined}>
+        <div
+          ref={contentRef}
+          className="font-body markdown-selectable min-w-0 flex-1"
+          style={{ fontSize: `${fontSize}px` }}
+        >
+          {content.trim() ? (
+            <Markdown
+              remarkPlugins={remarkPlugins}
+              rehypePlugins={renderHtml ? rehypePluginsWithHtml : rehypePluginsDefault}
+              components={components}
+            >
+              {content}
+            </Markdown>
+          ) : (
+            <p className="text-ink-ghost leading-[1.9]">
+              {t("markdown.emptyHint", { defaultValue: "预览区会显示当前笔记内容" })}
+            </p>
+          )}
+        </div>
+        {showOutline && (
+          <details className="markdown-outline" open>
+            <summary className="cursor-pointer text-ink-faint text-xs font-medium">
+              {outlineTitle}
+            </summary>
+            <nav aria-label={outlineTitle} className="markdown-outline-items">
+              {headings.length ? (
+                <ul>
+                  {headings.map(({ element, title, level }, index) => (
+                    <li key={index}>
+                      <button
+                        type="button"
+                        title={title}
+                        style={{ paddingInlineStart: `${8 + (level - baseLevel) * 12}px` }}
+                        onClick={() =>
+                          element.scrollIntoView({ behavior: "smooth", block: "start" })
+                        }
+                      >
+                        {title}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="py-2 text-xs text-ink-ghost">
+                  {t("markdown.outlineEmpty", { defaultValue: "暂无标题" })}
+                </p>
+              )}
+            </nav>
+          </details>
         )}
       </div>
     </TaskListContext.Provider>

@@ -57,6 +57,8 @@
     "unsupportedShortcutGeneric": "快捷键配置无效"
   },
   "markdown": {
+    "outline": "大纲",
+    "outlineEmpty": "暂无标题",
     "copied": "已复制",
     "copy": "复制",
     "emptyHint": "预览区会显示当前笔记内容",
@@ -66,7 +68,10 @@
       "important": "重要",
       "warning": "警告",
       "caution": "注意"
-    }
+    },
+    "mermaidDiagram": "Mermaid 图表",
+    "mermaidLoading": "正在渲染 Mermaid 图表…",
+    "mermaidError": "Mermaid 图表渲染失败，请检查下方源码。"
   },
   "main": {
     "category": {
@@ -163,6 +168,7 @@
   "noteMenu": {
     "delete": "删除笔记",
     "export": "导出 Markdown",
+    "exportDocx": "导出 DOCX",
     "moveToCategory": "移动到分类…"
   },
   "notepad": {

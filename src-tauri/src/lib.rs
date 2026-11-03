@@ -64,6 +64,34 @@ fn notes_export_markdown(id: String, path: String) -> Result<(), AppError> {
 }
 
 #[tauri::command]
+fn notes_export_docx(request: tauri::ipc::Request<'_>) -> Result<(), AppError> {
+    let invalid = || AppError {
+        code: "invalidPayload".into(),
+        message: "DOCX export expects binary data and an encoded x-export-path header".into(),
+        details: Default::default(),
+    };
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err(invalid());
+    };
+    let path = request
+        .headers()
+        .get("x-export-path")
+        .and_then(|value| value.to_str().ok())
+        .ok_or_else(invalid)?;
+    let path = PathBuf::from(
+        percent_encoding::percent_decode_str(path)
+            .decode_utf8()
+            .map_err(|_| invalid())?
+            .as_ref(),
+    );
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    fs::write(path, bytes)?;
+    Ok(())
+}
+
+#[tauri::command]
 fn read_external_file(path: String) -> Result<String, AppError> {
     std::fs::read_to_string(&path).map_err(|e| AppError {
         code: "io".into(),
@@ -476,6 +504,7 @@ pub fn run() {
             notes_delete,
             notes_import_markdown,
             notes_export_markdown,
+            notes_export_docx,
             notes_move_category,
             read_external_file,
             save_external_file,

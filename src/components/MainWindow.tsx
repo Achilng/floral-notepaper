@@ -13,7 +13,11 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
+import {
+  exportDocxNote,
+  exportMarkdownNote,
+  importMarkdownNote,
+} from "../features/importExport/api";
 import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
 import { showToast } from "./Toast";
 import {
@@ -1496,17 +1500,22 @@ export function MainWindow({
     });
   };
 
-  const handleExportNote = async (note: NoteMetadata) => {
+  const handleExportNote = async (note: NoteMetadata, format: "markdown" | "docx" = "markdown") => {
     try {
       if (note.id === selectedId) {
         const saved = await saveCurrentNote();
         if (!saved) return;
       }
 
-      await exportMarkdownNote({
+      const exportNote = {
         id: note.id,
         title: note.id === selectedId ? title : note.title,
-      });
+      };
+      if (format === "docx") {
+        await exportDocxNote(exportNote, imageBaseDir ?? undefined);
+      } else {
+        await exportMarkdownNote(exportNote);
+      }
     } catch (error) {
       showToast(getErrorMessage(error));
     }
@@ -1516,9 +1525,9 @@ export function MainWindow({
     const note = noteMenuTarget;
     if (!note) return;
 
-    if (action === "export") {
+    if (action === "export" || action === "exportDocx") {
       setNoteMenuClosing(true);
-      void handleExportNote(note);
+      void handleExportNote(note, action === "exportDocx" ? "docx" : "markdown");
       return;
     }
 
@@ -3028,11 +3037,12 @@ export function MainWindow({
                         ref={previewScrollRef}
                         onScroll={handlePreviewScroll}
                         className={`flex-1 overflow-y-auto px-6 pb-6 ${
-                          viewMode === "preview" ? "pt-3" : "pt-1"
+                          viewMode === "preview" ? "markdown-preview-scroll pt-3" : "pt-1"
                         }`}
                       >
                         <MarkdownPreview
                           content={deferredContent}
+                          showOutline={viewMode === "preview"}
                           onContentChange={
                             selectedId
                               ? (nextContent) => {
