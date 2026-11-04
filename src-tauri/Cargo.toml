@@ -36,7 +36,11 @@ tokio = { version = "1", features = ["time"] }
 trash = "5"
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 semver = "1"
-reqwest = { version = "0.12", default-features = false, features = ["blocking", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = [
+  "blocking",
+  "rustls-tls",
+  "json",
+] }
 sha2 = "0.10"
 dirs = "6"
 
@@ -48,6 +52,7 @@ webview2-com = "0.38"
 windows-core = "0.61"
 windows-sys = { version = "0.59", features = [
   "Win32_Foundation",
+  "Win32_Security_Cryptography",
   "Win32_Storage_FileSystem",
   "Win32_Storage_Packaging_Appx",
   "Win32_System_Console",

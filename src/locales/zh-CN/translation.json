@@ -216,6 +216,42 @@
       "preview": "预览",
       "split": "分栏"
     },
+    "feishu": {
+      "appId": "App ID",
+      "appSecret": "App Secret",
+      "clearSecret": "清除密钥",
+      "connectionOk": "连接成功，应用凭据有效",
+      "description": "本地优先，保存后异步单向同步到飞书文档。飞书端修改可能被覆盖。",
+      "folderPlaceholder": "飞书文件夹链接中的 token",
+      "folderToken": "目标文件夹 Token（可选）",
+      "authCode": "请在已打开的飞书页面确认授权，验证码：{{code}}",
+      "loggedIn": "飞书账号已授权",
+      "loggingIn": "等待授权…",
+      "login": "登录飞书",
+      "loginExpired": "授权已过期，请重试",
+      "loginOk": "飞书账号授权成功",
+      "notLoggedIn": "飞书账号未授权",
+      "openAuth": "重新打开授权页",
+      "permissionHint": "需开通“创建及编辑新版文档”；同步到指定文件夹还需开通“查看、评论、编辑和管理云空间中所有文件”，然后发布应用新版本。",
+      "save": "保存配置",
+      "saved": "飞书同步设置已保存",
+      "saving": "保存中…",
+      "secretCleared": "App Secret 已清除",
+      "secretPlaceholder": "输入 App Secret",
+      "secretStored": "已安全保存；留空表示不修改",
+      "status": {
+        "counts": "已同步 {{synced}}/{{total}}，失败 {{failed}}",
+        "notConfigured": "尚未完成配置",
+        "syncing": "正在同步"
+      },
+      "syncAll": "立即同步全部",
+      "syncStatus": "同步状态",
+      "syncing": "同步中…",
+      "syncSummary": "同步完成：{{synced}} 篇更新，{{skipped}} 篇无需更新，{{failed}} 篇失败",
+      "test": "测试连接",
+      "testing": "测试中…",
+      "title": "飞书云同步"
+    },
     "fontSize": {
       "editor": "编辑器字号",
       "surface": "小窗/磁贴字号"
