@@ -15,6 +15,7 @@ import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
+import { toggleHighlightSelection } from "../features/markdown/highlightSelection";
 import { showToast } from "./Toast";
 import {
   createScrollSyncMap,
@@ -124,6 +125,7 @@ interface CategoryMenuState {
 type FormatAction =
   | "bold"
   | "italic"
+  | "highlight"
   | "heading"
   | "hr"
   | "ul"
@@ -167,6 +169,14 @@ function applyFormat(
       result = before + wrapped + after;
       cursorStart = start + 1;
       cursorEnd = cursorStart + (selected || fallback).length;
+      break;
+    }
+    case "highlight": {
+      const fallback = translate("main.formatSample.highlightText", { defaultValue: "高亮文本" });
+      const edit = toggleHighlightSelection(value, start, end, fallback);
+      result = edit.result;
+      cursorStart = edit.cursorStart;
+      cursorEnd = edit.cursorEnd;
       break;
     }
     case "heading": {
@@ -494,6 +504,12 @@ export function MainWindow({
         title: t("main.toolbar.italic", { defaultValue: "斜体" }),
         style: "italic",
         action: "italic",
+      },
+      {
+        label: "==",
+        title: t("main.toolbar.highlight", { defaultValue: "高亮" }),
+        style: "font-mono text-[9px]",
+        action: "highlight",
       },
       {
         label: "H",

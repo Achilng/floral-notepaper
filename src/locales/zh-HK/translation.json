@@ -104,6 +104,7 @@
       "boldText": "粗體文字",
       "codeText": "程式碼",
       "headingText": "標題",
+      "highlightText": "高亮文字",
       "italicText": "斜體文字",
       "listItem": "清單項目",
       "quoteText": "引用文字"
@@ -141,6 +142,7 @@
       "bold": "粗體",
       "code": "程式碼",
       "heading": "標題",
+      "highlight": "高亮",
       "hr": "分隔線",
       "inlineMath": "行內公式",
       "italic": "斜體",

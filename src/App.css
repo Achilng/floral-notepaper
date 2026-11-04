@@ -646,6 +646,17 @@ input::placeholder {
   font-family: var(--font-mono);
 }
 
+/* ── Markdown 高亮（==text== 与 <mark>） ── */
+.markdown-highlight,
+.markdown-selectable mark {
+  padding: 0.05em 0.2em;
+  border-radius: 3px;
+  background: var(--color-bamboo-glow);
+  color: inherit;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
 /* ── GFM Alerts ── */
 .markdown-alert {
   margin: 0.75rem 0;
