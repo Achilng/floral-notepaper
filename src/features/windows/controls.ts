@@ -41,6 +41,14 @@ export function setCurrentWindowAlwaysOnTop(enabled: boolean): Promise<void> {
   return getCurrentWindow().setAlwaysOnTop(enabled);
 }
 
+/**
+ * 钉到桌面层（窗口只出现在桌面上，位于所有普通窗口之下）或脱离桌面层。
+ * Windows 上通过 SetParent 到桌面图标层实现；其他平台退化为取消/恢复置顶。
+ */
+export function setCurrentWindowDesktopPinned(pinned: boolean): Promise<void> {
+  return invoke("set_desktop_pinned", { pinned });
+}
+
 export function startCurrentWindowDrag(): Promise<void> {
   return getCurrentWindow().startDragging();
 }
