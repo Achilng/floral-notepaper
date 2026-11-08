@@ -65,6 +65,14 @@ function App() {
   }, []);
 
   useEffect(() => {
+    const isLinux =
+      navigator.userAgent.includes("Linux") || navigator.platform.toLowerCase().includes("linux");
+    if (isLinux) {
+      document.documentElement.dataset.platform = "linux";
+    }
+  }, []);
+
+  useEffect(() => {
     const isWindows =
       navigator.userAgent.includes("Windows") || navigator.platform.toLowerCase().startsWith("win");
     if (!isWindows) return;

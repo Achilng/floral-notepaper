@@ -9,6 +9,19 @@ export async function showCurrentWindow(): Promise<void> {
   const window = getCurrentWindow();
   await window.show();
   await window.setFocus();
+  if (typeof navigator !== "undefined" && /linux/i.test(navigator.userAgent)) {
+    try {
+      const size = await window.innerSize();
+      if (size.width > 0 && size.height > 0) {
+        await window.setSize(new PhysicalSize(size.width + 1, size.height));
+        globalThis.setTimeout(() => {
+          void window.setSize(new PhysicalSize(size.width, size.height)).catch(() => undefined);
+        }, 35);
+      }
+    } catch {
+      // Ignore resize nudge errors outside Tauri runtime
+    }
+  }
 }
 
 export function hideCurrentWindow(): Promise<void> {
