@@ -64,7 +64,33 @@ fn remove_stale_update_state_lock(lock_path: &Path) {
     let Ok(age) = SystemTime::now().duration_since(modified) else {
         return;
     };
-    if age >= STALE_UPDATE_STATE_LOCK_AGE {
+    if age >= STALE_UPDATE_STATE_LOCK_AGE || lock_owner_process_is_dead(lock_path) {
         let _ = fs::remove_file(lock_path);
     }
+}
+
+#[cfg(unix)]
+fn lock_owner_process_is_dead(lock_path: &Path) -> bool {
+    let Ok(contents) = fs::read_to_string(lock_path) else {
+        return false;
+    };
+    if !contents.contains('\n') {
+        return false;
+    }
+    let Some(pid_token) = contents.split_whitespace().next() else {
+        return true;
+    };
+    let Ok(pid) = pid_token.parse::<u32>() else {
+        return true;
+    };
+    let Some(raw_pid) = libc::pid_t::try_from(pid).ok().filter(|&p| p > 1) else {
+        return true;
+    };
+    let result = unsafe { libc::kill(raw_pid, 0) };
+    result != 0 && io::Error::last_os_error().raw_os_error() == Some(libc::ESRCH)
+}
+
+#[cfg(not(unix))]
+fn lock_owner_process_is_dead(_lock_path: &Path) -> bool {
+    false
 }
