@@ -872,11 +872,13 @@ fn install_linux_rpm(
             log,
             &format!("RPM installer exited with status {:?}", status.code()),
         )?;
-        return Err(if status.code() == Some(126) || status.code() == Some(127) {
-            UpdateHelperExitCode::InstallerCancelled
-        } else {
-            UpdateHelperExitCode::InstallerFailed
-        });
+        return Err(
+            if status.code() == Some(126) || status.code() == Some(127) {
+                UpdateHelperExitCode::InstallerCancelled
+            } else {
+                UpdateHelperExitCode::InstallerFailed
+            },
+        );
     }
 
     Ok(AppliedUpdate {
@@ -911,7 +913,12 @@ fn install_linux_deb(
             .args(["install", "-y"])
             .arg(&command.asset_path)
             .spawn()
-            .or_else(|_| Command::new("dpkg").arg("-i").arg(&command.asset_path).spawn())
+            .or_else(|_| {
+                Command::new("dpkg")
+                    .arg("-i")
+                    .arg(&command.asset_path)
+                    .spawn()
+            })
     } else {
         Command::new("pkexec")
             .args(["apt-get", "install", "-y"])
@@ -935,11 +942,13 @@ fn install_linux_deb(
             log,
             &format!("DEB installer exited with status {:?}", status.code()),
         )?;
-        return Err(if status.code() == Some(126) || status.code() == Some(127) {
-            UpdateHelperExitCode::InstallerCancelled
-        } else {
-            UpdateHelperExitCode::InstallerFailed
-        });
+        return Err(
+            if status.code() == Some(126) || status.code() == Some(127) {
+                UpdateHelperExitCode::InstallerCancelled
+            } else {
+                UpdateHelperExitCode::InstallerFailed
+            },
+        );
     }
 
     Ok(AppliedUpdate {
@@ -2414,8 +2423,7 @@ fn unix_command_name_matches_expected(actual_name: &str, expected_name: &str) ->
 
     actual_name == expected_name
         || actual_name.ends_with(&format!("/{expected_name}"))
-        || (actual_name.len() == LINUX_TASK_COMM_MAX_LEN
-            && expected_name.starts_with(actual_name))
+        || (actual_name.len() == LINUX_TASK_COMM_MAX_LEN && expected_name.starts_with(actual_name))
 }
 
 #[cfg(not(target_os = "windows"))]

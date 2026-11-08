@@ -1935,7 +1935,9 @@ fn schedule_linux_window_repaint(window: &tauri::WebviewWindow) {
                     std::thread::sleep(std::time::Duration::from_millis(35));
                     let app_restore_inner = app_restore.clone();
                     let _ = app_restore.run_on_main_thread(move || {
-                        if let Some(win_restore) = app_restore_inner.get_webview_window(&label_restore) {
+                        if let Some(win_restore) =
+                            app_restore_inner.get_webview_window(&label_restore)
+                        {
                             let _ = win_restore.set_size(base_size);
                         }
                     });
@@ -1993,9 +1995,10 @@ fn apply_gtk_rounded_shape(widget: &gtk::ApplicationWindow, width: i32, height: 
     use gtk::prelude::{GtkWindowExt, WidgetExt};
 
     let is_fullscreen_or_max = widget.is_maximized()
-        || widget
-            .window()
-            .is_some_and(|w| w.state().intersects(gdk::WindowState::MAXIMIZED | gdk::WindowState::FULLSCREEN));
+        || widget.window().is_some_and(|w| {
+            w.state()
+                .intersects(gdk::WindowState::MAXIMIZED | gdk::WindowState::FULLSCREEN)
+        });
 
     if is_fullscreen_or_max {
         widget.shape_combine_region(None);

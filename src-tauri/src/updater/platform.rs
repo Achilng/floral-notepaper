@@ -663,11 +663,16 @@ mod tests {
             Some(Path::new("/usr/bin/floral-notepaper")),
             false,
         );
-        assert!(matches!(kind, InstallKind::LinuxRpm | InstallKind::LinuxDeb));
+        assert!(matches!(
+            kind,
+            InstallKind::LinuxRpm | InstallKind::LinuxDeb
+        ));
 
         let appimage_kind = detect_install_kind_with_package(
             Os::Linux,
-            Some(Path::new("/home/user/Applications/floral-notepaper.AppImage")),
+            Some(Path::new(
+                "/home/user/Applications/floral-notepaper.AppImage",
+            )),
             false,
         );
         assert_eq!(appimage_kind, InstallKind::LinuxAppImage);
