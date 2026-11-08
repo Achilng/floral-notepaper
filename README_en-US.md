@@ -87,6 +87,9 @@ Head over to the [Releases page](https://github.com/Achilng/floral-notepaper/rel
 | Windows  | AArch64                 | MSIX Package            | floral-notepaper_x.y.z_aarch64.msix      |
 | macOS    | AArch64 (Apple Silicon) | DMG                     | floral-notepaper_x.y.z_aarch64.dmg       |
 | macOS    | x64 (Intel)             | DMG                     | floral-notepaper_x.y.z_x64.dmg           |
+| Linux    | x64                     | RPM (Fedora)            | floral-notepaper-x.y.z-1.x86_64.rpm      |
+| Linux    | x64                     | DEB                     | floral-notepaper_x.y.z_amd64.deb         |
+| Linux    | x64                     | AppImage                | floral-notepaper_x.y.z_amd64.AppImage    |
 
 #### Via Microsoft Store
 
@@ -108,6 +111,18 @@ If you encounter installation issues, please refer to:
 
 - Wiki: [macOS Installation Guidance](https://github.com/Achilng/floral-notepaper/wiki/macOS-%E5%AE%89%E8%A3%85%E6%8C%87%E5%BC%95-%7C-macOS-Installation-Guidance)
 - Or video (Bilibili): [Mac云课堂 - Installing software on Mac means learning to wrestle with Apple](https://www.bilibili.com/video/BV1tg411t7hN)
+
+#### Fedora Linux Installation Guidance
+
+After downloading the `.rpm` package, install it directly using `dnf` (which automatically resolves and installs runtime dependencies such as `webkit2gtk4.1`, `gtk3`, and `librsvg2`):
+
+```bash
+# Install RPM package
+sudo dnf install ./floral-notepaper-1.2.0-1.x86_64.rpm
+
+# Uninstall
+sudo dnf remove floral-notepaper
+```
 
 ### Building from Source
 

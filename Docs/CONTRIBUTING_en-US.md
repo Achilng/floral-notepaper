@@ -16,6 +16,7 @@ Thank you for your interest in Floral Notepaper! This guide will help you get st
   | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
   | **macOS**   | Xcode Command Line Tools                                                                                                                                                                                                                   |
   | **Linux**   | `libwebkit2gtk-4.1-dev`, `libgtk-3-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`, `libsoup-3.0-dev`                                                                                                                                 |
+  | **Fedora**  | `webkit2gtk4.1-devel`, `gtk3-devel`, `libappindicator-gtk3-devel`, `librsvg2-devel`, `libsoup3-devel`, `openssl-devel`, `rpm-build` (or run `npm run fedora:setup`)                                                                        |
   | **Windows** | [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe), [Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/) (pre-installed on Windows 11 and later versions of Windows 10) |
 
 ### Clone & Launch
@@ -30,6 +31,11 @@ npm run tauri dev
 
 # Build for production
 npm run tauri build
+
+# Fedora Linux helper scripts (setup dependencies, dev, and build RPM)
+npm run fedora:setup
+npm run fedora:dev
+npm run fedora:build
 ```
 
 ## Branch & Commit Conventions

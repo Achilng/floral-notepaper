@@ -16,6 +16,7 @@
   | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
   | **macOS**   | Xcode Command Line Tools                                                                                                                                                                                             |
   | **Linux**   | `libwebkit2gtk-4.1-dev`、`libgtk-3-dev`、`libayatana-appindicator3-dev`、`librsvg2-dev`、`libsoup-3.0-dev`                                                                                                           |
+  | **Fedora**  | `webkit2gtk4.1-devel`、`gtk3-devel`、`libappindicator-gtk3-devel`、`librsvg2-devel`、`libsoup3-devel`、`openssl-devel`、`rpm-build`（或執行 `npm run fedora:setup`）                                                 |
   | **Windows** | [Microsoft Visual C++ Redistributable](https://aka.ms/vs/17/release/vc_redist.x64.exe)、[Microsoft Edge WebView2](https://developer.microsoft.com/microsoft-edge/webview2/)（Windows 11 或高版本 Windows 10 已內建） |
 
 ### 複製與啟動
@@ -30,6 +31,11 @@ npm run tauri dev
 
 # 構建正式版
 npm run tauri build
+
+# Fedora Linux 專用腳本（自動配置依賴、開發與構建 RPM）
+npm run fedora:setup
+npm run fedora:dev
+npm run fedora:build
 ```
 
 ## 分支與提交規範
