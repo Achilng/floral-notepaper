@@ -1,7 +1,25 @@
 {
   "productName": "floral-notepaper",
-  "version": "1.0.4",
   "identifier": "com.floral-notepaper.app",
+  "build": {
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "花笺",
+        "width": 1180,
+        "height": 760,
+        "minWidth": 900,
+        "minHeight": 620,
+        "decorations": false,
+        "transparent": false,
+        "visible": false,
+        "dragDropEnabled": true
+      }
+    ]
+  },
   "bundle": {
     "linux": {
       "deb": {
@@ -13,6 +31,7 @@
       "rpm": {
         "epoch": 0,
         "release": "1",
+        "depends": ["webkit2gtk4.1", "gtk3", "librsvg2"],
         "desktopTemplate": "linux-desktop-template.hbs"
       },
       "appimage": {

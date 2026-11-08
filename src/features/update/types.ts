@@ -25,6 +25,9 @@ export type InstallKind =
   | "windowsPortable"
   | "windowsMsix"
   | "macosAppBundle"
+  | "linuxRpm"
+  | "linuxDeb"
+  | "linuxAppImage"
   | "unknown";
 
 export interface UpdateSettings {

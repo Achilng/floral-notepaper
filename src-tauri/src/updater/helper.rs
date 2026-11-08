@@ -758,6 +758,9 @@ fn apply_update(
         InstallKind::MacosAppBundle => install_macos_bundle(command, log),
         InstallKind::WindowsPortable => install_windows_portable(command, log),
         InstallKind::WindowsNsis => install_windows_installer(command, log),
+        InstallKind::LinuxAppImage => install_linux_appimage(command, log),
+        InstallKind::LinuxRpm => install_linux_rpm(command, log),
+        InstallKind::LinuxDeb => install_linux_deb(command, log),
         InstallKind::WindowsMsix => {
             write_log_line(log, "MSIX installs are managed by the Microsoft Store")?;
             Err(UpdateHelperExitCode::UnsupportedInstallKind)
@@ -767,6 +770,191 @@ fn apply_update(
             Err(UpdateHelperExitCode::UnsupportedInstallKind)
         }
     }
+}
+
+fn install_linux_appimage(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+) -> Result<AppliedUpdate, UpdateHelperExitCode> {
+    let target_parent = command
+        .target_path
+        .parent()
+        .ok_or(UpdateHelperExitCode::ReplacementFailed)?;
+    let staged_file = unique_temp_path(target_parent, "appimage-stage", Some("AppImage"));
+    write_log_line(
+        log,
+        &format!(
+            "staging Linux AppImage {} to {}",
+            command.asset_path.display(),
+            staged_file.display()
+        ),
+    )?;
+    fs::copy(&command.asset_path, &staged_file)
+        .map_err(|_| UpdateHelperExitCode::ReplacementFailed)?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&staged_file) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&staged_file, perms);
+        }
+    }
+    fs::rename(&staged_file, &command.target_path).map_err(|error| {
+        let _ = write_log_line(
+            log,
+            &format!(
+                "failed to replace AppImage {} ({error})",
+                command.target_path.display()
+            ),
+        );
+        let _ = fs::remove_file(&staged_file);
+        UpdateHelperExitCode::ReplacementFailed
+    })?;
+    Ok(AppliedUpdate {
+        launch_target: command.target_path.clone(),
+        rollback: None,
+    })
+}
+
+fn install_linux_rpm(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+) -> Result<AppliedUpdate, UpdateHelperExitCode> {
+    write_log_line(
+        log,
+        &format!(
+            "installing Linux RPM package {}",
+            command.asset_path.display()
+        ),
+    )?;
+    let is_root = {
+        #[cfg(unix)]
+        {
+            unsafe { libc::geteuid() == 0 }
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    };
+    let mut child = if is_root {
+        Command::new("dnf")
+            .args(["install", "-y"])
+            .arg(&command.asset_path)
+            .spawn()
+            .or_else(|_| {
+                Command::new("rpm")
+                    .args(["-Uvh", "--replacepkgs"])
+                    .arg(&command.asset_path)
+                    .spawn()
+            })
+    } else {
+        Command::new("pkexec")
+            .args(["dnf", "install", "-y"])
+            .arg(&command.asset_path)
+            .spawn()
+            .or_else(|_| {
+                Command::new("pkexec")
+                    .args(["rpm", "-Uvh", "--replacepkgs"])
+                    .arg(&command.asset_path)
+                    .spawn()
+            })
+    }
+    .map_err(|error| {
+        let _ = write_log_line(log, &format!("failed to spawn RPM installer: {error}"));
+        UpdateHelperExitCode::InstallerFailed
+    })?;
+
+    let status = wait_for_installer_completion(&mut child, log)?;
+    if !status.success() {
+        write_log_line(
+            log,
+            &format!("RPM installer exited with status {:?}", status.code()),
+        )?;
+        return Err(
+            if status.code() == Some(126) || status.code() == Some(127) {
+                UpdateHelperExitCode::InstallerCancelled
+            } else {
+                UpdateHelperExitCode::InstallerFailed
+            },
+        );
+    }
+
+    Ok(AppliedUpdate {
+        launch_target: command.target_path.clone(),
+        rollback: None,
+    })
+}
+
+fn install_linux_deb(
+    command: &UpdateHelperCommand,
+    log: &mut File,
+) -> Result<AppliedUpdate, UpdateHelperExitCode> {
+    write_log_line(
+        log,
+        &format!(
+            "installing Linux DEB package {}",
+            command.asset_path.display()
+        ),
+    )?;
+    let is_root = {
+        #[cfg(unix)]
+        {
+            unsafe { libc::geteuid() == 0 }
+        }
+        #[cfg(not(unix))]
+        {
+            false
+        }
+    };
+    let mut child = if is_root {
+        Command::new("apt-get")
+            .args(["install", "-y"])
+            .arg(&command.asset_path)
+            .spawn()
+            .or_else(|_| {
+                Command::new("dpkg")
+                    .arg("-i")
+                    .arg(&command.asset_path)
+                    .spawn()
+            })
+    } else {
+        Command::new("pkexec")
+            .args(["apt-get", "install", "-y"])
+            .arg(&command.asset_path)
+            .spawn()
+            .or_else(|_| {
+                Command::new("pkexec")
+                    .args(["dpkg", "-i"])
+                    .arg(&command.asset_path)
+                    .spawn()
+            })
+    }
+    .map_err(|error| {
+        let _ = write_log_line(log, &format!("failed to spawn DEB installer: {error}"));
+        UpdateHelperExitCode::InstallerFailed
+    })?;
+
+    let status = wait_for_installer_completion(&mut child, log)?;
+    if !status.success() {
+        write_log_line(
+            log,
+            &format!("DEB installer exited with status {:?}", status.code()),
+        )?;
+        return Err(
+            if status.code() == Some(126) || status.code() == Some(127) {
+                UpdateHelperExitCode::InstallerCancelled
+            } else {
+                UpdateHelperExitCode::InstallerFailed
+            },
+        );
+    }
+
+    Ok(AppliedUpdate {
+        launch_target: command.target_path.clone(),
+        rollback: None,
+    })
 }
 
 fn install_macos_bundle(
@@ -2181,25 +2369,33 @@ fn force_terminate_process(pid: u32, log: &mut File) -> bool {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn force_terminate_process(pid: u32, _log: &mut File) -> bool {
-    Command::new("/bin/kill")
-        .args(["-9", &pid.to_string()])
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false)
+fn valid_unix_target_pid(pid: u32) -> Option<libc::pid_t> {
+    let raw_pid = libc::pid_t::try_from(pid).ok()?;
+    // Never signal 0 (caller's process group), 1 (init/systemd), or negative PIDs
+    // (process groups or -1 which targets all user processes).
+    (raw_pid > 1).then_some(raw_pid)
 }
 
 #[cfg(not(target_os = "windows"))]
-use std::process::Stdio;
+fn force_terminate_process(pid: u32, _log: &mut File) -> bool {
+    let Some(raw_pid) = valid_unix_target_pid(pid) else {
+        return false;
+    };
+    unsafe { libc::kill(raw_pid, libc::SIGKILL) == 0 }
+}
 
 #[cfg(not(target_os = "windows"))]
 fn process_is_running(pid: u32, expected_target_path: Option<&Path>) -> bool {
-    let signal_ok = Command::new("/bin/kill")
-        .args(["-0", &pid.to_string()])
-        .stderr(Stdio::null())
-        .status()
-        .map(|status| status.success())
-        .unwrap_or(false);
+    let Some(raw_pid) = valid_unix_target_pid(pid) else {
+        return false;
+    };
+    let signal_ok = unsafe {
+        if libc::kill(raw_pid, 0) == 0 {
+            true
+        } else {
+            std::io::Error::last_os_error().raw_os_error() == Some(libc::EPERM)
+        }
+    };
     if !signal_ok {
         return false;
     }
@@ -2216,11 +2412,18 @@ fn unix_pid_matches_expected_target(pid: u32, expected_target_path: &Path) -> bo
         return true;
     };
     match unix_process_command_name(pid) {
-        Some(actual_name) => {
-            actual_name == expected_name || actual_name.ends_with(&format!("/{expected_name}"))
-        }
+        Some(actual_name) => unix_command_name_matches_expected(&actual_name, &expected_name),
         None => true,
     }
+}
+
+#[cfg(not(target_os = "windows"))]
+fn unix_command_name_matches_expected(actual_name: &str, expected_name: &str) -> bool {
+    const LINUX_TASK_COMM_MAX_LEN: usize = 15;
+
+    actual_name == expected_name
+        || actual_name.ends_with(&format!("/{expected_name}"))
+        || (actual_name.len() == LINUX_TASK_COMM_MAX_LEN && expected_name.starts_with(actual_name))
 }
 
 #[cfg(not(target_os = "windows"))]
@@ -3205,6 +3408,9 @@ fn install_kind_as_str(kind: &InstallKind) -> &'static str {
         InstallKind::WindowsPortable => "windows-portable",
         InstallKind::WindowsMsix => "windows-msix",
         InstallKind::MacosAppBundle => "macos-app-bundle",
+        InstallKind::LinuxRpm => "linux-rpm",
+        InstallKind::LinuxDeb => "linux-deb",
+        InstallKind::LinuxAppImage => "linux-appimage",
         InstallKind::Unknown => "unknown",
     }
 }
@@ -3215,6 +3421,9 @@ fn parse_install_kind(value: &str) -> Option<InstallKind> {
         "windows-portable" | "windowsPortable" => Some(InstallKind::WindowsPortable),
         "windows-msix" | "windowsMsix" => Some(InstallKind::WindowsMsix),
         "macos-app-bundle" | "macosAppBundle" => Some(InstallKind::MacosAppBundle),
+        "linux-rpm" | "linuxRpm" => Some(InstallKind::LinuxRpm),
+        "linux-deb" | "linuxDeb" => Some(InstallKind::LinuxDeb),
+        "linux-appimage" | "linuxAppImage" => Some(InstallKind::LinuxAppImage),
         "unknown" => Some(InstallKind::Unknown),
         _ => None,
     }
@@ -3582,6 +3791,28 @@ mod tests {
         fs::write(macos_dir.join("helper"), b"binary").expect("write helper");
 
         assert_eq!(expected_process_name(&bundle).as_deref(), Some("花笺"));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn rejects_dangerous_or_overflowing_unix_pids() {
+        let root = temp_dir("helper-unix-pid-validation");
+        let mut log = temp_log(&root, "pid-validation.log");
+
+        for invalid_pid in [0, 1, (i32::MAX as u32) + 1, u32::MAX] {
+            assert_eq!(valid_unix_target_pid(invalid_pid), None);
+            assert!(!process_is_running(invalid_pid, None));
+            assert!(!force_terminate_process(invalid_pid, &mut log));
+        }
+        assert_eq!(valid_unix_target_pid(42), Some(42));
+        assert!(unix_command_name_matches_expected(
+            "floral-notepape",
+            "floral-notepaper"
+        ));
+        assert!(!unix_command_name_matches_expected(
+            "other-process",
+            "floral-notepaper"
+        ));
     }
 
     #[test]

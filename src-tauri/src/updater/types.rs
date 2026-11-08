@@ -68,6 +68,9 @@ pub enum InstallKind {
     WindowsPortable,
     WindowsMsix,
     MacosAppBundle,
+    LinuxRpm,
+    LinuxDeb,
+    LinuxAppImage,
     Unknown,
 }
 

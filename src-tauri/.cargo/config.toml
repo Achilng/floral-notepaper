@@ -1,0 +1,3 @@
+[env]
+PKG_CONFIG_PATH = { value = ".fedora-dev/pkgconfig", relative = true }
+LIBRARY_PATH = { value = ".fedora-dev/lib64", relative = true }

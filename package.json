@@ -4,15 +4,18 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node scripts/fetch-contributors.mjs && vite",
-    "build": "node scripts/fetch-contributors.mjs && tsc && vite build",
+    "dev": "node scripts/ensure-linux-deps.mjs && node scripts/fetch-contributors.mjs && vite",
+    "build": "node scripts/ensure-linux-deps.mjs && node scripts/fetch-contributors.mjs && tsc && vite build",
     "test": "vitest run",
     "lint": "oxlint",
     "fmt": "oxfmt",
     "preview": "vite preview",
-    "tauri": "tauri",
+    "tauri": "node scripts/ensure-linux-deps.mjs tauri",
+    "fedora:setup": "bash scripts/setup-fedora.sh",
+    "fedora:dev": "node scripts/ensure-linux-deps.mjs tauri dev",
+    "fedora:build": "node scripts/ensure-linux-deps.mjs tauri build --bundles rpm",
     "version:sync": "node scripts/set-version.mjs",
-    "prepare": "husky"
+    "prepare": "node scripts/ensure-linux-deps.mjs && husky"
   },
   "dependencies": {
     "@tauri-apps/api": "~2.11.0",

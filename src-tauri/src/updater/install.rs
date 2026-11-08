@@ -387,10 +387,17 @@ fn resolve_install_target(platform: &PlatformInfo) -> Result<PathBuf, AppError> 
         super::types::InstallKind::MacosAppBundle => {
             resolve_macos_bundle_path(platform).ok_or_else(errors::unsupported_platform)
         }
-        super::types::InstallKind::WindowsNsis => platform
+        super::types::InstallKind::WindowsNsis
+        | super::types::InstallKind::LinuxRpm
+        | super::types::InstallKind::LinuxDeb => platform
             .current_exe
             .as_ref()
             .map(PathBuf::from)
+            .ok_or_else(errors::unsupported_platform),
+        super::types::InstallKind::LinuxAppImage => env::var_os("APPIMAGE")
+            .map(PathBuf::from)
+            .filter(|path| path.exists())
+            .or_else(|| platform.current_exe.as_ref().map(PathBuf::from))
             .ok_or_else(errors::unsupported_platform),
         super::types::InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
         super::types::InstallKind::WindowsMsix => Err(errors::store_managed_manual_only()),
@@ -545,6 +552,15 @@ fn stage_helper_copy(
         );
         errors::with_detail(error, "helperPath", staged_path.display().to_string())
     })?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        if let Ok(metadata) = fs::metadata(&staged_path) {
+            let mut perms = metadata.permissions();
+            perms.set_mode(0o755);
+            let _ = fs::set_permissions(&staged_path, perms);
+        }
+    }
     Ok(staged_path)
 }
 

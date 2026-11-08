@@ -87,6 +87,9 @@
 | Windows | AArch64                 | 安裝包           | floral-notepaper\_版本號\_aarch64.msix      |
 | macOS   | AArch64 (Apple Silicon) | DMG              | floral-notepaper\_版本號\_aarch64.dmg       |
 | macOS   | x64 (Intel)             | DMG              | floral-notepaper\_版本號\_x64.dmg           |
+| Linux   | x64                     | RPM（Fedora）    | floral-notepaper-版本號-1.x86_64.rpm        |
+| Linux   | x64                     | DEB              | floral-notepaper\_版本號\_amd64.deb         |
+| Linux   | x64                     | AppImage         | floral-notepaper\_版本號\_amd64.AppImage    |
 
 #### 透過 Microsoft Store 下載
 
@@ -108,6 +111,18 @@
 
 - Wiki 中的 [macOS 安裝指引](https://github.com/Achilng/floral-notepaper/wiki/macOS-%E5%AE%89%E8%A3%85%E6%8C%87%E5%BC%95-%7C-macOS-Installation-Guidance)
 - 或影片（Bilibili）：[Mac雲課堂 - 在 Mac 上裝軟件，要學會和蘋果鬥智鬥勇](https://www.bilibili.com/video/BV1tg411t7hN)
+
+#### Fedora Linux 安裝指引
+
+下載 `.rpm` 安裝包後，可透過 `dnf` 直接安裝（會自動解析並安裝 `webkit2gtk4.1`、`gtk3`、`librsvg2` 等執行時依賴）：
+
+```bash
+# 安裝 RPM 包
+sudo dnf install ./floral-notepaper-1.2.0-1.x86_64.rpm
+
+# 解除安裝
+sudo dnf remove floral-notepaper
+```
 
 ### 從原始碼構建
 

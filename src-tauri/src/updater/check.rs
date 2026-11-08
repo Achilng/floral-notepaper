@@ -509,6 +509,7 @@ fn mirror_chyan_os_param(os: &platform::Os) -> &'static str {
     match os {
         platform::Os::Windows => "windows",
         platform::Os::Macos => "darwin",
+        platform::Os::Linux => "linux",
         platform::Os::Unsupported => "unknown",
     }
 }

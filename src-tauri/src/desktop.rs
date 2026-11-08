@@ -1036,6 +1036,7 @@ fn toggle_app_visibility(app: &AppHandle) {
             if let Some(window) = app.get_webview_window(label) {
                 let _ = window.unminimize();
                 let _ = window.show();
+                schedule_linux_window_repaint(&window);
                 if focus_target.is_none() || label == MAIN_WINDOW_LABEL {
                     focus_target = Some(label.clone());
                 }
@@ -1146,6 +1147,8 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
         if let Err(error) = show_main_window(app.handle()) {
             eprintln!("failed to show main window on startup: {error}");
         }
+    } else if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        install_linux_rounded_corners(&window);
     }
 
     let args: Vec<String> = std::env::args().collect();
@@ -1389,10 +1392,12 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
     let locale = configured_locale();
 
     if let Some(window) = app.get_webview_window(MAIN_WINDOW_LABEL) {
+        install_linux_rounded_corners(&window);
         window.set_title(locales::main_window_title(locale))?;
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
+        schedule_linux_window_repaint(&window);
         return Ok(());
     }
 
@@ -1410,7 +1415,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
             },
             // On macOS, tauri.macos.conf.json sets titleBarStyle: "Overlay"
             // with native traffic lights; decorations: false would conflict.
-            decorations: !cfg!(target_os = "macos"),
+            decorations: cfg!(target_os = "macos"),
             always_on_top: false,
             shadow: true,
             skip_taskbar: false,
@@ -1421,6 +1426,7 @@ pub fn show_main_window(app: &AppHandle) -> Result<(), AppError> {
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
+        schedule_linux_window_repaint(&window);
     }
     Ok(())
 }
@@ -1624,6 +1630,7 @@ fn prewarm_notepad(app: &AppHandle) -> Result<(), AppError> {
     .build()?;
 
     // 预热窗口在池中等待期间保持低内存档位，激活时恢复 Normal
+    install_linux_rounded_corners(&window);
     set_webview_memory_usage_level(&window, true);
 
     pool.put(label);
@@ -1642,7 +1649,7 @@ fn notepad_window_specs() -> WindowSizeSpec {
 
 #[cfg(target_os = "windows")]
 #[allow(clippy::upper_case_acronyms)]
-fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
+fn cursor_centered_bounds(_app: &AppHandle, specs: &WindowSizeSpec) -> Option<WindowBounds> {
     #[repr(C)]
     struct POINT {
         x: i32,
@@ -1714,8 +1721,31 @@ fn cursor_centered_bounds(specs: &WindowSizeSpec) -> Option<WindowBounds> {
 }
 
 #[cfg(not(target_os = "windows"))]
-fn cursor_centered_bounds(_specs: &WindowSizeSpec) -> Option<WindowBounds> {
-    None
+fn cursor_centered_bounds(app: &AppHandle, specs: &WindowSizeSpec) -> Option<WindowBounds> {
+    let pt = app.cursor_position().ok()?;
+    let monitor = app.monitor_from_point(pt.x, pt.y).ok().flatten();
+    let scale = monitor.as_ref().map(|m| m.scale_factor()).unwrap_or(1.0);
+    let w = (specs.width * scale).round() as i32;
+    let h = (specs.height * scale).round() as i32;
+    let mut x = (pt.x.round() as i32) - w / 2;
+    let mut y = (pt.y.round() as i32) - h / 2;
+
+    if let Some(m) = monitor {
+        let work = m.work_area();
+        let left = work.position.x;
+        let top = work.position.y;
+        let right = left + work.size.width as i32;
+        let bottom = top + work.size.height as i32;
+        x = x.max(left).min((right - w).max(left));
+        y = y.max(top).min((bottom - h).max(top));
+    }
+
+    Some(WindowBounds {
+        x,
+        y,
+        width: w as u32,
+        height: h as u32,
+    })
 }
 
 fn saved_surface_specs(app: &AppHandle) -> WindowSizeSpec {
@@ -1826,6 +1856,7 @@ fn open_or_focus_window(
         window.unminimize()?;
         window.show()?;
         window.set_focus()?;
+        schedule_linux_window_repaint(&window);
         return Ok(label.to_string());
     }
 
@@ -1856,6 +1887,7 @@ fn open_or_focus_window(
     };
 
     let window = builder.build()?;
+    install_linux_rounded_corners(&window);
 
     apply_window_bounds(&window, opts.bounds)?;
 
@@ -1874,6 +1906,168 @@ fn apply_window_bounds(
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+fn schedule_linux_window_repaint(window: &tauri::WebviewWindow) {
+    let app = window.app_handle().clone();
+    let label = window.label().to_string();
+    std::thread::spawn(move || {
+        for delay_ms in [120_u64, 300_u64] {
+            std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+            let app_for_nudge = app.clone();
+            let label_for_nudge = label.clone();
+            let _ = app.run_on_main_thread(move || {
+                let Some(win) = app_for_nudge.get_webview_window(&label_for_nudge) else {
+                    return;
+                };
+                if !win.is_visible().unwrap_or(false) {
+                    return;
+                }
+                let Ok(base_size) = win.inner_size() else {
+                    return;
+                };
+                if base_size.width == 0 || base_size.height == 0 {
+                    return;
+                }
+                let _ = win.set_size(PhysicalSize::new(base_size.width + 1, base_size.height));
+                let app_restore = app_for_nudge.clone();
+                let label_restore = label_for_nudge.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_millis(35));
+                    let app_restore_inner = app_restore.clone();
+                    let _ = app_restore.run_on_main_thread(move || {
+                        if let Some(win_restore) =
+                            app_restore_inner.get_webview_window(&label_restore)
+                        {
+                            let _ = win_restore.set_size(base_size);
+                        }
+                    });
+                });
+            });
+        }
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn schedule_linux_window_repaint(_window: &tauri::WebviewWindow) {}
+
+#[cfg(target_os = "linux")]
+const LINUX_WINDOW_CORNER_RADIUS_PX: i32 = 14;
+
+#[cfg(target_os = "linux")]
+fn build_rounded_rect_region(width: i32, height: i32, radius: i32) -> Option<cairo::Region> {
+    if width <= 0 || height <= 0 {
+        return None;
+    }
+    let r = radius.clamp(0, width.min(height) / 2);
+    if r == 0 {
+        let rect = cairo::RectangleInt::new(0, 0, width, height);
+        return Some(cairo::Region::create_rectangle(&rect));
+    }
+
+    let mut rects = Vec::with_capacity((r as usize) * 2 + 1);
+    let r_f = r as f64;
+    for y in 0..r {
+        let dy = r_f - (y as f64 + 0.5);
+        let dx = (r_f * r_f - dy * dy).max(0.0).sqrt();
+        let inset = (r_f - dx).floor() as i32;
+        let row_width = (width - inset * 2).max(0);
+        rects.push(cairo::RectangleInt::new(inset, y, row_width, 1));
+    }
+
+    if height > r * 2 {
+        rects.push(cairo::RectangleInt::new(0, r, width, height - r * 2));
+    }
+
+    for i in 0..r {
+        let y = height - r + i;
+        let dy = i as f64 + 0.5;
+        let dx = (r_f * r_f - dy * dy).max(0.0).sqrt();
+        let inset = (r_f - dx).floor() as i32;
+        let row_width = (width - inset * 2).max(0);
+        rects.push(cairo::RectangleInt::new(inset, y, row_width, 1));
+    }
+
+    Some(cairo::Region::create_rectangles(&rects))
+}
+
+#[cfg(target_os = "linux")]
+fn apply_gtk_rounded_shape(widget: &gtk::ApplicationWindow, width: i32, height: i32) {
+    use gtk::prelude::{GtkWindowExt, WidgetExt};
+
+    let is_fullscreen_or_max = widget.is_maximized()
+        || widget.window().is_some_and(|w| {
+            w.state()
+                .intersects(gdk::WindowState::MAXIMIZED | gdk::WindowState::FULLSCREEN)
+        });
+
+    if is_fullscreen_or_max {
+        widget.shape_combine_region(None);
+        if let Some(gdk_win) = widget.window() {
+            gdk_win.shape_combine_region(None, 0, 0);
+        }
+        return;
+    }
+
+    if let Some(region) = build_rounded_rect_region(width, height, LINUX_WINDOW_CORNER_RADIUS_PX) {
+        widget.shape_combine_region(Some(&region));
+        if let Some(gdk_win) = widget.window() {
+            gdk_win.shape_combine_region(Some(&region), 0, 0);
+        }
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn install_linux_rounded_corners(window: &tauri::WebviewWindow) {
+    use gtk::prelude::WidgetExt;
+    use std::collections::HashSet;
+    use std::sync::OnceLock;
+
+    static INSTALLED_LABELS: OnceLock<Mutex<HashSet<String>>> = OnceLock::new();
+    let set_mutex = INSTALLED_LABELS.get_or_init(|| Mutex::new(HashSet::new()));
+    let label = window.label().to_string();
+    if let Ok(mut guard) = set_mutex.lock() {
+        if !guard.insert(label.clone()) {
+            if let Ok(gtk_win) = window.gtk_window() {
+                apply_gtk_rounded_shape(
+                    &gtk_win,
+                    gtk_win.allocated_width(),
+                    gtk_win.allocated_height(),
+                );
+            }
+            return;
+        }
+    }
+
+    let Ok(gtk_win) = window.gtk_window() else {
+        return;
+    };
+
+    apply_gtk_rounded_shape(
+        &gtk_win,
+        gtk_win.allocated_width(),
+        gtk_win.allocated_height(),
+    );
+
+    gtk_win.connect_realize(|widget| {
+        apply_gtk_rounded_shape(widget, widget.allocated_width(), widget.allocated_height());
+    });
+
+    gtk_win.connect_size_allocate(|widget, allocation| {
+        apply_gtk_rounded_shape(widget, allocation.width(), allocation.height());
+    });
+
+    gtk_win.connect_destroy(move |_| {
+        if let Some(mutex) = INSTALLED_LABELS.get() {
+            if let Ok(mut guard) = mutex.lock() {
+                guard.remove(&label);
+            }
+        }
+    });
+}
+
+#[cfg(not(target_os = "linux"))]
+fn install_linux_rounded_corners(_window: &tauri::WebviewWindow) {}
+
 fn notepad_window_label(note_id: Option<&str>) -> String {
     match note_id {
         Some(id) => format!("notepad-{}", sanitize_label_part(id)),
@@ -1890,7 +2084,7 @@ fn dynamic_window_visual_options(label: &str) -> DynamicWindowVisualOptions {
         label == MAIN_WINDOW_LABEL || label.starts_with("notepad-") || label.starts_with("tile-");
 
     DynamicWindowVisualOptions {
-        transparent: is_app_surface,
+        transparent: is_app_surface && !cfg!(target_os = "linux"),
     }
 }
 
@@ -1970,7 +2164,7 @@ fn setup_global_shortcut_plugin(app: &AppHandle) -> tauri::Result<()> {
                     ShortcutAction::OpenNotepad => {
                         let bounds = if load_config().map(|c| c.open_at_cursor).unwrap_or(true) {
                             let specs = saved_surface_specs(app);
-                            cursor_centered_bounds(&specs)
+                            cursor_centered_bounds(app, &specs)
                         } else {
                             None
                         };
@@ -2762,17 +2956,24 @@ mod tests {
 
     #[test]
     fn makes_note_surfaces_transparent() {
+        let expected_transparent = !cfg!(target_os = "linux");
         assert_eq!(
             dynamic_window_visual_options("notepad-note-1"),
-            DynamicWindowVisualOptions { transparent: true }
+            DynamicWindowVisualOptions {
+                transparent: expected_transparent
+            }
         );
         assert_eq!(
             dynamic_window_visual_options("tile-note-1"),
-            DynamicWindowVisualOptions { transparent: true }
+            DynamicWindowVisualOptions {
+                transparent: expected_transparent
+            }
         );
         assert_eq!(
             dynamic_window_visual_options("main"),
-            DynamicWindowVisualOptions { transparent: true }
+            DynamicWindowVisualOptions {
+                transparent: expected_transparent
+            }
         );
     }
 

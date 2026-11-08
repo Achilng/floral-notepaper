@@ -21,6 +21,7 @@ use std::process::Command;
 pub enum Os {
     Windows,
     Macos,
+    Linux,
     Unsupported,
 }
 
@@ -72,7 +73,11 @@ impl PlatformInfo {
         }
 
         match self.install_kind {
-            InstallKind::WindowsNsis | InstallKind::MacosAppBundle => Ok(()),
+            InstallKind::WindowsNsis
+            | InstallKind::MacosAppBundle
+            | InstallKind::LinuxRpm
+            | InstallKind::LinuxDeb
+            | InstallKind::LinuxAppImage => Ok(()),
             InstallKind::WindowsPortable => Err(errors::portable_manual_only()),
             InstallKind::WindowsMsix => Err(errors::store_managed_manual_only()),
             InstallKind::Unknown => Err(errors::unsupported_platform()),
@@ -133,6 +138,7 @@ fn current_os() -> Os {
     match env::consts::OS {
         "windows" => Os::Windows,
         "macos" => Os::Macos,
+        "linux" => Os::Linux,
         _ => Os::Unsupported,
     }
 }
@@ -185,8 +191,39 @@ fn detect_install_kind_with_package(
                 InstallKind::WindowsPortable
             }
         }
+        Os::Linux => detect_linux_install_kind(current_exe),
         Os::Unsupported => InstallKind::Unknown,
     }
+}
+
+fn detect_linux_install_kind(current_exe: Option<&Path>) -> InstallKind {
+    if env::var_os("APPIMAGE").is_some() {
+        return InstallKind::LinuxAppImage;
+    }
+    let Some(path) = current_exe else {
+        return InstallKind::Unknown;
+    };
+    let lower = path.to_string_lossy().to_lowercase();
+    if lower.ends_with(".appimage") {
+        return InstallKind::LinuxAppImage;
+    }
+    if lower.contains("target/debug")
+        || lower.contains("target/release")
+        || lower.contains("target\\debug")
+        || lower.contains("target\\release")
+    {
+        return InstallKind::Unknown;
+    }
+    if lower.starts_with("/usr/") || lower.starts_with("/opt/") || lower.starts_with("/bin/") {
+        if Path::new("/etc/fedora-release").exists() || Path::new("/etc/redhat-release").exists() {
+            return InstallKind::LinuxRpm;
+        }
+        if Path::new("/etc/debian_version").exists() {
+            return InstallKind::LinuxDeb;
+        }
+        return InstallKind::LinuxRpm;
+    }
+    InstallKind::Unknown
 }
 
 /// Whether the current process was launched with an MSIX package identity.
@@ -326,7 +363,7 @@ pub(crate) fn infer_asset_from_filename(name: &str, url: &str, size: u64) -> Opt
 
     let arch = if lower.contains("aarch64") || lower.contains("arm64") {
         Arch::Aarch64
-    } else if lower.contains("x64") || lower.contains("x86_64") {
+    } else if lower.contains("x64") || lower.contains("x86_64") || lower.contains("amd64") {
         Arch::X86_64
     } else {
         return None;
@@ -334,6 +371,12 @@ pub(crate) fn infer_asset_from_filename(name: &str, url: &str, size: u64) -> Opt
 
     let (os, kind) = if lower.ends_with(".dmg") {
         (Os::Macos, InstallKind::MacosAppBundle)
+    } else if lower.ends_with(".rpm") {
+        (Os::Linux, InstallKind::LinuxRpm)
+    } else if lower.ends_with(".appimage") {
+        (Os::Linux, InstallKind::LinuxAppImage)
+    } else if lower.ends_with(".deb") {
+        (Os::Linux, InstallKind::LinuxDeb)
     } else if lower.ends_with(".msi") || lower.ends_with("-setup.exe") || lower.contains("setup") {
         (Os::Windows, InstallKind::WindowsNsis)
     } else if lower.ends_with(".exe") {
@@ -583,5 +626,55 @@ mod tests {
         assert_eq!(with_version.os, current.os);
         assert_eq!(with_version.install_kind, current.install_kind);
         assert_eq!(with_version.current_exe, current.current_exe);
+    }
+
+    #[test]
+    fn infers_linux_x64_rpm() {
+        let inferred = infer_asset_from_filename(
+            "floral-notepaper-1.2.0-1.x86_64.rpm",
+            "https://example.com/floral-notepaper-1.2.0-1.x86_64.rpm",
+            12,
+        )
+        .expect("should infer Linux RPM");
+
+        assert_eq!(inferred.os, Os::Linux);
+        assert_eq!(inferred.arch, Arch::X86_64);
+        assert_eq!(inferred.kind, InstallKind::LinuxRpm);
+    }
+
+    #[test]
+    fn infers_linux_amd64_appimage() {
+        let inferred = infer_asset_from_filename(
+            "floral-notepaper_1.2.0_amd64.AppImage",
+            "https://example.com/floral-notepaper_1.2.0_amd64.AppImage",
+            12,
+        )
+        .expect("should infer Linux AppImage");
+
+        assert_eq!(inferred.os, Os::Linux);
+        assert_eq!(inferred.arch, Arch::X86_64);
+        assert_eq!(inferred.kind, InstallKind::LinuxAppImage);
+    }
+
+    #[test]
+    fn detects_linux_install_kind_from_path() {
+        let kind = detect_install_kind_with_package(
+            Os::Linux,
+            Some(Path::new("/usr/bin/floral-notepaper")),
+            false,
+        );
+        assert!(matches!(
+            kind,
+            InstallKind::LinuxRpm | InstallKind::LinuxDeb
+        ));
+
+        let appimage_kind = detect_install_kind_with_package(
+            Os::Linux,
+            Some(Path::new(
+                "/home/user/Applications/floral-notepaper.AppImage",
+            )),
+            false,
+        );
+        assert_eq!(appimage_kind, InstallKind::LinuxAppImage);
     }
 }

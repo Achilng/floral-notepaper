@@ -14,6 +14,9 @@ pub enum ManifestAssetKind {
     Nsis,
     PortableExe,
     AppZip,
+    Rpm,
+    Deb,
+    AppImage,
 }
 
 impl ManifestAssetKind {
@@ -22,6 +25,9 @@ impl ManifestAssetKind {
             (Os::Windows, InstallKind::WindowsNsis) => Ok(Self::Nsis),
             (Os::Windows, InstallKind::WindowsPortable) => Ok(Self::PortableExe),
             (Os::Macos, InstallKind::MacosAppBundle) => Ok(Self::AppZip),
+            (Os::Linux, InstallKind::LinuxRpm) => Ok(Self::Rpm),
+            (Os::Linux, InstallKind::LinuxDeb) => Ok(Self::Deb),
+            (Os::Linux, InstallKind::LinuxAppImage) => Ok(Self::AppImage),
             _ => Err(errors::unsupported_platform()),
         }
     }

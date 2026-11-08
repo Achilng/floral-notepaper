@@ -57,6 +57,12 @@
   --app-surface-radius: 14px;
 }
 
+:root[data-platform="linux"],
+:root[data-platform="linux"] body,
+:root[data-platform="linux"] .app-window-shell {
+  background: var(--color-paper-deep);
+}
+
 :root[data-theme="dark"] {
   --color-paper: #222120;
   --color-paper-warm: #2c2a27;

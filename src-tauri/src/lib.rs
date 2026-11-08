@@ -458,9 +458,12 @@ pub fn run() {
                 eprintln!("failed to initialize updater infrastructure: {error}");
             }
             app.manage(updater_state);
-            // MSIX installs are updated by the Microsoft Store; the scheduler
-            // must never drive in-app updates against a read-only package.
-            if !updater::platform::has_package_identity() {
+            // Unpackaged/portable/MSIX installs do not support in-app updates;
+            // only start the background scheduler when the current install kind supports it.
+            if updater::platform::current_platform()
+                .ensure_in_app_updates_supported()
+                .is_ok()
+            {
                 updater::start_auto_check_scheduler(app.handle().clone());
             }
             desktop::setup_desktop(app)?;

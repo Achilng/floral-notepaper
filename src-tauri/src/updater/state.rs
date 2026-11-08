@@ -33,8 +33,10 @@ fn load_with_current_version_unlocked(
 
     match serde_json::from_str::<UpdateStateDto>(&fs::read_to_string(&path)?) {
         Ok(state) => {
-            let normalized = normalize_state(state, current_version);
-            save_unlocked(paths, &normalized)?;
+            let normalized = normalize_state(state.clone(), current_version);
+            if normalized != state {
+                save_unlocked(paths, &normalized)?;
+            }
             Ok(normalized)
         }
         Err(_error) => {

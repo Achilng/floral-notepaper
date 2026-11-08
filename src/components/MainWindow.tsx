@@ -1973,7 +1973,11 @@ export function MainWindow({
 
   return (
     <div className="w-full h-screen flex flex-col">
-      <div className="relative noise-bg bg-cloud overflow-hidden flex flex-col flex-1">
+      <div
+        className={`relative noise-bg bg-cloud overflow-hidden flex flex-col flex-1 ${
+          isMaximized ? "" : "app-main-frame border border-paper-deep/70"
+        }`}
+      >
         <BackgroundLayer config={settingsConfig} />
         <div
           className={`relative z-10 flex items-center justify-between h-11 bg-paper/55 backdrop-blur-[1px] border-b border-paper-deep/30 shrink-0 select-none cursor-default ${

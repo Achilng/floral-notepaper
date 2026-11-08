@@ -255,6 +255,11 @@ fn default_data_dir() -> Result<PathBuf, AppError> {
         return Ok(dir.join("花笺"));
     }
 
+    #[cfg(target_os = "linux")]
+    if let Some(dir) = dirs::data_dir() {
+        return Ok(dir.join("花笺"));
+    }
+
     Ok(env::current_dir()?.join("data"))
 }
 

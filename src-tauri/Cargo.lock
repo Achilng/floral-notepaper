@@ -1223,8 +1223,11 @@ name = "floral-notepaper"
 version = "1.2.0"
 dependencies = [
  "block2",
+ "cairo-rs",
  "chrono",
  "dirs 6.0.0",
+ "gdk",
+ "gtk",
  "keyring",
  "libc",
  "objc2",
