@@ -13,6 +13,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { emit, listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { confirm } from "@tauri-apps/plugin-dialog";
 import { exportMarkdownNote, importMarkdownNote } from "../features/importExport/api";
 import { MarkdownPreviewLazy as MarkdownPreview } from "../features/markdown/MarkdownPreviewLazy";
 import { showToast } from "./Toast";
@@ -57,6 +58,7 @@ import {
   getErrorMessage,
   getFileModifiedTime,
   getNote,
+  isWslTrashUnavailableError,
   listCategories,
   listNotes,
   moveNoteCategory,
@@ -1466,19 +1468,54 @@ export function MainWindow({
     }
   };
 
+  const refreshAfterDeletedNote = async (noteId: string) => {
+    const remaining = await refreshNotes();
+    if (noteId === selectedId && remaining[0]) {
+      await loadNote(remaining[0].id);
+    } else if (noteId === selectedId) {
+      clearCurrentNote();
+    }
+  };
+
   const handleDeleteNote = async (noteId = selectedId) => {
     if (!noteId) return;
 
     setDeleteConfirm(false);
     try {
       await deleteNote(noteId);
-      const remaining = await refreshNotes();
-      if (noteId === selectedId && remaining[0]) {
-        await loadNote(remaining[0].id);
-      } else if (noteId === selectedId) {
-        clearCurrentNote();
-      }
+      await refreshAfterDeletedNote(noteId);
     } catch (error) {
+      if (isWslTrashUnavailableError(error)) {
+        const shouldDeletePermanently = await confirm(
+          t("main.confirm.wslTrashUnavailableMessage", {
+            defaultValue:
+              "This note is stored in a WSL path, where the Windows Recycle Bin is unavailable. Keep the note, or permanently delete it instead?",
+          }),
+          {
+            title: t("main.confirm.wslTrashUnavailableTitle", {
+              defaultValue: "Recycle Bin unavailable",
+            }),
+            kind: "warning",
+            okLabel: t("main.confirm.permanentlyDelete", {
+              defaultValue: "Permanently Delete",
+            }),
+            cancelLabel: t("main.confirm.keepNote", {
+              defaultValue: "Keep Note",
+            }),
+          },
+        );
+
+        if (!shouldDeletePermanently) return;
+
+        try {
+          await deleteNote(noteId, { permanent: true });
+          await refreshAfterDeletedNote(noteId);
+        } catch (permanentError) {
+          showToast(getErrorMessage(permanentError));
+        }
+        return;
+      }
+
       showToast(getErrorMessage(error));
     }
   };
