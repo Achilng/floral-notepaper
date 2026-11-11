@@ -1,13 +1,27 @@
 import { t, type TFunction } from "i18next";
 import type { NoteSurfaceAction } from "./surfaceActions";
+import { DEFAULT_WINDOW_LAYER, type WindowLayer } from "./windowLayer";
 
 export interface TileContextMenuItem {
   action: NoteSurfaceAction;
   label: string;
   tone?: "danger";
+  checked?: boolean;
 }
 
-export function getTileContextMenuItems(translate: TFunction = t): TileContextMenuItem[] {
+export interface TileContextMenuSeparator {
+  separator: true;
+}
+
+export type TileContextMenuEntry = TileContextMenuItem | TileContextMenuSeparator;
+
+export function getTileContextMenuItems(
+  translate: TFunction = t,
+  currentLayer: WindowLayer = DEFAULT_WINDOW_LAYER,
+): TileContextMenuEntry[] {
+  const layerLabel = (layer: WindowLayer, label: string) =>
+    currentLayer === layer ? `✓ ${label}` : label;
+
   return [
     {
       action: "copy",
@@ -21,6 +35,26 @@ export function getTileContextMenuItems(translate: TFunction = t): TileContextMe
       action: "switchToPad",
       label: translate("contextMenu.tile.switchToPad", { defaultValue: "转为小窗" }),
     },
+    { separator: true },
+    {
+      action: "layerTop",
+      label: layerLabel("top", translate("contextMenu.tile.layerTop", { defaultValue: "置顶" })),
+    },
+    {
+      action: "layerNormal",
+      label: layerLabel(
+        "normal",
+        translate("contextMenu.tile.layerNormal", { defaultValue: "默认层级" }),
+      ),
+    },
+    {
+      action: "layerBottom",
+      label: layerLabel(
+        "bottom",
+        translate("contextMenu.tile.layerBottom", { defaultValue: "沉底" }),
+      ),
+    },
+    { separator: true },
     {
       action: "close",
       label: translate("contextMenu.tile.close", { defaultValue: "取消钉屏" }),

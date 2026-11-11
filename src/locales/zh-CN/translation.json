@@ -36,6 +36,9 @@
     "tile": {
       "close": "取消钉屏",
       "copy": "复制",
+      "layerBottom": "沉底",
+      "layerNormal": "默认层级",
+      "layerTop": "置顶",
       "save": "保存",
       "switchToPad": "转为小窗"
     }
@@ -176,7 +179,8 @@
       "placeholder": "搜索笔记…"
     },
     "error": {
-      "copyUnsupported": "当前环境不支持复制"
+      "copyUnsupported": "当前环境不支持复制",
+      "layerUnsupported": "当前系统不支持该窗口层级"
     },
     "placeholder": {
       "content": "写点什么……",
@@ -198,7 +202,12 @@
     "tooltip": {
       "close": "关闭",
       "openInEditor": "在编辑器中打开",
-      "pinToTile": "转为磁贴"
+      "pinToTile": "转为磁贴",
+      "windowLayer": {
+        "bottom": "窗口层级：沉底（点击切换）",
+        "normal": "窗口层级：默认（点击切换）",
+        "top": "窗口层级：置顶（点击切换）"
+      }
     }
   },
   "settings": {

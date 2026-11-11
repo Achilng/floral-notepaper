@@ -12,6 +12,9 @@ describe("note surface actions", () => {
     expect(isNoteSurfaceAction("save")).toBe(true);
     expect(isNoteSurfaceAction("switchToPad")).toBe(true);
     expect(isNoteSurfaceAction("close")).toBe(true);
+    expect(isNoteSurfaceAction("layerTop")).toBe(true);
+    expect(isNoteSurfaceAction("layerNormal")).toBe(true);
+    expect(isNoteSurfaceAction("layerBottom")).toBe(true);
     expect(isNoteSurfaceAction("delete")).toBe(false);
   });
 
