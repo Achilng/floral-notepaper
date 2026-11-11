@@ -35,6 +35,7 @@
   },
   "bundle": {
     "active": true,
+    "resources": ["WebView2Loader.dll"],
     "targets": ["app", "dmg", "nsis", "deb", "rpm", "appimage"],
     "linux": {
       "appimage": {
