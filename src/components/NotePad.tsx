@@ -60,6 +60,7 @@ import {
   writeStoredWindowLayer,
   type WindowLayer,
 } from "../features/windows/windowLayer";
+import { loadTileAutostart, toggleTileAutostart } from "../features/windows/tileAutostart";
 import { NotepadOpenPanel } from "./NotepadOpenPanel";
 import { Tile } from "./Tile";
 
@@ -281,6 +282,7 @@ export function NotePad({
             } catch {
               // 平台不支持该层级时保持默认置顶
             }
+            void loadTileAutostart(initialNoteId);
           }
           await showCurrentWindow();
           contentRef.current?.focus();
@@ -513,6 +515,13 @@ export function NotePad({
     void applyWindowLayer(windowLayer).catch(() => undefined);
   }, [surfaceMode, windowLayer]);
 
+  // 磁贴内笔记切换（窗口复用）时同步开机自启状态
+  useEffect(() => {
+    if (surfaceMode === "tile" && tileNoteId) {
+      void loadTileAutostart(tileNoteId);
+    }
+  }, [surfaceMode, tileNoteId]);
+
   const changeWindowLayer = useCallback(
     async (layer: WindowLayer) => {
       setCurrentWindowLayer(layer);
@@ -706,6 +715,8 @@ export function NotePad({
   copyTileContentRef.current = copyTileContent;
   const switchSurfaceModeRef = useRef(switchSurfaceMode);
   switchSurfaceModeRef.current = switchSurfaceMode;
+  const tileNoteIdRef = useRef(tileNoteId);
+  tileNoteIdRef.current = tileNoteId;
 
   useEffect(() => {
     function handleSurfaceActionRequest(event: Event) {
@@ -730,6 +741,16 @@ export function NotePad({
       const layer = LAYER_BY_ACTION[action];
       if (layer) {
         void changeWindowLayerRef.current(layer);
+        return;
+      }
+
+      if (action === "autostart") {
+        const noteId = tileNoteIdRef.current;
+        if (noteId) {
+          void toggleTileAutostart(noteId).catch((error) => {
+            showToast(getErrorMessage(error));
+          });
+        }
         return;
       }
 

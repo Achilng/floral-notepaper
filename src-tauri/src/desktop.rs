@@ -1,4 +1,5 @@
 use crate::{
+    json_io::write_json_atomic,
     locales::{self, Locale},
     services::notes::{default_store, AppConfig, AppError},
 };
@@ -6,11 +7,15 @@ use serde::{Deserialize, Serialize};
 #[cfg(target_os = "macos")]
 use std::sync::OnceLock;
 use std::{
+    collections::HashMap,
     error::Error,
+    fs,
+    path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex,
     },
+    time::{Duration, Instant},
 };
 
 #[cfg(target_os = "windows")]
@@ -514,7 +519,7 @@ enum MainWindowCloseAction {
     ExitApp,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowBounds {
     pub x: i32,
@@ -549,6 +554,134 @@ struct RuntimeState {
     hidden_window_labels: Mutex<Vec<String>>,
     #[cfg(desktop)]
     shortcut_bindings: Mutex<ShortcutBindings>,
+}
+
+/// 磁贴位置会话持久化：noteId -> 最近窗口位置（物理像素）
+static TILE_BOUNDS: Mutex<Option<HashMap<String, WindowBounds>>> = Mutex::new(None);
+
+fn tile_sessions_path() -> Result<PathBuf, AppError> {
+    Ok(default_store()?
+        .config_path()
+        .with_file_name("tile-sessions.json"))
+}
+
+fn load_tile_sessions() -> HashMap<String, WindowBounds> {
+    if let Ok(map) = TILE_BOUNDS.lock() {
+        if let Some(cached) = map.as_ref() {
+            return cached.clone();
+        }
+    }
+    let loaded: HashMap<String, WindowBounds> = tile_sessions_path()
+        .ok()
+        .and_then(|path| fs::read_to_string(path).ok())
+        .and_then(|raw| serde_json::from_str(&raw).ok())
+        .unwrap_or_default();
+    if let Ok(mut slot) = TILE_BOUNDS.lock() {
+        *slot = Some(loaded.clone());
+    }
+    loaded
+}
+
+fn save_tile_sessions(map: &HashMap<String, WindowBounds>) -> Result<(), AppError> {
+    let path = tile_sessions_path()?;
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    write_json_atomic(&path, map)?;
+    Ok(())
+}
+
+pub fn flush_tile_sessions() {
+    let snapshot: Option<HashMap<String, WindowBounds>> = TILE_BOUNDS
+        .lock()
+        .ok()
+        .map(|guard| guard.clone().unwrap_or_default());
+    if let Some(map) = snapshot {
+        if let Err(error) = save_tile_sessions(&map) {
+            eprintln!("failed to save tile sessions: {error}");
+        }
+    }
+}
+
+/// 移动/缩放过程中的节流落盘：Windows 关机时进程可能被直接杀死，
+/// 仅依赖窗口销毁落盘会丢失位置，因此高频事件也按间隔写盘
+const TILE_BOUNDS_FLUSH_INTERVAL: Duration = Duration::from_millis(800);
+
+fn flush_tile_sessions_throttled() {
+    static LAST_FLUSH: Mutex<Option<Instant>> = Mutex::new(None);
+    let should_flush = LAST_FLUSH
+        .lock()
+        .ok()
+        .and_then(|mut guard| {
+            let now = Instant::now();
+            let due = guard.map(|last| now.duration_since(last) >= TILE_BOUNDS_FLUSH_INTERVAL);
+            if due.unwrap_or(true) {
+                *guard = Some(now);
+            }
+            due
+        })
+        .unwrap_or(true);
+    if should_flush {
+        flush_tile_sessions();
+    }
+}
+
+/// 记录/更新磁贴位置（内存），由窗口销毁或退出时统一落盘
+fn track_tile_bounds(app: &AppHandle, note_id: &str) {
+    let label = tile_window_label(note_id);
+    let Some(window) = app.get_webview_window(&label) else {
+        return;
+    };
+    let Ok(position) = window.outer_position() else {
+        return;
+    };
+    let Ok(size) = window.inner_size() else {
+        return;
+    };
+    if size.width == 0 || size.height == 0 {
+        return;
+    }
+    let bounds = WindowBounds {
+        x: position.x,
+        y: position.y,
+        width: size.width,
+        height: size.height,
+    };
+    if let Ok(mut cache) = TILE_BOUNDS.lock() {
+        cache
+            .get_or_insert_with(load_tile_sessions)
+            .insert(note_id.to_string(), bounds);
+    }
+}
+
+/// 读取某磁贴的记忆位置；确保窗口主体仍落在某台显示器内，否则返回 None
+fn remembered_tile_bounds(app: &AppHandle, note_id: &str) -> Option<WindowBounds> {
+    let bounds = load_tile_sessions().get(note_id).copied()?;
+    let center_x = bounds.x + (bounds.width as i32) / 2;
+    let center_y = bounds.y + (bounds.height as i32) / 2;
+
+    let monitors = app
+        .available_monitors()
+        .map(|list| list.into_iter().collect::<Vec<_>>())
+        .unwrap_or_default();
+    if monitors.is_empty() {
+        return Some(bounds);
+    }
+
+    let on_any_monitor = monitors.iter().any(|monitor| {
+        let origin = monitor.position();
+        let size = monitor.size();
+        center_x >= origin.x
+            && center_y >= origin.y
+            && center_x < origin.x + size.width as i32
+            && center_y < origin.y + size.height as i32
+    });
+    if on_any_monitor {
+        Some(bounds)
+    } else {
+        // 显示器已断开/布局变化：丢弃旧位置，走默认定位
+        None
+    }
 }
 
 #[cfg(desktop)]
@@ -1110,6 +1243,65 @@ pub async fn toggle_tile_window(
     toggle_tile_window_now(&app, &note_id, bounds)
 }
 
+/// 查询某磁贴是否已设置为开机自动恢复
+pub async fn get_tile_autostart(app: AppHandle, note_id: String) -> Result<bool, AppError> {
+    let _ = &app;
+    let config = load_config()?;
+    Ok(config.autostart_tiles.iter().any(|id| id == &note_id))
+}
+
+/// 设置/取消某磁贴的开机自动恢复，返回更新后的完整配置
+pub async fn set_tile_autostart(
+    app: AppHandle,
+    note_id: String,
+    enabled: bool,
+) -> Result<AppConfig, AppError> {
+    let _ = &app;
+    let store = default_store()?;
+    let mut config = store.load_config()?;
+    if enabled {
+        if !config.autostart_tiles.iter().any(|id| id == &note_id) {
+            config.autostart_tiles.push(note_id);
+        }
+    } else {
+        config.autostart_tiles.retain(|id| id != &note_id);
+    }
+    store.save_config(config)
+}
+
+/// 启动时恢复配置了开机自启的磁贴（手动启动与开机自启动都恢复，行为一致）。
+/// 跳过已不存在的笔记；每次恢复失败不影响其余磁贴。
+fn restore_autostart_tiles(app: &AppHandle) {
+    let note_ids = match load_config() {
+        Ok(config) => config.autostart_tiles,
+        Err(error) => {
+            eprintln!("failed to load autostart tiles: {error}");
+            return;
+        }
+    };
+    if note_ids.is_empty() {
+        return;
+    }
+
+    let store = match default_store() {
+        Ok(store) => store,
+        Err(error) => {
+            eprintln!("failed to open note store for autostart tiles: {error}");
+            return;
+        }
+    };
+
+    for note_id in note_ids {
+        // 笔记已被删除时跳过，避免打开空磁贴
+        if store.read_note(&note_id).is_err() {
+            continue;
+        }
+        if let Err(error) = open_tile_window_now(app, &note_id, None) {
+            eprintln!("failed to restore autostart tile {note_id}: {error}");
+        }
+    }
+}
+
 pub fn extract_file_arg(args: &[String]) -> Option<String> {
     args.iter()
         .find(|arg| {
@@ -1141,6 +1333,7 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
     setup_app_menu(app)?;
     setup_tray(app)?;
     schedule_notepad_prewarm(app.handle());
+    restore_autostart_tiles(app.handle());
 
     if !std::env::args().any(|a| a == "--silent") {
         if let Err(error) = show_main_window(app.handle()) {
@@ -1161,9 +1354,32 @@ pub fn setup_desktop(app: &mut App) -> Result<(), Box<dyn Error>> {
 pub fn handle_window_event(window: &Window, event: &WindowEvent) {
     if matches!(event, WindowEvent::Destroyed) {
         if let Some(note_id) = window.label().strip_prefix("tile-") {
+            // 销毁前已在 Moved/CloseRequested 中记录位置，这里落盘
+            flush_tile_sessions();
             let _ = window
                 .app_handle()
                 .emit("tile-window-closed", note_id.to_string());
+        }
+        return;
+    }
+
+    // 磁贴移动/调整大小时更新位置：内存即时更新，落盘按节流间隔执行
+    //（Windows 关机时进程可能被直接杀死，仅靠销毁事件落盘会丢位置）
+    if let Some(note_id) = window.label().strip_prefix("tile-") {
+        match event {
+            WindowEvent::Moved(_) => {
+                track_tile_bounds(window.app_handle(), note_id);
+                flush_tile_sessions_throttled();
+            }
+            WindowEvent::Resized(_) => {
+                track_tile_bounds(window.app_handle(), note_id);
+                flush_tile_sessions_throttled();
+            }
+            WindowEvent::CloseRequested { .. } => {
+                track_tile_bounds(window.app_handle(), note_id);
+                flush_tile_sessions();
+            }
+            _ => {}
         }
         return;
     }
@@ -1778,6 +1994,8 @@ fn open_tile_window_now(
     let url = format!("index.html?view=tile&noteId={note_id}");
 
     let specs = saved_surface_specs(app);
+    // 调用方未显式指定位置时，回到上次关闭前的位置
+    let bounds = bounds.or_else(|| remembered_tile_bounds(app, note_id));
 
     open_or_focus_window(
         app,
@@ -2571,6 +2789,7 @@ mod tests {
             global_shortcut: global_shortcut.into(),
             close_to_tray: true,
             autostart: false,
+            autostart_tiles: Vec::new(),
             default_view_mode: "split".into(),
             note_auto_save: true,
             note_surface_auto_save: true,
@@ -2656,6 +2875,7 @@ mod tests {
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
             autostart: false,
+            autostart_tiles: Vec::new(),
             default_view_mode: "split".into(),
             note_auto_save: true,
             note_surface_auto_save: true,
@@ -2693,6 +2913,7 @@ mod tests {
             global_shortcut: "Alt+Space".into(),
             close_to_tray: false,
             autostart: true,
+            autostart_tiles: Vec::new(),
             default_view_mode: "preview".into(),
             note_auto_save: false,
             note_surface_auto_save: false,

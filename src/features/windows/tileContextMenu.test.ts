@@ -14,9 +14,24 @@ describe("getTileContextMenuItems", () => {
       "layerTop",
       "layerNormal",
       "layerBottom",
+      "autostart",
       "close",
     ]);
     expect(items[items.length - 1]?.tone).toBe("danger");
+  });
+
+  test("marks the autostart item only when enabled", () => {
+    const off = getTileContextMenuItems(undefined, "top", false).find(
+      (item): item is Exclude<typeof item, { separator: true }> =>
+        "action" in item && item.action === "autostart",
+    );
+    const on = getTileContextMenuItems(undefined, "top", true).find(
+      (item): item is Exclude<typeof item, { separator: true }> =>
+        "action" in item && item.action === "autostart",
+    );
+
+    expect(off?.label.startsWith("✓ ")).toBe(false);
+    expect(on?.label.startsWith("✓ ")).toBe(true);
   });
 
   test("marks only the current layer as checked", () => {

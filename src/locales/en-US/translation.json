@@ -37,6 +37,7 @@
       "close": "Unpin",
       "copy": "Copy",
       "layerBottom": "Always on Bottom",
+      "autostart": "Launch at Startup",
       "layerNormal": "Normal Level",
       "layerTop": "Always on Top",
       "save": "Save",

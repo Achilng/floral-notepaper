@@ -6,6 +6,7 @@ import { getConfig } from "../features/settings/api";
 import type { AppConfig } from "../features/settings/types";
 import { requestSurfaceAction, type NoteSurfaceAction } from "../features/windows/surfaceActions";
 import { getTileContextMenuItems } from "../features/windows/tileContextMenu";
+import { getCurrentTileAutostart, subscribeTileAutostart } from "../features/windows/tileAutostart";
 import {
   getCurrentWindowLayer,
   subscribeWindowLayer,
@@ -36,10 +37,18 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
   );
   const tileCtrlCloseRef = useRef(true);
   const [tileLayer, setTileLayer] = useState<WindowLayer>(getCurrentWindowLayer());
-  const tileContextMenuItems = useMemo(() => getTileContextMenuItems(t, tileLayer), [t, tileLayer]);
+  const [tileAutostart, setTileAutostart] = useState(getCurrentTileAutostart());
+  const tileContextMenuItems = useMemo(
+    () => getTileContextMenuItems(t, tileLayer, tileAutostart),
+    [t, tileLayer, tileAutostart],
+  );
 
   useEffect(() => {
     return subscribeWindowLayer(setTileLayer);
+  }, []);
+
+  useEffect(() => {
+    return subscribeTileAutostart(setTileAutostart);
   }, []);
 
   useEffect(() => {

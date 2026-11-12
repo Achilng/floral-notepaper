@@ -18,9 +18,13 @@ export type TileContextMenuEntry = TileContextMenuItem | TileContextMenuSeparato
 export function getTileContextMenuItems(
   translate: TFunction = t,
   currentLayer: WindowLayer = DEFAULT_WINDOW_LAYER,
+  autostartEnabled: boolean = false,
 ): TileContextMenuEntry[] {
   const layerLabel = (layer: WindowLayer, label: string) =>
     currentLayer === layer ? `✓ ${label}` : label;
+  const autostartLabel = autostartEnabled
+    ? `✓ ${translate("contextMenu.tile.autostart", { defaultValue: "开机自启" })}`
+    : translate("contextMenu.tile.autostart", { defaultValue: "开机自启" });
 
   return [
     {
@@ -53,6 +57,10 @@ export function getTileContextMenuItems(
         "bottom",
         translate("contextMenu.tile.layerBottom", { defaultValue: "沉底" }),
       ),
+    },
+    {
+      action: "autostart",
+      label: autostartLabel,
     },
     { separator: true },
     {
