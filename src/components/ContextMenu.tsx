@@ -4,8 +4,14 @@ import { listen } from "@tauri-apps/api/event";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { getConfig } from "../features/settings/api";
 import type { AppConfig } from "../features/settings/types";
-import { requestSurfaceAction } from "../features/windows/surfaceActions";
+import { requestSurfaceAction, type NoteSurfaceAction } from "../features/windows/surfaceActions";
 import { getTileContextMenuItems } from "../features/windows/tileContextMenu";
+import { getCurrentTileAutostart, subscribeTileAutostart } from "../features/windows/tileAutostart";
+import {
+  getCurrentWindowLayer,
+  subscribeWindowLayer,
+  type WindowLayer,
+} from "../features/windows/windowLayer";
 import { POPUP_VIEWPORT_MARGIN, useViewportPopupPosition } from "./popupPosition";
 
 interface MenuState {
@@ -30,7 +36,20 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     null,
   );
   const tileCtrlCloseRef = useRef(true);
-  const tileContextMenuItems = useMemo(() => getTileContextMenuItems(t), [t]);
+  const [tileLayer, setTileLayer] = useState<WindowLayer>(getCurrentWindowLayer());
+  const [tileAutostart, setTileAutostart] = useState(getCurrentTileAutostart());
+  const tileContextMenuItems = useMemo(
+    () => getTileContextMenuItems(t, tileLayer, tileAutostart),
+    [t, tileLayer, tileAutostart],
+  );
+
+  useEffect(() => {
+    return subscribeWindowLayer(setTileLayer);
+  }, []);
+
+  useEffect(() => {
+    return subscribeTileAutostart(setTileAutostart);
+  }, []);
 
   useEffect(() => {
     getConfig()
@@ -169,7 +188,7 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     dismissMenu();
   };
 
-  const runSurfaceAction = (action: (typeof tileContextMenuItems)[number]["action"]) => {
+  const runSurfaceAction = (action: NoteSurfaceAction) => {
     requestSurfaceAction(action);
     dismissMenu();
   };
@@ -178,12 +197,16 @@ export function ContextMenuProvider({ children }: { children: React.ReactNode })
     () =>
       menu
         ? menu.type === "tile"
-          ? tileContextMenuItems.map((item) => ({
-              ...item,
-              shortcut: "",
-              action: () => runSurfaceAction(item.action),
-              disabled: false,
-            }))
+          ? tileContextMenuItems.map((item) =>
+              "separator" in item
+                ? { separator: true as const }
+                : {
+                    ...item,
+                    shortcut: "",
+                    action: () => runSurfaceAction(item.action),
+                    disabled: false,
+                  },
+            )
           : [
               {
                 label: t("contextMenu.edit.cut", { defaultValue: "剪切" }),

@@ -36,6 +36,10 @@
     "tile": {
       "close": "Unpin",
       "copy": "Copy",
+      "layerBottom": "Always on Bottom",
+      "autostart": "Launch at Startup",
+      "layerNormal": "Normal Level",
+      "layerTop": "Always on Top",
       "save": "Save",
       "switchToPad": "Switch to Window"
     }
@@ -176,7 +180,8 @@
       "placeholder": "Search notes…"
     },
     "error": {
-      "copyUnsupported": "Copy is not supported in this environment"
+      "copyUnsupported": "Copy is not supported in this environment",
+      "layerUnsupported": "This window level is not supported on this system"
     },
     "placeholder": {
       "content": "Write something…",
@@ -198,7 +203,12 @@
     "tooltip": {
       "close": "Close",
       "openInEditor": "Open in Editor",
-      "pinToTile": "Pin to Tile"
+      "pinToTile": "Pin to Tile",
+      "windowLayer": {
+        "bottom": "Window level: Always on Bottom (click to change)",
+        "normal": "Window level: Normal (click to change)",
+        "top": "Window level: Always on Top (click to change)"
+      }
     }
   },
   "settings": {

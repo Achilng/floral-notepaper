@@ -17,7 +17,6 @@ import {
   closeCurrentWindow,
   getCurrentWindowBounds,
   recycleCurrentNotepad,
-  setCurrentWindowAlwaysOnTop,
   showCurrentWindow,
   startCurrentWindowDrag,
   startCurrentWindowDragWithOffset,
@@ -50,6 +49,18 @@ import {
   emitTileWindowUnpinned,
   tileSurfaceModeUnpinNoteId,
 } from "../features/windows/tileWindowEvents";
+import {
+  DEFAULT_WINDOW_LAYER,
+  applyWindowLayer,
+  getCurrentWindowLayer,
+  nextWindowLayer,
+  readStoredWindowLayer,
+  setCurrentWindowLayer,
+  tileLayerStorageScope,
+  writeStoredWindowLayer,
+  type WindowLayer,
+} from "../features/windows/windowLayer";
+import { loadTileAutostart, toggleTileAutostart } from "../features/windows/tileAutostart";
 import { NotepadOpenPanel } from "./NotepadOpenPanel";
 import { Tile } from "./Tile";
 
@@ -99,6 +110,12 @@ function isTileControlDoubleClickTarget(target: EventTarget | null): boolean {
 
 const TILE_DRAG_START_THRESHOLD_PX = 5;
 
+const LAYER_BY_ACTION: Record<string, WindowLayer> = {
+  layerTop: "top",
+  layerNormal: "normal",
+  layerBottom: "bottom",
+};
+
 function SurfaceResizeHandles() {
   return (
     <>
@@ -144,11 +161,14 @@ export function NotePad({
     resolveTileColor("system", normalizeTileColor(initialTileColor)),
   );
   const [isExiting, setIsExiting] = useState(false);
+  const [windowLayer, setWindowLayerState] = useState<WindowLayer>(getCurrentWindowLayer());
   const titleRef = useRef<HTMLInputElement>(null);
   const contentRef = useRef<HTMLTextAreaElement>(null);
   const tileDragIntentRef = useRef<{ x: number; y: number } | null>(null);
   const windowLabelRef = useRef("");
   const statusRef = useRef<NotePadStatus>("empty");
+  const windowLayerRef = useRef(windowLayer);
+  windowLayerRef.current = windowLayer;
   const contentValueRef = useRef(content);
   contentValueRef.current = content;
   const titleValueRef = useRef(title);
@@ -249,18 +269,30 @@ export function NotePad({
     let cancelled = false;
     requestAnimationFrame(() => {
       requestAnimationFrame(() => {
-        if (!cancelled) {
-          hasEnteredOnce.current = true;
-          void showCurrentWindow()
-            .then(() => contentRef.current?.focus())
-            .catch(() => undefined);
-        }
+        if (cancelled) return;
+        hasEnteredOnce.current = true;
+        void (async () => {
+          // 磁贴窗口按笔记恢复保存的层级，再显示窗口，避免可见的层级跳变
+          if (initialSurfaceMode === "tile" && initialNoteId) {
+            const stored = readStoredWindowLayer(tileLayerStorageScope(initialNoteId));
+            setCurrentWindowLayer(stored);
+            setWindowLayerState(stored);
+            try {
+              await applyWindowLayer(stored);
+            } catch {
+              // 平台不支持该层级时保持默认置顶
+            }
+            void loadTileAutostart(initialNoteId);
+          }
+          await showCurrentWindow();
+          contentRef.current?.focus();
+        })().catch(() => undefined);
       });
     });
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [initialNoteId, initialSurfaceMode]);
 
   useEffect(() => {
     const unlisten = listen<{
@@ -326,6 +358,10 @@ export function NotePad({
       setStatus("empty");
       setIsExiting(false);
       setSurfaceMode("pad");
+      // 池化窗口复用时重置为默认置顶，避免残留上一次会话的层级
+      setCurrentWindowLayer(DEFAULT_WINDOW_LAYER);
+      setWindowLayerState(DEFAULT_WINDOW_LAYER);
+      void applyWindowLayer(DEFAULT_WINDOW_LAYER).catch(() => undefined);
       void refreshNotes().catch(() => undefined);
       void showCurrentWindow()
         .then(() => contentRef.current?.focus())
@@ -446,7 +482,11 @@ export function NotePad({
         const targetBounds = getSurfaceTargetBounds(nextMode, currentBounds);
 
         if (nextMode === "tile") {
-          await setCurrentWindowAlwaysOnTop(true);
+          const layer = windowLayerRef.current;
+          await applyWindowLayer(layer);
+          if (tileNoteId) {
+            writeStoredWindowLayer(tileLayerStorageScope(tileNoteId), layer);
+          }
         }
 
         await animateCurrentWindowBounds(targetBounds);
@@ -472,8 +512,36 @@ export function NotePad({
 
   useEffect(() => {
     if (surfaceMode !== "tile") return;
-    void setCurrentWindowAlwaysOnTop(true).catch(() => undefined);
-  }, [surfaceMode]);
+    void applyWindowLayer(windowLayer).catch(() => undefined);
+  }, [surfaceMode, windowLayer]);
+
+  // 磁贴内笔记切换（窗口复用）时同步开机自启状态
+  useEffect(() => {
+    if (surfaceMode === "tile" && tileNoteId) {
+      void loadTileAutostart(tileNoteId);
+    }
+  }, [surfaceMode, tileNoteId]);
+
+  const changeWindowLayer = useCallback(
+    async (layer: WindowLayer) => {
+      setCurrentWindowLayer(layer);
+      setWindowLayerState(layer);
+      if (surfaceMode === "tile" && tileNoteId) {
+        writeStoredWindowLayer(tileLayerStorageScope(tileNoteId), layer);
+      }
+      try {
+        await applyWindowLayer(layer);
+      } catch {
+        showToast(
+          t("notepad.error.layerUnsupported", { defaultValue: "当前系统不支持该窗口层级" }),
+        );
+      }
+    },
+    [surfaceMode, tileNoteId, t],
+  );
+
+  const changeWindowLayerRef = useRef(changeWindowLayer);
+  changeWindowLayerRef.current = changeWindowLayer;
 
   const handleSave = useCallback(
     async ({ isAutoSave = false }: { isAutoSave?: boolean } = {}) => {
@@ -647,6 +715,8 @@ export function NotePad({
   copyTileContentRef.current = copyTileContent;
   const switchSurfaceModeRef = useRef(switchSurfaceMode);
   switchSurfaceModeRef.current = switchSurfaceMode;
+  const tileNoteIdRef = useRef(tileNoteId);
+  tileNoteIdRef.current = tileNoteId;
 
   useEffect(() => {
     function handleSurfaceActionRequest(event: Event) {
@@ -665,6 +735,22 @@ export function NotePad({
 
       if (action === "close") {
         void handleCloseRef.current();
+        return;
+      }
+
+      const layer = LAYER_BY_ACTION[action];
+      if (layer) {
+        void changeWindowLayerRef.current(layer);
+        return;
+      }
+
+      if (action === "autostart") {
+        const noteId = tileNoteIdRef.current;
+        if (noteId) {
+          void toggleTileAutostart(noteId).catch((error) => {
+            showToast(getErrorMessage(error));
+          });
+        }
         return;
       }
 
@@ -721,6 +807,12 @@ export function NotePad({
   const surfaceWrapperClassName = `w-full h-screen flex flex-col bg-transparent p-0 ${isExiting ? "animate-window-exit" : enterClass}`;
   const padSurfaceClassName =
     "app-surface-frame relative noise-bg w-full h-full min-h-0 bg-cloud overflow-hidden flex flex-col flex-1 border border-paper-deep/70 shadow-[0_1px_10px_rgba(26,26,24,0.06)] transition-all duration-200 ease-out";
+  const windowLayerTooltip =
+    windowLayer === "bottom"
+      ? t("notepad.tooltip.windowLayer.bottom", { defaultValue: "窗口层级：沉底（点击切换）" })
+      : windowLayer === "normal"
+        ? t("notepad.tooltip.windowLayer.normal", { defaultValue: "窗口层级：默认（点击切换）" })
+        : t("notepad.tooltip.windowLayer.top", { defaultValue: "窗口层级：置顶（点击切换）" });
 
   return (
     <div className={surfaceWrapperClassName}>
@@ -805,6 +897,57 @@ export function NotePad({
               </div>
 
               <div className="ml-auto flex items-center gap-1.5">
+                <button
+                  onClick={() => void changeWindowLayer(nextWindowLayer(windowLayer))}
+                  className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"
+                  title={windowLayerTooltip}
+                >
+                  {windowLayer === "bottom" ? (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 20h14" />
+                      <path d="M12 4v11" />
+                      <path d="M7 11l5 5 5-5" />
+                    </svg>
+                  ) : windowLayer === "normal" ? (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 12h14" />
+                    </svg>
+                  ) : (
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="2"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M5 4h14" />
+                      <path d="M12 20V9" />
+                      <path d="M7 13l5-5 5 5" />
+                    </svg>
+                  )}
+                </button>
+
                 <button
                   onClick={() => void handlePin()}
                   className="group w-7 h-7 flex items-center justify-center rounded-lg transition-all duration-200 cursor-pointer text-ink-ghost hover:text-ink-faint hover:bg-paper-warm"

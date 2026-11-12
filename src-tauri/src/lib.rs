@@ -359,6 +359,22 @@ async fn toggle_tile_window(
 }
 
 #[tauri::command]
+async fn get_tile_autostart(app: AppHandle, note_id: String) -> Result<bool, AppError> {
+    desktop::get_tile_autostart(app, note_id).await
+}
+
+#[tauri::command]
+async fn set_tile_autostart(
+    app: AppHandle,
+    note_id: String,
+    enabled: bool,
+) -> Result<Vec<String>, AppError> {
+    let saved = desktop::set_tile_autostart(app.clone(), note_id, enabled).await?;
+    let _ = app.emit("config-changed", &saved);
+    Ok(saved.autostart_tiles)
+}
+
+#[tauri::command]
 async fn open_note_in_editor(app: AppHandle, note_id: String) -> Result<(), AppError> {
     desktop::show_main_window(&app)?;
     let _ = app.emit("open-note", &note_id);
@@ -500,6 +516,8 @@ pub fn run() {
             start_window_drag_with_offset,
             open_tile_window,
             toggle_tile_window,
+            get_tile_autostart,
+            set_tile_autostart,
             open_note_in_editor,
             updater::commands::update_status,
             updater::commands::update_settings_get,
@@ -528,6 +546,14 @@ pub fn run() {
                         eprintln!("failed to show main window on dock click: {error}");
                     }
                 }
+            }
+
+            // 应用退出（含 Windows 关机/注销前的正常退出路径）时落盘磁贴位置
+            if matches!(
+                _event,
+                tauri::RunEvent::ExitRequested { .. } | tauri::RunEvent::Exit
+            ) {
+                desktop::flush_tile_sessions();
             }
         });
 }

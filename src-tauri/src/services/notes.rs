@@ -33,6 +33,9 @@ pub struct AppConfig {
     pub global_shortcut: String,
     pub close_to_tray: bool,
     pub autostart: bool,
+    // 开机自动恢复的磁贴笔记 id 列表
+    #[serde(default)]
+    pub autostart_tiles: Vec<String>,
     pub default_view_mode: String,
     #[serde(default = "default_note_auto_save")]
     pub note_auto_save: bool,
@@ -1135,6 +1138,7 @@ impl NoteStore {
             global_shortcut: "Ctrl+Space".into(),
             close_to_tray: true,
             autostart: false,
+            autostart_tiles: Vec::new(),
             default_view_mode: "split".into(),
             note_auto_save: true,
             note_surface_auto_save: true,
@@ -1897,6 +1901,7 @@ mod tests {
             global_shortcut: "Alt+Space".into(),
             close_to_tray: false,
             autostart: true,
+            autostart_tiles: Vec::new(),
             default_view_mode: "preview".into(),
             note_auto_save: false,
             note_surface_auto_save: false,

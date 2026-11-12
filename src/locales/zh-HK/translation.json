@@ -36,6 +36,10 @@
     "tile": {
       "close": "取消釘屏",
       "copy": "複製",
+      "layerBottom": "沉底",
+      "autostart": "開機自啟",
+      "layerNormal": "預設層級",
+      "layerTop": "置頂",
       "save": "儲存",
       "switchToPad": "轉為小窗"
     }
@@ -176,7 +180,8 @@
       "placeholder": "搜尋筆記…"
     },
     "error": {
-      "copyUnsupported": "目前環境不支援複製"
+      "copyUnsupported": "目前環境不支援複製",
+      "layerUnsupported": "目前系統不支援該窗口層級"
     },
     "placeholder": {
       "content": "寫點什麼……",
@@ -198,7 +203,12 @@
     "tooltip": {
       "close": "關閉",
       "openInEditor": "在編輯器中開啟",
-      "pinToTile": "轉為磁貼"
+      "pinToTile": "轉為磁貼",
+      "windowLayer": {
+        "bottom": "窗口層級：沉底（點擊切換）",
+        "normal": "窗口層級：預設（點擊切換）",
+        "top": "窗口層級：置頂（點擊切換）"
+      }
     }
   },
   "settings": {

@@ -11,6 +11,8 @@ export interface AppConfig {
   globalShortcut: string;
   closeToTray: boolean;
   autostart: boolean;
+  /** 开机自动恢复的磁贴笔记 id 列表（由磁贴右键菜单维护） */
+  autostartTiles?: string[];
   defaultViewMode: string;
   noteAutoSave: boolean;
   noteSurfaceAutoSave: boolean;

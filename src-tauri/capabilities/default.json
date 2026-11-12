@@ -12,6 +12,7 @@
     "core:window:allow-outer-position",
     "core:window:allow-inner-size",
     "core:window:allow-set-always-on-top",
+    "core:window:allow-set-always-on-bottom",
     "core:window:allow-set-size",
     "core:window:allow-set-position",
     "core:window:allow-start-dragging",
