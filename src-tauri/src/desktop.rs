@@ -444,6 +444,7 @@ pub enum TrayMenuAction {
     Quit,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum AppMenuAction {
     ShowAboutPanel,
@@ -680,6 +681,7 @@ pub fn tray_menu_action(id: &str) -> Option<TrayMenuAction> {
     }
 }
 
+#[allow(dead_code)]
 fn app_menu_action(id: &str) -> Option<AppMenuAction> {
     match id {
         MACOS_APP_ABOUT_ID => Some(AppMenuAction::ShowAboutPanel),
@@ -849,7 +851,70 @@ fn build_app_menu(app: &AppHandle, config: &AppConfig) -> Result<Menu<Wry>, Box<
             &window_close_window,
         ],
     )?;
-    let help_menu = Submenu::new(app, locales::macos_menu_help_label(locale), true)?;
+
+    let help_website_item = MenuItem::with_id(
+        app,
+        "open_help_website",
+        locales::macos_menu_help_website_label(locale),
+        true,
+        None::<&str>,
+    )?;
+
+    let license_item = MenuItem::with_id(
+        app,
+        "open_license",
+        locales::macos_menu_license_label(locale),
+        true,
+        None::<&str>,
+    )?;
+
+    let source_item = MenuItem::with_id(
+        app,
+        "open_source_code",
+        locales::macos_menu_source_code_label(locale),
+        true,
+        None::<&str>,
+    )?;
+
+    let contributing_item = MenuItem::with_id(
+        app,
+        "open_contributing",
+        locales::macos_menu_contributing_label(locale),
+        true,
+        None::<&str>,
+    )?;
+
+    let markdown_item = MenuItem::with_id(
+        app,
+        "open_markdown_syntax",
+        locales::macos_menu_markdown_syntax_label(locale),
+        true,
+        None::<&str>,
+    )?;
+
+    let about_item = MenuItem::with_id(
+        app,
+        MACOS_APP_ABOUT_ID,
+        locales::macos_menu_about_label(locale),
+        true,
+        None::<&str>,
+    )?;
+
+    let help_menu = Submenu::with_items(
+        app,
+        locales::macos_menu_help_label(locale),
+        true,
+        &[
+            &help_website_item,
+            &PredefinedMenuItem::separator(app)?,
+            &license_item,
+            &source_item,
+            &contributing_item,
+            &markdown_item,
+            &PredefinedMenuItem::separator(app)?,
+            &about_item,
+        ],
+    )?;
 
     let menu = Menu::with_items(
         app,
@@ -1352,9 +1417,29 @@ fn handle_tray_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error
 }
 
 fn handle_app_menu_event(app: &AppHandle, id: &str) -> Result<(), Box<dyn Error>> {
-    match app_menu_action(id) {
-        Some(AppMenuAction::ShowAboutPanel) => open_about_panel(app)?,
-        None => {}
+    match id {
+        "open_help_website" => {
+            let url = "https://github.com/Achilng/floral-notepaper/blob/main/README.md";
+            tauri_plugin_opener::open_url(url, Option::<&str>::None)?;
+        }
+        "open_license" => {
+            let url = "https://github.com/Achilng/floral-notepaper/blob/main/LICENSE";
+            tauri_plugin_opener::open_url(url, Option::<&str>::None)?;
+        }
+        "open_source_code" => {
+            let url = "https://github.com/Achilng/floral-notepaper";
+            tauri_plugin_opener::open_url(url, Option::<&str>::None)?;
+        }
+        "open_contributing" => {
+            let url = "https://github.com/Achilng/floral-notepaper/blob/main/CONTRIBUTING.md";
+            tauri_plugin_opener::open_url(url, Option::<&str>::None)?;
+        }
+        "open_markdown_syntax" => {
+            let url = "https://markdown.com.cn/basic-syntax/";
+            tauri_plugin_opener::open_url(url, Option::<&str>::None)?;
+        }
+        MACOS_APP_ABOUT_ID => open_about_panel(app)?,
+        _ => {}
     }
     Ok(())
 }

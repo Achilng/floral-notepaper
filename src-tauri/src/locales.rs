@@ -248,6 +248,46 @@ pub fn macos_menu_select_all_label(locale: Locale) -> &'static str {
     }
 }
 
+pub fn macos_menu_help_website_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "花笺帮助（README）",
+        Locale::EnUs => "Floral Help(README)",
+        Locale::ZhHk => "花箋帮助（README）",
+    }
+}
+
+pub fn macos_menu_license_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "查看许可证",
+        Locale::EnUs => "View License",
+        Locale::ZhHk => "查看許可證",
+    }
+}
+
+pub fn macos_menu_source_code_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "查看项目源代码",
+        Locale::EnUs => "View Source Code",
+        Locale::ZhHk => "查看項目源代碼",
+    }
+}
+
+pub fn macos_menu_contributing_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "查看面向开发者的贡献指南",
+        Locale::EnUs => "Contributing Guide",
+        Locale::ZhHk => "查看面向開發者的貢獻指南",
+    }
+}
+
+pub fn macos_menu_markdown_syntax_label(locale: Locale) -> &'static str {
+    match locale {
+        Locale::ZhCn => "Markdown 基本语法",
+        Locale::EnUs => "Markdown Syntax",
+        Locale::ZhHk => "Markdown 基本语法",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
