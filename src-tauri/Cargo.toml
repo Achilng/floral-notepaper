@@ -55,6 +55,18 @@ windows-sys = { version = "0.59", features = [
   "Win32_System_Threading",
   "Win32_UI_Shell",
 ] }
+# OLE 拖拽发送文件（drag_out.rs）。使用 0.61 与直连依赖 windows-core 0.61
+# 对齐，避免 implement 宏生成代码里的 ::windows_core 路径解析到不同版本。
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_Graphics_Gdi",
+  "Win32_System_Com",
+  "Win32_System_Com_StructuredStorage",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_System_SystemServices",
+  "Win32_UI_Shell",
+] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
 block2 = "0.6"
